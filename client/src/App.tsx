@@ -156,6 +156,9 @@ function Dashboard() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>([]);
+  // Stable workspace list for the filter dropdown — accumulates seen workspaces and never
+  // shrinks, so the filter stays visible even when a selection scopes the bundle to 1 workspace.
+  const [allWorkspaces, setAllWorkspaces] = useState<{ workspace_id: string; workspace_name?: string }[]>([]);
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
   // "pending" = checking, "initializing" = auto-creating MVs, true = wizard, false = dashboard
   const [showSetupWizard, setShowSetupWizard] = useState<boolean | "pending" | "initializing">(
@@ -368,6 +371,24 @@ function Dashboard() {
       }),
     };
   }, [bundle?.timeseries, pricingMultiplier, applyPricing]);
+
+  // Accumulate known workspaces so the filter dropdown stays stable when a selection
+  // scopes the bundle response down to fewer workspaces.
+  useEffect(() => {
+    const ws = workspaces?.workspaces;
+    if (!ws?.length) return;
+    setAllWorkspaces((prev) => {
+      const map = new Map(prev.map((w) => [w.workspace_id, w]));
+      let changed = false;
+      for (const w of ws) {
+        if (!map.has(w.workspace_id)) {
+          map.set(w.workspace_id, { workspace_id: w.workspace_id, workspace_name: w.workspace_name ?? undefined });
+          changed = true;
+        }
+      }
+      return changed ? [...map.values()] : prev;
+    });
+  }, [workspaces?.workspaces]);
 
   // Load detailed breakdowns only when needed (lazy loading by tab)
   const isDbuTab = activeTab === "dbu";
@@ -656,10 +677,7 @@ function Dashboard() {
             <div className="flex justify-center items-center gap-3">
               <DateRangePicker value={dateRange} onChange={setDateRange} />
               <WorkspaceFilter
-                workspaces={(workspaces?.workspaces ?? []).map((w) => ({
-                  workspace_id: w.workspace_id,
-                  workspace_name: w.workspace_name ?? undefined,
-                }))}
+                workspaces={allWorkspaces}
                 selectedIds={selectedWorkspaceIds}
                 onChange={setSelectedWorkspaceIds}
               />

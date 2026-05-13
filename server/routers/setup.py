@@ -1000,9 +1000,23 @@ async def list_workspaces() -> dict:
         return {"workspaces": [], "error": str(e)}
 
 
+@router.get("/workspace-filter")
+async def get_workspace_filter() -> dict:
+    """Return the current workspace filter configuration from settings file."""
+    settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
+    try:
+        with open(settings_path) as f:
+            data = json.load(f)
+        workspace_ids = [str(i) for i in data.get("workspace_ids", []) if str(i).lstrip("-").isdigit()]
+    except (FileNotFoundError, json.JSONDecodeError):
+        workspace_ids = []
+    return {"workspace_ids": workspace_ids}
+
+
 @router.post("/save-workspace-filter")
 async def save_workspace_filter(request: Request) -> dict:
     """Persist selected workspace IDs to .settings/workspace_filter.json."""
+    from server import workspace_filter as wf
     body = await request.json()
     raw_ids: list = body.get("workspace_ids", [])
     valid_ids = [str(i) for i in raw_ids if str(i).lstrip("-").isdigit()]
@@ -1015,6 +1029,8 @@ async def save_workspace_filter(request: Request) -> dict:
         logger.info("Workspace filter saved: %s", valid_ids)
     except Exception as e:
         logger.warning("save-workspace-filter: could not write settings: %s", e)
+
+    wf.clear_cache()
 
     env_val = ",".join(valid_ids)
     return {

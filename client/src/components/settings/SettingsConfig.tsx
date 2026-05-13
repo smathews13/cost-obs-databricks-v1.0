@@ -158,49 +158,49 @@ export function SettingsConfig({
       const res = await fetch("/api/setup/drop-materialized-views", { method: "DELETE" });
       const data = await res.json();
       setWipeResult(data);
-      if (data.ok) {
-        refetchTables();
-      }
     } catch (e) {
       setWipeResult({ ok: false, results: { error: String(e) } });
     } finally {
       setWiping(false);
       setWipePending(false);
+      refetchTables();
     }
   };
 
-  // MV table overrides state
-  const { data: mvOverridesData, refetch: refetchMvOverrides } = useQuery<{
-    tables: Array<{ logical_name: string; default_path: string; override_path: string; is_overridden: boolean }>;
-    overrides: Record<string, string>;
-  } | null>({
-    queryKey: ["settings-mv-overrides"],
-    queryFn: () => fetch("/api/setup/mv-overrides").then(r => r.json()).catch(() => null),
+  // Workspace pool management
+  const { data: allWorkspacesData } = useQuery<{ workspaces: Array<{ id: string; name: string }>; error?: string } | null>({
+    queryKey: ["setup-list-workspaces"],
+    queryFn: () => fetch("/api/setup/list-workspaces").then(r => r.json()).catch(() => null),
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: wsFilterData, refetch: refetchWsFilter } = useQuery<{ workspace_ids: string[] } | null>({
+    queryKey: ["setup-workspace-filter"],
+    queryFn: () => fetch("/api/setup/workspace-filter").then(r => r.json()).catch(() => null),
     staleTime: 60 * 1000,
   });
-  const [mvOverridesEditing, setMvOverridesEditing] = useState(false);
-  const [mvOverridesDraft, setMvOverridesDraft] = useState<Record<string, string>>({});
-  const [mvOverridesSaving, setMvOverridesSaving] = useState(false);
-  const [mvOverridesSaveStatus, setMvOverridesSaveStatus] = useState<string | null>(null);
+  const [wsPoolEditing, setWsPoolEditing] = useState(false);
+  const [wsPoolDraft, setWsPoolDraft] = useState<string[]>([]);
+  const [wsPoolSaving, setWsPoolSaving] = useState(false);
+  const [wsPoolSaveStatus, setWsPoolSaveStatus] = useState<string | null>(null);
 
-  const saveMvOverrides = async () => {
-    setMvOverridesSaving(true);
+  const saveWsPool = async () => {
+    setWsPoolSaving(true);
     try {
-      const res = await fetch("/api/setup/mv-overrides", {
+      const res = await fetch("/api/setup/save-workspace-filter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ overrides: mvOverridesDraft }),
+        body: JSON.stringify({ workspace_ids: wsPoolDraft }),
       });
       if (res.ok) {
-        setMvOverridesSaveStatus("Saved");
-        setMvOverridesEditing(false);
-        refetchMvOverrides();
+        setWsPoolSaveStatus("Saved");
+        setWsPoolEditing(false);
+        refetchWsFilter();
       } else {
-        setMvOverridesSaveStatus("Save failed");
+        setWsPoolSaveStatus("Save failed");
       }
     } finally {
-      setMvOverridesSaving(false);
-      setTimeout(() => setMvOverridesSaveStatus(null), 3000);
+      setWsPoolSaving(false);
+      setTimeout(() => setWsPoolSaveStatus(null), 3000);
     }
   };
 
@@ -663,6 +663,17 @@ export function SettingsConfig({
                   <option value={1095}>3 years</option>
                 </select>
                 <button
+                  onClick={() => refetchTables()}
+                  disabled={mvRefreshing}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Refresh table status"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Status
+                </button>
+                <button
                   onClick={handleMvRefresh}
                   disabled={mvRefreshing}
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -834,82 +845,6 @@ export function SettingsConfig({
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">Could not retrieve table status</div>
             )}
 
-            {/* MV table name overrides */}
-            <div className="mt-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-medium text-gray-700">Custom table names</span>
-                  {mvOverridesData?.tables?.some(t => t.is_overridden) && (
-                    <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                      {mvOverridesData.tables.filter(t => t.is_overridden).length} override{mvOverridesData.tables.filter(t => t.is_overridden).length !== 1 ? "s" : ""} active
-                    </span>
-                  )}
-                </div>
-                {!mvOverridesEditing ? (
-                  <button
-                    onClick={() => {
-                      setMvOverridesDraft(mvOverridesData?.overrides ?? {});
-                      setMvOverridesEditing(true);
-                    }}
-                    className="text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded px-2 py-0.5"
-                  >
-                    {mvOverridesData?.tables?.some(t => t.is_overridden) ? "Edit overrides" : "Use custom tables"}
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    {mvOverridesSaveStatus && (
-                      <span className={`text-[10px] font-medium ${mvOverridesSaveStatus === "Saved" ? "text-green-600" : "text-red-500"}`}>{mvOverridesSaveStatus}</span>
-                    )}
-                    <button
-                      onClick={saveMvOverrides}
-                      disabled={mvOverridesSaving}
-                      className="rounded bg-[#FF3621] px-2.5 py-0.5 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-50"
-                    >
-                      {mvOverridesSaving ? "Saving…" : "Save"}
-                    </button>
-                    <button
-                      onClick={() => { setMvOverridesEditing(false); setMvOverridesDraft({}); }}
-                      className="text-xs text-gray-500 hover:bg-gray-100 rounded px-2 py-0.5"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {mvOverridesEditing ? (
-                <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
-                  <p className="text-[11px] text-gray-500">
-                    Override any table with a custom fully-qualified name (<code className="font-mono">catalog.schema.table</code>). Leave blank to use the default.
-                  </p>
-                  {(mvOverridesData?.tables ?? []).map((t) => (
-                    <div key={t.logical_name} className="flex items-center gap-2">
-                      <span className="w-44 shrink-0 font-mono text-[11px] text-gray-600">{t.logical_name}</span>
-                      <input
-                        type="text"
-                        value={mvOverridesDraft[t.logical_name] ?? ""}
-                        onChange={e => setMvOverridesDraft(d => ({ ...d, [t.logical_name]: e.target.value }))}
-                        placeholder={t.default_path}
-                        className="flex-1 rounded border border-gray-200 px-2 py-0.5 font-mono text-[11px] text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : mvOverridesData?.tables?.some(t => t.is_overridden) ? (
-                <div className="rounded-lg border border-amber-100 bg-amber-50 p-2 space-y-1">
-                  {mvOverridesData.tables.filter(t => t.is_overridden).map(t => (
-                    <div key={t.logical_name} className="flex items-center gap-2 text-[11px]">
-                      <span className="w-44 shrink-0 font-mono text-gray-600">{t.logical_name}</span>
-                      <span className="text-gray-400">→</span>
-                      <span className="font-mono text-amber-800 truncate">{t.override_path}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[11px] text-gray-400">Using default table names from the configured catalog/schema.</p>
-              )}
-            </div>
-
             {/* Drop all materialized views */}
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
               <div className="flex items-start justify-between gap-3">
@@ -950,6 +885,94 @@ export function SettingsConfig({
                   {wipeResult.ok
                     ? "All tables dropped. Use Rebuild to recreate them."
                     : `Some tables failed to drop: ${Object.entries(wipeResult.results).filter(([,v]) => v !== "dropped").map(([k]) => k).join(", ")}`}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Workspace Pool */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              <h4 className="text-sm font-semibold text-gray-900">Workspace Filter Pool</h4>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
+              <p className="text-xs text-gray-500">
+                Control which workspaces are available in the dashboard workspace filter. When all are selected, all workspaces are shown. Changes take effect immediately.
+              </p>
+              {!wsPoolEditing ? (
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-gray-700">
+                    {wsFilterData?.workspace_ids?.length
+                      ? <span>{wsFilterData.workspace_ids.length} workspace{wsFilterData.workspace_ids.length !== 1 ? "s" : ""} in filter pool</span>
+                      : <span className="text-gray-400">All workspaces (no filter configured)</span>
+                    }
+                  </div>
+                  <button
+                    onClick={() => {
+                      setWsPoolDraft(wsFilterData?.workspace_ids ?? []);
+                      setWsPoolEditing(true);
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded px-2 py-0.5"
+                  >
+                    Edit
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-gray-600 font-medium">Select available workspaces</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setWsPoolDraft((allWorkspacesData?.workspaces ?? []).map(w => w.id))}
+                        className="text-xs text-gray-500 hover:text-gray-800"
+                      >All</button>
+                      <span className="text-gray-300">·</span>
+                      <button
+                        onClick={() => setWsPoolDraft([])}
+                        className="text-xs text-gray-500 hover:text-gray-800"
+                      >None</button>
+                    </div>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1 rounded border border-gray-100 p-2">
+                    {(allWorkspacesData?.workspaces ?? []).map(ws => (
+                      <label key={ws.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={wsPoolDraft.includes(ws.id)}
+                          onChange={() => {
+                            if (wsPoolDraft.includes(ws.id)) {
+                              setWsPoolDraft(wsPoolDraft.filter(i => i !== ws.id));
+                            } else {
+                              setWsPoolDraft([...wsPoolDraft, ws.id]);
+                            }
+                          }}
+                          className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
+                        />
+                        <span className="text-xs text-gray-700">{ws.name || ws.id}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    {wsPoolSaveStatus && (
+                      <span className={`text-[10px] font-medium ${wsPoolSaveStatus === "Saved" ? "text-green-600" : "text-red-500"}`}>{wsPoolSaveStatus}</span>
+                    )}
+                    <button
+                      onClick={saveWsPool}
+                      disabled={wsPoolSaving}
+                      className="rounded bg-[#FF3621] px-3 py-1 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-50"
+                    >
+                      {wsPoolSaving ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      onClick={() => { setWsPoolEditing(false); setWsPoolSaveStatus(null); }}
+                      className="rounded px-3 py-1 text-xs text-gray-500 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

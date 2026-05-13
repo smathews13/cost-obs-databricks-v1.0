@@ -203,7 +203,7 @@ def get_default_end_date() -> str:
 async def get_billing_summary(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
-    workspace_id: str = Query(default=None, description="Filter by workspace ID"),
+    workspace_ids: str = Query(default=None, description="Comma-separated workspace IDs to filter"),
 ) -> dict[str, Any]:
     """Get overall billing summary (total spend, DBUs, etc.)."""
     from server import workspace_filter as wf
@@ -211,7 +211,8 @@ async def get_billing_summary(
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
-    ws_clause = wf.build_ws_filter_clause(single_id=workspace_id)
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
     use_mv = _check_mv_available() and not ws_clause
 
     if use_mv:
@@ -1191,7 +1192,7 @@ async def get_workspace_list(
 async def get_dashboard_bundle_fast(
     start_date: str = Query(default=None),
     end_date: str = Query(default=None),
-    workspace_id: str = Query(default=None),
+    workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Get essential dashboard data FAST.
 
@@ -1208,8 +1209,10 @@ async def get_dashboard_bundle_fast(
         "end_date": end_date or get_default_end_date(),
     }
 
-    # Build workspace filter — single_id (dropdown) overrides env-var list.
-    ws_clause = wf.build_ws_filter_clause(single_id=workspace_id)
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+
+    # Build workspace filter — dropdown selection overrides env/file config.
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     # Skip MVs when a workspace filter is active: MVs are pre-aggregated
     # account-wide and cannot be filtered to a subset of workspaces.
@@ -1249,7 +1252,7 @@ async def get_dashboard_bundle_fast(
         ]
     else:
         # Fall back to fast queries without MVs; inject workspace filter when active.
-        _ws = wf.build_ws_filter_clause(col="workspace_id", single_id=workspace_id)
+        _ws = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
         WORKSPACE_COUNT_QUERY = f"""
         SELECT daily_ws as workspace_count FROM (
           SELECT usage_date, COUNT(DISTINCT workspace_id) as daily_ws

@@ -9,6 +9,7 @@ import { ProductBreakdown } from "@/components/ProductBreakdown";
 import { WorkspaceTable } from "@/components/WorkspaceTable";
 import { PipelineObjectsTable } from "@/components/PipelineObjectsTable";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { WorkspaceFilter } from "@/components/WorkspaceFilter";
 import { SKUBreakdown } from "@/components/SKUBreakdown";
 import { ExportDialog, type ExportSections, type ExportFormat } from "@/components/ExportDialog";
 import { SettingsDialog, loadTabVisibility, loadAppSettings, type TabVisibility, type AppSettings } from "@/components/SettingsDialog";
@@ -154,7 +155,7 @@ function Dashboard() {
   const [showGenie, setShowGenie] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>([]);
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
   // "pending" = checking, "initializing" = auto-creating MVs, true = wizard, false = dashboard
   const [showSetupWizard, setShowSetupWizard] = useState<boolean | "pending" | "initializing">(
@@ -314,7 +315,7 @@ function Dashboard() {
   const { applyPricing, multiplier: pricingMultiplier } = usePricing();
 
   // Fast bundle for quick initial load (uses materialized views)
-  const { data: bundle, isLoading: bundleLoading } = useDashboardBundleFast(dateRange, selectedWorkspaceId);
+  const { data: bundle, isLoading: bundleLoading } = useDashboardBundleFast(dateRange, selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined);
 
   // Extract data from fast bundle — apply pricing multiplier when account prices are active
   const summary = useMemo(() => {
@@ -604,27 +605,6 @@ function Dashboard() {
             </div>
             {user && (
               <div className="flex items-center gap-2">
-                {(() => {
-                  const wsList = workspaces?.workspaces ?? [];
-                  if (wsList.length > 1) {
-                    return (
-                      <select
-                        value={selectedWorkspaceId ?? ""}
-                        onChange={(e) => setSelectedWorkspaceId(e.target.value || null)}
-                        className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-white/40"
-                        title="Filter by workspace"
-                      >
-                        <option value="">All Workspaces</option>
-                        {wsList.map((ws) => (
-                          <option key={ws.workspace_id} value={ws.workspace_id}>
-                            {ws.workspace_name || ws.workspace_id}
-                          </option>
-                        ))}
-                      </select>
-                    );
-                  }
-                  return null;
-                })()}
                 <span className="text-sm opacity-90">
                   {user.email}
                 </span>
@@ -673,8 +653,16 @@ function Dashboard() {
                 $DBU mission control + analytics center{appSettings.companyName ? ` for ${appSettings.companyName}'s Databricks spend` : ""}
               </p>
             </div>
-            <div className="flex justify-center">
+            <div className="flex justify-center items-center gap-3">
               <DateRangePicker value={dateRange} onChange={setDateRange} />
+              <WorkspaceFilter
+                workspaces={(workspaces?.workspaces ?? []).map((w) => ({
+                  workspace_id: w.workspace_id,
+                  workspace_name: w.workspace_name ?? undefined,
+                }))}
+                selectedIds={selectedWorkspaceIds}
+                onChange={setSelectedWorkspaceIds}
+              />
             </div>
             <div />
           </div>

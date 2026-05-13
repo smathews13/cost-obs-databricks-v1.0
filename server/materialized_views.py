@@ -933,6 +933,26 @@ def refresh_materialized_views(catalog: str | None = None, schema: str | None = 
     return create_materialized_views(catalog, schema, lookback_days=lookback_days)
 
 
+def drop_materialized_views(catalog: str | None = None, schema: str | None = None) -> dict:
+    """Drop all app-managed materialized view tables.
+
+    Returns a dict mapping each table name to 'dropped' or an error string.
+    """
+    if catalog is None or schema is None:
+        cat, sch = get_catalog_schema()
+        catalog = catalog or cat
+        schema = schema or sch
+
+    results: dict[str, str] = {}
+    for name in _MV_TABLES:
+        try:
+            execute_query(f"DROP TABLE IF EXISTS `{catalog}`.`{schema}`.`{name}`")
+            results[name] = "dropped"
+        except Exception as e:
+            results[name] = f"error: {e}"
+    return results
+
+
 _MV_TABLES = [
     "daily_usage_summary",
     "daily_product_breakdown",

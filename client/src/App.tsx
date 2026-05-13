@@ -10,7 +10,7 @@ import { WorkspaceTable } from "@/components/WorkspaceTable";
 import { PipelineObjectsTable } from "@/components/PipelineObjectsTable";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { SKUBreakdown } from "@/components/SKUBreakdown";
-import { ExportDialog, type ExportSections } from "@/components/ExportDialog";
+import { ExportDialog, type ExportSections, type ExportFormat } from "@/components/ExportDialog";
 import { SettingsDialog, loadTabVisibility, loadAppSettings, type TabVisibility, type AppSettings } from "@/components/SettingsDialog";
 import { PricingProvider, usePricing } from "@/context/PricingContext";
 import { Footer } from "@/components/Footer";
@@ -58,6 +58,7 @@ import {
 } from "@/hooks/useBillingData";
 import type { DateRange } from "@/types/billing";
 import { generateCostReport } from "@/utils/pdfExport";
+import { generateCostCSV } from "@/utils/csvExport";
 
 type ViewTab = "dbu" | "sql" | "infra" | "kpis" | "aiml" | "apps" | "tagging" | "use-cases" | "alerts" | "forecasting" | "users-groups" | "contract";
 
@@ -153,6 +154,7 @@ function Dashboard() {
   const [showGenie, setShowGenie] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
   // "pending" = checking, "initializing" = auto-creating MVs, true = wizard, false = dashboard
   const [showSetupWizard, setShowSetupWizard] = useState<boolean | "pending" | "initializing">(
@@ -312,7 +314,7 @@ function Dashboard() {
   const { applyPricing, multiplier: pricingMultiplier } = usePricing();
 
   // Fast bundle for quick initial load (uses materialized views)
-  const { data: bundle, isLoading: bundleLoading } = useDashboardBundleFast(dateRange);
+  const { data: bundle, isLoading: bundleLoading } = useDashboardBundleFast(dateRange, selectedWorkspaceId);
 
   // Extract data from fast bundle — apply pricing multiplier when account prices are active
   const summary = useMemo(() => {
@@ -461,6 +463,30 @@ function Dashboard() {
     end_date: infraCostsTimeseries.end_date,
   } : undefined, [infraCostsTimeseries]);
 
+  const handleExport = (sections: ExportSections, format: ExportFormat) => {
+    if (format === "csv") {
+      generateCostCSV(
+        {
+          summary,
+          products,
+          workspaces,
+          skus: skuBreakdown,
+          pipelineObjects,
+          interactiveBreakdown,
+          aiml: aimlData,
+          apps: appsData,
+          tagging: taggingData,
+          users: usersGroupsData,
+          alerts: alertsData,
+        },
+        sections,
+        { start: dateRange.startDate, end: dateRange.endDate }
+      );
+      return;
+    }
+    handleExportPDF(sections);
+  };
+
   const handleExportPDF = (sections: ExportSections) => {
     generateCostReport(
       {
@@ -578,6 +604,27 @@ function Dashboard() {
             </div>
             {user && (
               <div className="flex items-center gap-2">
+                {(() => {
+                  const wsList = workspaces?.workspaces ?? [];
+                  if (wsList.length > 1) {
+                    return (
+                      <select
+                        value={selectedWorkspaceId ?? ""}
+                        onChange={(e) => setSelectedWorkspaceId(e.target.value || null)}
+                        className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-white/40"
+                        title="Filter by workspace"
+                      >
+                        <option value="">All Workspaces</option>
+                        {wsList.map((ws) => (
+                          <option key={ws.workspace_id} value={ws.workspace_id}>
+                            {ws.workspace_name || ws.workspace_id}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  }
+                  return null;
+                })()}
                 <span className="text-sm opacity-90">
                   {user.email}
                 </span>
@@ -599,12 +646,12 @@ function Dashboard() {
                 <button
                   onClick={() => setShowExportDialog(true)}
                   className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white opacity-75 transition-opacity hover:opacity-100 hover:bg-white/10 border border-white/20"
-                  title="Export PDF"
+                  title="Export"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  Export PDF
+                  Export
                 </button>
               </div>
             )}
@@ -1043,7 +1090,7 @@ function Dashboard() {
       <ExportDialog
         isOpen={showExportDialog}
         onClose={() => setShowExportDialog(false)}
-        onExport={handleExportPDF}
+        onExport={handleExport}
         tabVisibility={{
           ...tabVisibility,
           "use-cases": tabVisibility["use-cases"] && appSettings.enableUseCaseTracking,

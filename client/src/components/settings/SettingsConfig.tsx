@@ -146,6 +146,64 @@ export function SettingsConfig({
       }
     }, 30_000);
   }
+  // MV wipe state
+  const [wipePending, setWipePending] = useState(false);
+  const [wiping, setWiping] = useState(false);
+  const [wipeResult, setWipeResult] = useState<{ ok: boolean; results: Record<string, string> } | null>(null);
+
+  const handleWipeMVs = async () => {
+    setWiping(true);
+    setWipeResult(null);
+    try {
+      const res = await fetch("/api/setup/drop-materialized-views", { method: "DELETE" });
+      const data = await res.json();
+      setWipeResult(data);
+      if (data.ok) {
+        refetchTables();
+      }
+    } catch (e) {
+      setWipeResult({ ok: false, results: { error: String(e) } });
+    } finally {
+      setWiping(false);
+      setWipePending(false);
+    }
+  };
+
+  // MV table overrides state
+  const { data: mvOverridesData, refetch: refetchMvOverrides } = useQuery<{
+    tables: Array<{ logical_name: string; default_path: string; override_path: string; is_overridden: boolean }>;
+    overrides: Record<string, string>;
+  } | null>({
+    queryKey: ["settings-mv-overrides"],
+    queryFn: () => fetch("/api/setup/mv-overrides").then(r => r.json()).catch(() => null),
+    staleTime: 60 * 1000,
+  });
+  const [mvOverridesEditing, setMvOverridesEditing] = useState(false);
+  const [mvOverridesDraft, setMvOverridesDraft] = useState<Record<string, string>>({});
+  const [mvOverridesSaving, setMvOverridesSaving] = useState(false);
+  const [mvOverridesSaveStatus, setMvOverridesSaveStatus] = useState<string | null>(null);
+
+  const saveMvOverrides = async () => {
+    setMvOverridesSaving(true);
+    try {
+      const res = await fetch("/api/setup/mv-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overrides: mvOverridesDraft }),
+      });
+      if (res.ok) {
+        setMvOverridesSaveStatus("Saved");
+        setMvOverridesEditing(false);
+        refetchMvOverrides();
+      } else {
+        setMvOverridesSaveStatus("Save failed");
+      }
+    } finally {
+      setMvOverridesSaving(false);
+      setTimeout(() => setMvOverridesSaveStatus(null), 3000);
+    }
+  };
+
   const [genieCreating, setGenieCreating] = useState(false);
   const [genieCreateStatus, setGenieCreateStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const genieCreateStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -775,6 +833,126 @@ export function SettingsConfig({
             ) : (
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">Could not retrieve table status</div>
             )}
+
+            {/* MV table name overrides */}
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium text-gray-700">Custom table names</span>
+                  {mvOverridesData?.tables?.some(t => t.is_overridden) && (
+                    <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                      {mvOverridesData.tables.filter(t => t.is_overridden).length} override{mvOverridesData.tables.filter(t => t.is_overridden).length !== 1 ? "s" : ""} active
+                    </span>
+                  )}
+                </div>
+                {!mvOverridesEditing ? (
+                  <button
+                    onClick={() => {
+                      setMvOverridesDraft(mvOverridesData?.overrides ?? {});
+                      setMvOverridesEditing(true);
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded px-2 py-0.5"
+                  >
+                    {mvOverridesData?.tables?.some(t => t.is_overridden) ? "Edit overrides" : "Use custom tables"}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {mvOverridesSaveStatus && (
+                      <span className={`text-[10px] font-medium ${mvOverridesSaveStatus === "Saved" ? "text-green-600" : "text-red-500"}`}>{mvOverridesSaveStatus}</span>
+                    )}
+                    <button
+                      onClick={saveMvOverrides}
+                      disabled={mvOverridesSaving}
+                      className="rounded bg-[#FF3621] px-2.5 py-0.5 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-50"
+                    >
+                      {mvOverridesSaving ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      onClick={() => { setMvOverridesEditing(false); setMvOverridesDraft({}); }}
+                      className="text-xs text-gray-500 hover:bg-gray-100 rounded px-2 py-0.5"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {mvOverridesEditing ? (
+                <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+                  <p className="text-[11px] text-gray-500">
+                    Override any table with a custom fully-qualified name (<code className="font-mono">catalog.schema.table</code>). Leave blank to use the default.
+                  </p>
+                  {(mvOverridesData?.tables ?? []).map((t) => (
+                    <div key={t.logical_name} className="flex items-center gap-2">
+                      <span className="w-44 shrink-0 font-mono text-[11px] text-gray-600">{t.logical_name}</span>
+                      <input
+                        type="text"
+                        value={mvOverridesDraft[t.logical_name] ?? ""}
+                        onChange={e => setMvOverridesDraft(d => ({ ...d, [t.logical_name]: e.target.value }))}
+                        placeholder={t.default_path}
+                        className="flex-1 rounded border border-gray-200 px-2 py-0.5 font-mono text-[11px] text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : mvOverridesData?.tables?.some(t => t.is_overridden) ? (
+                <div className="rounded-lg border border-amber-100 bg-amber-50 p-2 space-y-1">
+                  {mvOverridesData.tables.filter(t => t.is_overridden).map(t => (
+                    <div key={t.logical_name} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-44 shrink-0 font-mono text-gray-600">{t.logical_name}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className="font-mono text-amber-800 truncate">{t.override_path}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-gray-400">Using default table names from the configured catalog/schema.</p>
+              )}
+            </div>
+
+            {/* Drop all materialized views */}
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-red-800">Drop all materialized views</p>
+                  <p className="text-[11px] text-red-600 mt-0.5">
+                    Permanently deletes all {6} app-managed tables from your catalog. The dashboard will stop loading until you rebuild.
+                  </p>
+                </div>
+                {!wipePending ? (
+                  <button
+                    onClick={() => { setWipePending(true); setWipeResult(null); }}
+                    className="shrink-0 rounded border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
+                  >
+                    Drop Tables
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] text-red-700 font-medium">Are you sure?</span>
+                    <button
+                      onClick={handleWipeMVs}
+                      disabled={wiping}
+                      className="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {wiping ? "Dropping…" : "Confirm Drop"}
+                    </button>
+                    <button
+                      onClick={() => setWipePending(false)}
+                      className="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+              {wipeResult && (
+                <div className={`mt-2 rounded px-2 py-1.5 text-[11px] ${wipeResult.ok ? "bg-green-50 text-green-700" : "bg-red-100 text-red-700"}`}>
+                  {wipeResult.ok
+                    ? "All tables dropped. Use Rebuild to recreate them."
+                    : `Some tables failed to drop: ${Object.entries(wipeResult.results).filter(([,v]) => v !== "dropped").map(([k]) => k).join(", ")}`}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* App Telemetry */}

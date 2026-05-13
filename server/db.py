@@ -162,6 +162,45 @@ def get_catalog_schema() -> tuple[str, str]:
     return catalog, schema
 
 
+# ── MV table name overrides ─────────────────────────────────────────────────
+
+_MV_OVERRIDES_FILE = os.path.join(
+    os.path.dirname(__file__), "..", ".settings", "mv_table_overrides.json"
+)
+
+
+def get_mv_table_overrides() -> dict[str, str]:
+    """Load per-table overrides mapping logical name → fully-qualified table path.
+
+    Returns empty dict when no overrides are configured.
+    """
+    try:
+        with open(_MV_OVERRIDES_FILE) as f:
+            data = json.load(f)
+        return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str) and v.strip()}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_mv_table_overrides(overrides: dict[str, str]) -> None:
+    """Persist MV table overrides."""
+    os.makedirs(os.path.dirname(_MV_OVERRIDES_FILE), exist_ok=True)
+    with open(_MV_OVERRIDES_FILE, "w") as f:
+        json.dump(overrides, f, indent=2)
+    logger.info("MV table overrides saved: %s", list(overrides.keys()))
+
+
+def apply_mv_overrides(sql: str, catalog: str, schema: str) -> str:
+    """Replace default table references with custom overrides in a SQL string."""
+    overrides = get_mv_table_overrides()
+    if not overrides:
+        return sql
+    for logical_name, full_path in overrides.items():
+        sql = sql.replace(f"{catalog}.{schema}.{logical_name}", full_path)
+        sql = sql.replace(f"`{catalog}`.`{schema}`.`{logical_name}`", full_path)
+    return sql
+
+
 def get_catalog_schema_info() -> dict:
     """Return catalog/schema along with source metadata for the settings UI."""
     override = _load_catalog_override()

@@ -50,14 +50,15 @@ interface SetupStatus {
   task?: { status: string; error: string | null };
 }
 
-type WizardStep = "welcome" | "permissions" | "create-tables" | "complete";
+type WizardStep = "welcome" | "permissions" | "create-tables" | "workspace-filter" | "complete";
 
-const STEPS: WizardStep[] = ["welcome", "permissions", "create-tables", "complete"];
+const STEPS: WizardStep[] = ["welcome", "permissions", "create-tables", "workspace-filter", "complete"];
 
 const STEP_LABELS: Record<WizardStep, string> = {
   welcome: "Environment",
   permissions: "Permissions",
   "create-tables": "Create Tables",
+  "workspace-filter": "Workspaces",
   complete: "Complete",
 };
 
@@ -76,6 +77,13 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Workspace filter step state
+  const [wsLoading, setWsLoading] = useState(false);
+  const [allWorkspaces, setAllWorkspaces] = useState<{ id: string; name: string }[]>([]);
+  const [selectedWsIds, setSelectedWsIds] = useState<Set<string>>(new Set());
+  const [wsSaved, setWsSaved] = useState(false);
+  const [savedEnvVar, setSavedEnvVar] = useState<string | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -168,6 +176,41 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     }
   };
 
+  const loadWorkspaces = useCallback(async () => {
+    setWsLoading(true);
+    try {
+      const res = await fetch("/api/setup/list-workspaces");
+      if (res.ok) {
+        const data = await res.json();
+        setAllWorkspaces(data.workspaces ?? []);
+        // Pre-select all by default
+        setSelectedWsIds(new Set((data.workspaces ?? []).map((w: { id: string }) => w.id)));
+      }
+    } catch {
+      // non-fatal — user can skip
+    } finally {
+      setWsLoading(false);
+    }
+  }, []);
+
+  const saveWorkspaceFilter = async () => {
+    const ids = Array.from(selectedWsIds);
+    try {
+      const res = await fetch("/api/setup/save-workspace-filter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspace_ids: ids }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedEnvVar(ids.length === 0 ? null : `COST_OBS_WORKSPACES=${data.env_var_value}`);
+        setWsSaved(true);
+      }
+    } catch {
+      // ignore — not fatal
+    }
+  };
+
   const goNext = () => {
     const idx = STEPS.indexOf(step);
     if (idx < STEPS.length - 1) {
@@ -175,6 +218,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
       setStep(next);
       if (next === "permissions") loadPermissions();
       if (next === "create-tables") pollSetupStatus();
+      if (next === "workspace-filter") loadWorkspaces();
     }
   };
 
@@ -268,6 +312,23 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             />
           )}
 
+          {step === "workspace-filter" && (
+            <WorkspaceFilterStep
+              loading={wsLoading}
+              workspaces={allWorkspaces}
+              selectedIds={selectedWsIds}
+              onToggle={(id) => setSelectedWsIds((prev) => {
+                const next = new Set(prev);
+                next.has(id) ? next.delete(id) : next.add(id);
+                return next;
+              })}
+              onSelectAll={() => setSelectedWsIds(new Set(allWorkspaces.map((w) => w.id)))}
+              onClearAll={() => setSelectedWsIds(new Set())}
+              saved={wsSaved}
+              savedEnvVar={savedEnvVar}
+            />
+          )}
+
           {step === "complete" && <CompleteStep />}
         </div>
 
@@ -291,6 +352,22 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               >
                 Go to Dashboard
               </button>
+            ) : step === "workspace-filter" ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={goNext}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Skip
+                </button>
+                <button
+                  onClick={async () => { await saveWorkspaceFilter(); goNext(); }}
+                  disabled={wsLoading}
+                  className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
+                >
+                  {selectedWsIds.size === 0 ? "Continue (all workspaces)" : `Save & Continue (${selectedWsIds.size} workspace${selectedWsIds.size !== 1 ? "s" : ""})`}
+                </button>
+              </div>
             ) : step === "create-tables" ? (
               creating ? null
               : setupStatus?.all_tables_exist ? (
@@ -792,6 +869,87 @@ function CreateTablesStep({ setupStatus, creating }: {
         This typically takes 2-5 minutes depending on data volume.
         Click "Create Tables" to begin.
       </p>
+    </div>
+  );
+}
+
+function WorkspaceFilterStep({
+  loading,
+  workspaces,
+  selectedIds,
+  onToggle,
+  onSelectAll,
+  onClearAll,
+  saved,
+  savedEnvVar,
+}: {
+  loading: boolean;
+  workspaces: { id: string; name: string }[];
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+  onSelectAll: () => void;
+  onClearAll: () => void;
+  saved: boolean;
+  savedEnvVar: string | null;
+}) {
+  if (loading) return <LoadingSpinner text="Loading workspaces..." />;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        Choose which workspaces this app should display data for. You can filter to a subset of your account's workspaces, or show all.
+      </p>
+
+      {workspaces.length === 0 ? (
+        <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
+          No workspaces found in the last 90 days of billing data. Skip this step to show all workspaces.
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">
+              {selectedIds.size === 0 ? "All workspaces will be shown" : `${selectedIds.size} of ${workspaces.length} selected`}
+            </span>
+            <div className="flex gap-3">
+              <button onClick={onSelectAll} className="text-xs font-medium hover:underline" style={{ color: '#FF3621' }}>Select All</button>
+              <button onClick={onClearAll} className="text-xs font-medium hover:underline" style={{ color: '#FF3621' }}>Clear All</button>
+            </div>
+          </div>
+
+          <div className="max-h-52 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-2">
+            {workspaces.map((ws) => {
+              const checked = selectedIds.has(ws.id);
+              return (
+                <label key={ws.id} className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors ${checked ? "bg-orange-50" : "hover:bg-gray-50"}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggle(ws.id)}
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-800 truncate">{ws.name}</div>
+                    <div className="text-xs font-mono text-gray-400">{ws.id}</div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+
+          {selectedIds.size === 0 && (
+            <p className="text-xs text-gray-500">
+              No workspaces selected — all workspaces will be visible in the dashboard. Select specific workspaces to restrict the data shown.
+            </p>
+          )}
+        </>
+      )}
+
+      {saved && savedEnvVar && (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-3 space-y-1">
+          <p className="text-xs font-medium text-green-800">Saved! To make this permanent across redeploys, set this environment variable:</p>
+          <code className="block text-xs font-mono text-green-700 bg-green-100 rounded px-2 py-1 break-all">{savedEnvVar}</code>
+        </div>
+      )}
     </div>
   );
 }

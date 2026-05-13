@@ -8,8 +8,10 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 
 from server.materialized_views import (
+    _MV_TABLES,
     check_materialized_views_exist,
     create_materialized_views,
+    drop_materialized_views,
     get_catalog_schema,
     refresh_materialized_views,
 )
@@ -967,3 +969,104 @@ async def create_genie_space() -> dict[str, Any]:
             "status": "error",
             "message": f"Request to Genie API failed: {e}",
         }
+
+
+
+@router.get("/list-workspaces")
+async def list_workspaces() -> dict:
+    """Return all workspaces with billing activity for the setup wizard workspace picker."""
+    from server.db import execute_query
+    try:
+        rows = execute_query("""
+            SELECT
+                CAST(u.workspace_id AS STRING) as workspace_id,
+                COALESCE(ws.workspace_name, CAST(u.workspace_id AS STRING)) as workspace_name,
+                SUM(u.usage_quantity) as total_dbus
+            FROM system.billing.usage u
+            LEFT JOIN system.access.workspaces_latest ws ON u.workspace_id = ws.workspace_id
+            WHERE u.usage_date >= CURRENT_DATE - 90
+              AND u.usage_quantity > 0
+            GROUP BY u.workspace_id, ws.workspace_name
+            ORDER BY total_dbus DESC
+        """)
+        return {
+            "workspaces": [
+                {"id": r["workspace_id"], "name": r["workspace_name"]}
+                for r in rows
+            ]
+        }
+    except Exception as e:
+        logger.warning("list-workspaces failed: %s", e)
+        return {"workspaces": [], "error": str(e)}
+
+
+@router.post("/save-workspace-filter")
+async def save_workspace_filter(request: Request) -> dict:
+    """Persist selected workspace IDs to .settings/workspace_filter.json."""
+    body = await request.json()
+    raw_ids: list = body.get("workspace_ids", [])
+    valid_ids = [str(i) for i in raw_ids if str(i).lstrip("-").isdigit()]
+
+    settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
+    try:
+        os.makedirs(SETTINGS_DIR, exist_ok=True)
+        with open(settings_path, "w") as f:
+            json.dump({"workspace_ids": valid_ids}, f)
+        logger.info("Workspace filter saved: %s", valid_ids)
+    except Exception as e:
+        logger.warning("save-workspace-filter: could not write settings: %s", e)
+
+    env_val = ",".join(valid_ids)
+    return {
+        "saved": valid_ids,
+        "env_var": "COST_OBS_WORKSPACES",
+        "env_var_value": env_val,
+        "instruction": (
+            f"To make this permanent across redeploys, add "
+            f"COST_OBS_WORKSPACES={env_val} to your app environment variables."
+        ),
+    }
+
+
+@router.delete("/drop-materialized-views")
+async def drop_mvs() -> dict:
+    """Drop all app-managed materialized view tables. Irreversible — use with caution."""
+    from server.db import get_catalog_schema
+    catalog, schema = get_catalog_schema()
+    results = drop_materialized_views(catalog, schema)
+    all_dropped = all(v == "dropped" for v in results.values())
+    return {"ok": all_dropped, "results": results, "catalog": catalog, "schema": schema}
+
+
+@router.get("/mv-overrides")
+async def get_mv_overrides() -> dict:
+    """Return current MV table name overrides and the default table names."""
+    from server.db import get_mv_table_overrides, get_catalog_schema
+    catalog, schema = get_catalog_schema()
+    overrides = get_mv_table_overrides()
+    tables = []
+    for name in _MV_TABLES:
+        default_path = f"{catalog}.{schema}.{name}"
+        tables.append({
+            "logical_name": name,
+            "default_path": default_path,
+            "override_path": overrides.get(name, ""),
+            "is_overridden": name in overrides,
+        })
+    return {"tables": tables, "overrides": overrides}
+
+
+@router.post("/mv-overrides")
+async def save_mv_overrides(request: Request) -> dict:
+    """Persist MV table name overrides. Send {} or omit a key to clear an override."""
+    from server.db import save_mv_table_overrides, get_mv_table_overrides
+    body = await request.json()
+    overrides_raw: dict = body.get("overrides", {})
+    # Only keep non-empty string values for known logical names
+    valid = {
+        k: v.strip()
+        for k, v in overrides_raw.items()
+        if k in _MV_TABLES and isinstance(v, str) and v.strip()
+    }
+    save_mv_table_overrides(valid)
+    return {"ok": True, "saved": valid, "cleared": [k for k in _MV_TABLES if k not in valid]}

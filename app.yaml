@@ -52,6 +52,14 @@ env:
   # - name: PGHOST
   #   value: <lakebase-hostname>
 
+  # Workspace filter — restrict the dashboard to specific workspace(s).
+  # Value: comma-separated workspace IDs (from the setup wizard or Databricks account console).
+  # Single ID → workspace dropdown is hidden (data is implicitly scoped).
+  # Multiple IDs → dropdown appears so users can filter within the configured pool.
+  # Omit to show all workspaces (dropdown appears when the account has multiple).
+  # - name: COST_OBS_WORKSPACES
+  #   value: 3233745148968388
+
   # AWS / Azure actual cost tables (defaults: billing.aws / billing.azure)
   # - name: AWS_COST_CATALOG
   #   value: billing

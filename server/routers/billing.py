@@ -111,15 +111,16 @@ def _check_mv_available() -> bool:
 
 
 def _get_mv_query(mv_query: str) -> str:
-    """Format a materialized view query with the correct catalog/schema."""
+    """Format a materialized view query with the correct catalog/schema and apply table overrides."""
+    from server.db import apply_mv_overrides
     catalog, schema = get_catalog_schema()
-    return mv_query.format(catalog=catalog, schema=schema)
+    sql = mv_query.format(catalog=catalog, schema=schema)
+    return apply_mv_overrides(sql, catalog, schema)
 
 
 def _exec_mv(mv_template: str, params: dict) -> list[dict]:
     """Execute a materialized view query against Delta."""
-    catalog, schema = get_catalog_schema()
-    return execute_query(mv_template.format(catalog=catalog, schema=schema), params)
+    return execute_query(_get_mv_query(mv_template), params)
 
 
 def get_workspace_name() -> str | None:
@@ -202,19 +203,23 @@ def get_default_end_date() -> str:
 async def get_billing_summary(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
+    workspace_id: str = Query(default=None, description="Filter by workspace ID"),
 ) -> dict[str, Any]:
     """Get overall billing summary (total spend, DBUs, etc.)."""
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    ws_clause = wf.build_ws_filter_clause(single_id=workspace_id)
+    use_mv = _check_mv_available() and not ws_clause
 
-    if _check_mv_available():
+    if use_mv:
         results = _exec_mv(MV_BILLING_SUMMARY, params)
         if not results:
             results = execute_query(BILLING_SUMMARY, params)
     else:
-        results = execute_query(BILLING_SUMMARY, params)
+        results = execute_query(_inject_ws_filter(BILLING_SUMMARY, ws_clause), params)
 
     if not results:
         return {
@@ -1134,10 +1139,59 @@ async def get_dashboard_bundle(
     return response
 
 
+def _inject_ws_filter(sql: str, clause: str) -> str:
+    """Append a workspace filter clause after the usage_quantity guard in a SQL string."""
+    if not clause:
+        return sql
+    for anchor in ("AND u.usage_quantity > 0", "AND usage_quantity > 0"):
+        if anchor in sql:
+            return sql.replace(anchor, f"{anchor}\n    {clause}", 1)
+    return sql
+
+
+@router.get("/workspaces")
+async def get_workspace_list(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+) -> dict[str, Any]:
+    """All workspaces with billing activity, scoped to COST_OBS_WORKSPACES when set."""
+    from server import workspace_filter as wf
+    params = {
+        "start_date": start_date or get_default_start_date(),
+        "end_date": end_date or get_default_end_date(),
+    }
+    configured_ids = wf.get_configured_workspace_ids()
+    ws_clause = wf.build_ws_filter_clause() if configured_ids else ""
+    sql = f"""
+        SELECT
+            CAST(u.workspace_id AS STRING) as workspace_id,
+            COALESCE(ws.workspace_name, CAST(u.workspace_id AS STRING)) as workspace_name
+        FROM system.billing.usage u
+        LEFT JOIN system.access.workspaces_latest ws ON u.workspace_id = ws.workspace_id
+        WHERE u.usage_date BETWEEN :start_date AND :end_date
+          AND u.usage_quantity > 0
+          {ws_clause}
+        GROUP BY u.workspace_id, ws.workspace_name
+        ORDER BY workspace_name
+    """
+    try:
+        rows = execute_query(sql, params)
+        return {
+            "workspaces": [{"id": r["workspace_id"], "name": r["workspace_name"]} for r in rows],
+            "is_scoped": bool(configured_ids),
+            "env_var": "COST_OBS_WORKSPACES",
+            "env_var_value": ",".join(configured_ids),
+        }
+    except Exception as e:
+        logger.warning("get_workspace_list failed: %s", e)
+        return {"workspaces": [], "is_scoped": bool(configured_ids), "error": str(e)}
+
+
 @router.get("/dashboard-bundle-fast")
 async def get_dashboard_bundle_fast(
     start_date: str = Query(default=None),
     end_date: str = Query(default=None),
+    workspace_id: str = Query(default=None),
 ) -> dict[str, Any]:
     """Get essential dashboard data FAST.
 
@@ -1148,12 +1202,18 @@ async def get_dashboard_bundle_fast(
 
     Expected load time: <1 second with MVs, 2-5 seconds without.
     """
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
 
-    use_mv = _check_mv_available()
+    # Build workspace filter — single_id (dropdown) overrides env-var list.
+    ws_clause = wf.build_ws_filter_clause(single_id=workspace_id)
+
+    # Skip MVs when a workspace filter is active: MVs are pre-aggregated
+    # account-wide and cannot be filtered to a subset of workspaces.
+    use_mv = _check_mv_available() and not ws_clause
 
     if use_mv:
         # Use materialized views — much faster than live system.billing.usage scans.
@@ -1188,24 +1248,30 @@ async def get_dashboard_bundle_fast(
             ("etl_breakdown", lambda: _exec_mv(MV_ETL_BREAKDOWN, params)),
         ]
     else:
-        # Fall back to fast queries without MVs
-        # Most recent day's workspace count (matches latest point in KPI trend)
-        WORKSPACE_COUNT_QUERY = """
+        # Fall back to fast queries without MVs; inject workspace filter when active.
+        _ws = wf.build_ws_filter_clause(col="workspace_id", single_id=workspace_id)
+        WORKSPACE_COUNT_QUERY = f"""
         SELECT daily_ws as workspace_count FROM (
           SELECT usage_date, COUNT(DISTINCT workspace_id) as daily_ws
           FROM system.billing.usage
           WHERE usage_date BETWEEN :start_date AND :end_date AND usage_quantity > 0
+          {_ws}
           GROUP BY usage_date
           ORDER BY usage_date DESC
           LIMIT 1
         )
         """
+        _s = _inject_ws_filter(BILLING_SUMMARY, ws_clause)
+        _p = _inject_ws_filter(BILLING_BY_PRODUCT_FAST, ws_clause)
+        _w = _inject_ws_filter(BILLING_BY_WORKSPACE, ws_clause)
+        _t = _inject_ws_filter(BILLING_TIMESERIES_FAST, ws_clause)
+        _e = _inject_ws_filter(ETL_BREAKDOWN, ws_clause)
         queries = [
-            ("summary", lambda: execute_query(BILLING_SUMMARY, params)),
-            ("products", lambda: execute_query(BILLING_BY_PRODUCT_FAST, params)),
-            ("workspaces", lambda: execute_query(BILLING_BY_WORKSPACE, params)),
-            ("timeseries", lambda: execute_query(BILLING_TIMESERIES_FAST, params)),
-            ("etl_breakdown", lambda: execute_query(ETL_BREAKDOWN, params)),
+            ("summary", lambda: execute_query(_s, params)),
+            ("products", lambda: execute_query(_p, params)),
+            ("workspaces", lambda: execute_query(_w, params)),
+            ("timeseries", lambda: execute_query(_t, params)),
+            ("etl_breakdown", lambda: execute_query(_e, params)),
             ("workspace_count", lambda: execute_query(WORKSPACE_COUNT_QUERY, params)),
         ]
 

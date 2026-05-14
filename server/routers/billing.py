@@ -211,7 +211,7 @@ async def get_billing_summary(
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else []
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
     use_mv = _check_mv_available() and not ws_clause
 
@@ -751,7 +751,7 @@ async def get_infra_bundle(
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else []
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     # Billing-based summary query — matches KPI trend drill-downs exactly
@@ -1212,7 +1212,7 @@ async def get_dashboard_bundle_fast(
         "end_date": end_date or get_default_end_date(),
     }
 
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else []
 
     # Build workspace filter — dropdown selection overrides env/file config.
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
@@ -1962,7 +1962,7 @@ async def get_kpis_bundle(
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else []
     ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
     ws_clause_u = wf.build_ws_filter_clause(id_list=id_list)
 

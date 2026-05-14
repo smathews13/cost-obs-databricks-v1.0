@@ -1019,7 +1019,7 @@ async def save_workspace_filter(request: Request) -> dict:
     from server import workspace_filter as wf
     body = await request.json()
     raw_ids: list = body.get("workspace_ids", [])
-    valid_ids = [str(i) for i in raw_ids if str(i).lstrip("-").isdigit()]
+    valid_ids = [str(i) for i in raw_ids if wf._is_safe_id(str(i))]
 
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
     try:

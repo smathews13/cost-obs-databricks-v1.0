@@ -605,6 +605,34 @@ function Dashboard() {
                         {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}
                       </span>
                     )}
+                    {selectedWorkspaceIds.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        {selectedWorkspaceIds.length <= 2
+                          ? selectedWorkspaceIds.map((id) => {
+                              const ws = wsFilterList.find((w) => w.workspace_id === id);
+                              const label = ws?.workspace_name || id;
+                              return (
+                                <span
+                                  key={id}
+                                  title={label}
+                                  className="max-w-[120px] truncate rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
+                                  style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+                                >
+                                  {label}
+                                </span>
+                              );
+                            })
+                          : (
+                            <span
+                              className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
+                              style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+                            >
+                              {selectedWorkspaceIds.length} workspaces
+                            </span>
+                          )
+                        }
+                      </div>
+                    )}
                   </>
                 ) : (
                   <span className="text-sm opacity-75">Loading account info...</span>

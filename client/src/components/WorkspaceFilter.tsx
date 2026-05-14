@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 interface Workspace {
   workspace_id: string;
@@ -13,6 +13,15 @@ interface WorkspaceFilterProps {
 
 export function WorkspaceFilter({ workspaces, selectedIds, onChange }: WorkspaceFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSearch("");
+      setTimeout(() => searchRef.current?.focus(), 0);
+    }
+  }, [isOpen]);
 
   if (workspaces.length <= 1) return null;
 
@@ -89,26 +98,60 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
               </button>
             </div>
           </div>
+          <div className="mb-2">
+            <div className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5">
+              <svg className="h-3.5 w-3.5 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                ref={searchRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search workspaces…"
+                className="w-full bg-transparent text-xs text-gray-700 placeholder-gray-400 outline-none"
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="shrink-0 text-gray-400 hover:text-gray-600">
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
           <div className="space-y-1 max-h-60 overflow-y-auto">
-            {workspaces.map((ws) => {
-              const checked = selectedIds.includes(ws.workspace_id);
-              return (
-                <label
-                  key={ws.workspace_id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50"
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggle(ws.workspace_id)}
-                    className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
-                  />
-                  <span className="flex-1 truncate text-sm text-gray-700">
-                    {ws.workspace_name || ws.workspace_id}
-                  </span>
-                </label>
-              );
-            })}
+            {(() => {
+              const filtered = workspaces.filter((ws) => {
+                if (!search) return true;
+                const q = search.toLowerCase();
+                return (ws.workspace_name || ws.workspace_id).toLowerCase().includes(q);
+              });
+              if (filtered.length === 0) {
+                return (
+                  <p className="px-2 py-3 text-center text-xs text-gray-500">No workspaces match</p>
+                );
+              }
+              return filtered.map((ws) => {
+                const checked = selectedIds.includes(ws.workspace_id);
+                return (
+                  <label
+                    key={ws.workspace_id}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(ws.workspace_id)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
+                    />
+                    <span className="flex-1 truncate text-sm text-gray-700">
+                      {ws.workspace_name || ws.workspace_id}
+                    </span>
+                  </label>
+                );
+              });
+            })()}
           </div>
           {!allSelected && (
             <div className="mt-2 border-t border-gray-100 pt-2 text-[11px] text-gray-400">

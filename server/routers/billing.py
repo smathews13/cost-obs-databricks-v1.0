@@ -360,6 +360,7 @@ async def get_billing_timeseries(
 async def get_sql_breakdown(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
+    workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Get SQL breakdown by tool (DBSQL vs Genie).
 
@@ -369,10 +370,15 @@ async def get_sql_breakdown(
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     try:
         use_mv = _check_mv_available()
-        if use_mv:
+        if ws_clause:
+            # MV can't be workspace-filtered; fall back to direct query with injection
+            results = execute_query(_inject_ws_filter(SQL_TOOL_ATTRIBUTION, ws_clause), params)
+        elif use_mv:
             results = _exec_mv(MV_SQL_TOOL_ATTRIBUTION, params)
         else:
             results = execute_query(SQL_TOOL_ATTRIBUTION, params)
@@ -744,18 +750,15 @@ async def get_infra_costs_timeseries(
 async def get_infra_bundle(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
-    workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Bundled infra endpoint: runs cluster costs, instance families, and timeseries in parallel."""
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
-    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     # Billing-based summary query — matches KPI trend drill-downs exactly
-    BILLING_INFRA_SUMMARY = _inject_ws_filter("""
+    BILLING_INFRA_SUMMARY = """
     WITH usage_with_price AS (
       SELECT
         u.usage_date,
@@ -784,12 +787,12 @@ async def get_infra_bundle(
       CASE WHEN AVG(daily_clusters) > 0 THEN AVG(daily_cost / daily_clusters) ELSE 0 END as avg_cost_per_cluster,
       COUNT(*) as days_in_range
     FROM daily_stats
-    """, ws_clause)
+    """
 
     try:
         query_results = execute_queries_parallel([
-            ("clusters", lambda: execute_query(_inject_ws_filter(INFRA_COST_ESTIMATE, ws_clause), params)),
-            ("timeseries", lambda: execute_query(_inject_ws_filter(INFRA_COST_TIMESERIES, ws_clause), params)),
+            ("clusters", lambda: execute_query(INFRA_COST_ESTIMATE, params)),
+            ("timeseries", lambda: execute_query(INFRA_COST_TIMESERIES, params)),
             ("billing_summary", lambda: execute_query(BILLING_INFRA_SUMMARY, params)),
         ])
 
@@ -1955,20 +1958,16 @@ async def get_platform_kpis(
 async def get_kpis_bundle(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
-    workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Bundled KPIs endpoint: runs platform KPIs and spend anomalies in parallel."""
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
-    ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
-    ws_clause_u = wf.build_ws_filter_clause(id_list=id_list)
 
     # Determine which KPI query to run
     use_mv = _check_mv_available()
-    kpi_query = _inject_ws_filter(PLATFORM_KPIS_FAST, ws_clause)  # Always use fast mode for bundle
+    kpi_query = PLATFORM_KPIS_FAST  # Always use fast mode for bundle
 
     # Supplemental query for accurate user count (MV uses MAX of daily counts which under-counts)
     catalog, schema = get_catalog_schema()
@@ -1981,7 +1980,7 @@ async def get_kpis_bundle(
     # Direct Delta query for query stats — used as fallback if Lakebase daily_query_stats is empty
     delta_query_stats_sql = MV_PLATFORM_KPIS.format(catalog=catalog, schema=schema)
 
-    anomalies_sql = _inject_ws_filter(SPEND_ANOMALIES, ws_clause_u)
+    anomalies_sql = SPEND_ANOMALIES
 
     # Build parallel query list
     parallel_queries: list[tuple[str, Any]] = [

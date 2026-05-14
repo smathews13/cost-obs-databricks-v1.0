@@ -110,10 +110,10 @@ export function useBillingTimeseries(dateRange?: DateRange) {
   });
 }
 
-export function useSqlBreakdown(dateRange?: DateRange, enabled: boolean = true) {
+export function useSqlBreakdown(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<GranularBreakdownResponse>({
-    queryKey: ["billing", "sql-breakdown", dateRange],
-    queryFn: () => fetchJson(buildUrl("/api/billing/sql-breakdown", dateRange)),
+    queryKey: ["billing", "sql-breakdown", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/billing/sql-breakdown", dateRange, workspaceIds)),
     staleTime: STALE_TIME,
     enabled,
   });

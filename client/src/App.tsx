@@ -384,18 +384,18 @@ function Dashboard() {
   const hasWsFilter = !!_wsIds;
 
   // DBU tab data - only load when tab is active
-  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, isDbuTab);
+  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, isDbuTab || activeTab === "sql");
   const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, isDbuTab);
   const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, isDbuTab);
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, isDbuTab);
 
-  // Infra tab data
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, !hasWsFilter || isInfraTab);
+  // Infra tab data (account-wide, no workspace filter)
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, undefined, isInfraTab);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
-  // KPIs + anomalies
-  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, _wsIds, !hasWsFilter || isDbuTab || isKpisTab);
+  // KPIs + anomalies (account-wide, no workspace filter)
+  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, undefined, isDbuTab || isKpisTab);
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;

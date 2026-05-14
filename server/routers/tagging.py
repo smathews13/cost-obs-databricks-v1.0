@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from server.db import execute_query, execute_queries_parallel
+from server import workspace_filter as wf
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -963,12 +964,18 @@ async def get_tag_coverage_timeseries(
 async def get_tagging_dashboard_bundle(
     start_date: str = Query(default=None),
     end_date: str = Query(default=None),
+    workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Get all tagging dashboard data in a single request."""
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
+
+    def _ws(sql: str) -> str:
+        return wf.inject_ws_filter(sql, ws_clause)
 
     def query_with_fallback(enriched_sql: str, fallback_sql: str, query_params: dict) -> list[dict[str, Any]]:
         """Try enriched query (with system.compute tables), fall back to billing-only."""
@@ -979,15 +986,15 @@ async def get_tagging_dashboard_bundle(
             return execute_query(fallback_sql, query_params)
 
     queries = [
-        ("summary", lambda: execute_query(TAGGING_SUMMARY, params)),
-        ("clusters", lambda: query_with_fallback(UNTAGGED_CLUSTERS_ENRICHED, UNTAGGED_CLUSTERS, params)),
-        ("jobs", lambda: query_with_fallback(UNTAGGED_JOBS_ENRICHED, UNTAGGED_JOBS, params)),
-        ("pipelines", lambda: query_with_fallback(UNTAGGED_PIPELINES_ENRICHED, UNTAGGED_PIPELINES, params)),
-        ("warehouses", lambda: query_with_fallback(UNTAGGED_WAREHOUSES_ENRICHED, UNTAGGED_WAREHOUSES, params)),
-        ("endpoints", lambda: execute_query(UNTAGGED_ENDPOINTS, params)),
-        ("cost_by_tag", lambda: execute_query(COST_BY_TAG, params)),
-        ("tag_keys", lambda: execute_query(COST_BY_TAG_KEY, params)),
-        ("timeseries", lambda: execute_query(TAG_COVERAGE_TIMESERIES, params)),
+        ("summary", lambda: execute_query(_ws(TAGGING_SUMMARY), params)),
+        ("clusters", lambda: query_with_fallback(_ws(UNTAGGED_CLUSTERS_ENRICHED), _ws(UNTAGGED_CLUSTERS), params)),
+        ("jobs", lambda: query_with_fallback(_ws(UNTAGGED_JOBS_ENRICHED), _ws(UNTAGGED_JOBS), params)),
+        ("pipelines", lambda: query_with_fallback(_ws(UNTAGGED_PIPELINES_ENRICHED), _ws(UNTAGGED_PIPELINES), params)),
+        ("warehouses", lambda: query_with_fallback(_ws(UNTAGGED_WAREHOUSES_ENRICHED), _ws(UNTAGGED_WAREHOUSES), params)),
+        ("endpoints", lambda: execute_query(_ws(UNTAGGED_ENDPOINTS), params)),
+        ("cost_by_tag", lambda: execute_query(_ws(COST_BY_TAG), params)),
+        ("tag_keys", lambda: execute_query(_ws(COST_BY_TAG_KEY), params)),
+        ("timeseries", lambda: execute_query(_ws(TAG_COVERAGE_TIMESERIES), params)),
     ]
 
     results = execute_queries_parallel(queries)

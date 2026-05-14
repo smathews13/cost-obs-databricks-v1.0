@@ -12,6 +12,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
 from server.db import execute_query, execute_queries_parallel, get_workspace_client
+from server import workspace_filter as wf
 from server.email_service import send_alert_email
 
 logger = logging.getLogger(__name__)
@@ -428,6 +429,7 @@ class UserAlertConfig(BaseModel):
 async def get_users_groups_bundle(
     start_date: str = Query(default=None),
     end_date: str = Query(default=None),
+    workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Get all user/group spend data in a single parallel request."""
     if not end_date:
@@ -436,6 +438,11 @@ async def get_users_groups_bundle(
         start_date = (date.today() - timedelta(days=30)).isoformat()
 
     params = {"start_date": start_date, "end_date": end_date}
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
+
+    def _ws(sql: str) -> str:
+        return wf.inject_ws_filter(sql, ws_clause)
 
     # Compute mid-point for spend growth comparison
     from datetime import datetime as _dt
@@ -450,13 +457,13 @@ async def get_users_groups_bundle(
     }
 
     queries = [
-        ("summary", lambda: execute_query(USERS_SUMMARY, params)),
-        ("top_users", lambda: execute_query(USERS_TOP_SPEND, params)),
-        ("product_breakdown", lambda: execute_query(USERS_PRODUCT_BREAKDOWN, params)),
-        ("timeseries", lambda: execute_query(USERS_TIMESERIES, params)),
-        ("by_workspace", lambda: execute_query(USERS_BY_WORKSPACE, params)),
-        ("spend_growth", lambda: execute_query(USERS_SPEND_GROWTH, growth_params)),
-        ("user_growth", lambda: execute_query(USERS_GROWTH, growth_date_params)),
+        ("summary", lambda: execute_query(_ws(USERS_SUMMARY), params)),
+        ("top_users", lambda: execute_query(_ws(USERS_TOP_SPEND), params)),
+        ("product_breakdown", lambda: execute_query(_ws(USERS_PRODUCT_BREAKDOWN), params)),
+        ("timeseries", lambda: execute_query(_ws(USERS_TIMESERIES), params)),
+        ("by_workspace", lambda: execute_query(_ws(USERS_BY_WORKSPACE), params)),
+        ("spend_growth", lambda: execute_query(_ws(USERS_SPEND_GROWTH), growth_params)),
+        ("user_growth", lambda: execute_query(_ws(USERS_GROWTH), growth_date_params)),
     ]
     results = execute_queries_parallel(queries)
 

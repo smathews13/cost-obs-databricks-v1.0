@@ -17,6 +17,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
 from server.db import execute_query, execute_queries_parallel, get_workspace_client
+from server import workspace_filter as wf
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -567,12 +568,18 @@ async def get_apps_dashboard_bundle(
     start_date: str = Query(default=None),
     end_date: str = Query(default=None),
     active_only: bool = Query(default=False, description="Show only apps active in last 7 days"),
+    workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Get all Apps dashboard data in a single request."""
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
+
+    def _ws(sql: str) -> str:
+        return wf.inject_ws_filter(sql, ws_clause)
 
     # Fetch app registry (UUID → name) — needed to filter queries to registered apps
     registry = _get_app_registry()
@@ -593,17 +600,18 @@ async def get_apps_dashboard_bundle(
       AND u.usage_quantity > 0
       AND u.billing_origin_product = 'APPS'
       {app_filter}
+      {ws_clause}
     GROUP BY u.usage_date
     ORDER BY u.usage_date
     """
 
     queries = [
-        ("summary", lambda: execute_query(APPS_SUMMARY, params)),
-        ("apps", lambda: execute_query(APPS_BY_APP_FULL, params)),
+        ("summary", lambda: execute_query(_ws(APPS_SUMMARY), params)),
+        ("apps", lambda: execute_query(_ws(APPS_BY_APP_FULL), params)),
         ("timeseries", lambda: execute_query(filtered_timeseries, params)),
-        ("sku_breakdown", lambda: execute_query(APPS_BY_APP_SKU, params)),
+        ("sku_breakdown", lambda: execute_query(_ws(APPS_BY_APP_SKU), params)),
         ("workspaces", lambda: _query_app_workspaces(params)),
-        ("service_principals", lambda: execute_query(APPS_SERVICE_PRINCIPALS, params)),
+        ("service_principals", lambda: execute_query(_ws(APPS_SERVICE_PRINCIPALS), params)),
     ]
 
     results = execute_queries_parallel(queries)

@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from server.db import execute_query, execute_queries_parallel
+from server import workspace_filter as wf
 
 
 def query_with_fallback(enriched_sql: str, fallback_sql: str, query_params: dict, label: str = "query") -> list[dict[str, Any]]:
@@ -858,22 +859,28 @@ async def get_aiml_sku_catalog(
 async def get_aiml_dashboard_bundle(
     start_date: str = Query(default=None),
     end_date: str = Query(default=None),
+    workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Get all AI/ML dashboard data in a single request."""
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
+
+    def _ws(sql: str) -> str:
+        return wf.inject_ws_filter(sql, ws_clause)
 
     queries = [
-        ("summary", lambda: execute_query(AIML_SUMMARY, params)),
-        ("providers", lambda: execute_query(FMAPI_PROVIDER_COSTS, params)),
-        ("endpoints", lambda: execute_query(SERVERLESS_INFERENCE_BY_ENDPOINT, params)),
-        ("categories", lambda: execute_query(AIML_BY_CATEGORY, params)),
-        ("timeseries", lambda: execute_query(AIML_TIMESERIES, params)),
-        ("models", lambda: execute_query(AIML_TOP_MODELS_AND_FEATURE_STORES, params)),
-        ("ml_clusters", lambda: query_with_fallback(AIML_ML_RUNTIME_CLUSTERS_ENRICHED, AIML_ML_RUNTIME_CLUSTERS_FALLBACK, params, label="ml_clusters")),
-        ("agent_bricks", lambda: query_with_fallback(AIML_AGENT_BRICKS_ENRICHED, AIML_AGENT_BRICKS_FALLBACK, params, label="agent_bricks")),
+        ("summary", lambda: execute_query(_ws(AIML_SUMMARY), params)),
+        ("providers", lambda: execute_query(_ws(FMAPI_PROVIDER_COSTS), params)),
+        ("endpoints", lambda: execute_query(_ws(SERVERLESS_INFERENCE_BY_ENDPOINT), params)),
+        ("categories", lambda: execute_query(_ws(AIML_BY_CATEGORY), params)),
+        ("timeseries", lambda: execute_query(_ws(AIML_TIMESERIES), params)),
+        ("models", lambda: execute_query(_ws(AIML_TOP_MODELS_AND_FEATURE_STORES), params)),
+        ("ml_clusters", lambda: query_with_fallback(_ws(AIML_ML_RUNTIME_CLUSTERS_ENRICHED), _ws(AIML_ML_RUNTIME_CLUSTERS_FALLBACK), params, label="ml_clusters")),
+        ("agent_bricks", lambda: query_with_fallback(_ws(AIML_AGENT_BRICKS_ENRICHED), _ws(AIML_AGENT_BRICKS_FALLBACK), params, label="agent_bricks")),
     ]
 
     results = execute_queries_parallel(queries)

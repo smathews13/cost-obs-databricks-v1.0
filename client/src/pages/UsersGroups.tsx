@@ -221,11 +221,12 @@ interface Props {
   endDate: string;
   dateRange: DateRange;
   anonymizeUsers?: boolean;
+  workspaceIds?: string[];
 }
 
 const PAGE_SIZE = 10;
 
-export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUsers = false }: Props) {
+export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUsers = false, workspaceIds }: Props) {
   const [selectedUser, setSelectedUser] = useState<UserSpend | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"spend" | "dbus" | "days">("spend");
@@ -264,7 +265,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const { data, isLoading } = useUsersGroupsBundle(dateRange);
+  const { data, isLoading } = useUsersGroupsBundle(dateRange, workspaceIds);
 
   const summary = data?.summary;
   const topUsers = data?.top_users ?? [];

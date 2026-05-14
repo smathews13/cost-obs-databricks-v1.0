@@ -379,25 +379,27 @@ function Dashboard() {
   const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, isDbuTab);
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, isDbuTab);
   // Infra tab data - single bundled request (clusters + families + timeseries in parallel)
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, true);
+  const _wsIds = selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined;
+
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, true);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
   // KPIs + anomalies - single bundled request (KPIs + anomalies in parallel)
-  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, isDbuTab || isKpisTab);
+  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, _wsIds, isDbuTab || isKpisTab);
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;
   const kpisLoading = kpisBundleLoading;
 
   // AI/ML tab data - prefetch for fast tab switching
-  const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, true);
+  const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, _wsIds, true);
 
   // Apps tab data
-  const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, true);
+  const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, _wsIds, true);
 
   // Tagging tab data - prefetch for fast tab switching
-  const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, true);
+  const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, _wsIds, true);
 
   // Cloud actual costs — fetch all clouds; CloudCostsView shows tabs when multiple have data
   const { data: awsActualData, isLoading: awsActualLoading } = useAWSActualCosts(dateRange, activeTab === "infra");
@@ -408,7 +410,7 @@ function Dashboard() {
   const { data: dbsqlData, isLoading: dbsqlLoading } = useDBSQLQueryCosts(dateRange, true);
 
   // Users & Groups tab data - prefetch for fast tab switching
-  const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, true);
+  const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, true);
 
   // Use Cases tab data - only fetch when feature is enabled
   const useCasesEnabled = appSettings.enableUseCaseTracking;
@@ -1095,6 +1097,7 @@ function Dashboard() {
             endDate={dateRange.endDate}
             dateRange={dateRange}
             anonymizeUsers={appSettings.anonymizeUsers}
+            workspaceIds={_wsIds}
           />
           </TabErrorBoundary>
         ) : activeTab === "contract" ? (

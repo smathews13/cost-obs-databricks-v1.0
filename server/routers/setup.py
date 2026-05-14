@@ -986,13 +986,16 @@ async def list_workspaces() -> dict:
             LEFT JOIN system.access.workspaces_latest ws ON u.workspace_id = ws.workspace_id
             WHERE u.usage_date >= CURRENT_DATE - 90
               AND u.usage_quantity > 0
+              AND u.workspace_id IS NOT NULL
             GROUP BY u.workspace_id, ws.workspace_name
+            HAVING workspace_id IS NOT NULL AND workspace_id != ''
             ORDER BY total_dbus DESC
         """)
         return {
             "workspaces": [
                 {"id": r["workspace_id"], "name": r["workspace_name"]}
-                for r in rows
+                for r in (rows or [])
+                if r.get("workspace_id")
             ]
         }
     except Exception as e:
@@ -1004,10 +1007,11 @@ async def list_workspaces() -> dict:
 async def get_workspace_filter() -> dict:
     """Return the current workspace filter configuration from settings file."""
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
+    import re as _re
     try:
         with open(settings_path) as f:
             data = json.load(f)
-        workspace_ids = [str(i) for i in data.get("workspace_ids", []) if str(i).lstrip("-").isdigit()]
+        workspace_ids = [str(i) for i in data.get("workspace_ids", []) if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
     except (FileNotFoundError, json.JSONDecodeError):
         workspace_ids = []
     return {"workspace_ids": workspace_ids}
@@ -1016,10 +1020,10 @@ async def get_workspace_filter() -> dict:
 @router.post("/save-workspace-filter")
 async def save_workspace_filter(request: Request) -> dict:
     """Persist selected workspace IDs to .settings/workspace_filter.json."""
-    from server import workspace_filter as wf
+    import re as _re
     body = await request.json()
     raw_ids: list = body.get("workspace_ids", [])
-    valid_ids = [str(i) for i in raw_ids if wf._is_safe_id(str(i))]
+    valid_ids = [str(i) for i in raw_ids if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
 
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
     try:
@@ -1029,8 +1033,6 @@ async def save_workspace_filter(request: Request) -> dict:
         logger.info("Workspace filter saved: %s", valid_ids)
     except Exception as e:
         logger.warning("save-workspace-filter: could not write settings: %s", e)
-
-    wf.clear_cache()
 
     env_val = ",".join(valid_ids)
     return {

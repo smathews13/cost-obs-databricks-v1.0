@@ -71,6 +71,13 @@ function buildUrl(endpoint: string, dateRange?: DateRange): string {
   return queryString ? `${endpoint}?${queryString}` : endpoint;
 }
 
+function buildUrlWithWs(endpoint: string, dateRange?: DateRange, workspaceIds?: string[]): string {
+  const base = buildUrl(endpoint, dateRange);
+  const wsKey = workspaceIds?.length ? workspaceIds.join(",") : null;
+  if (!wsKey) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}workspace_ids=${encodeURIComponent(wsKey)}`;
+}
+
 export function useBillingSummary(dateRange?: DateRange) {
   return useQuery<BillingSummary>({
     queryKey: ["billing", "summary", dateRange],
@@ -253,10 +260,10 @@ export interface UsersGroupsBundle {
   end_date: string;
 }
 
-export function useUsersGroupsBundle(dateRange?: DateRange, enabled: boolean = true) {
+export function useUsersGroupsBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<UsersGroupsBundle>({
-    queryKey: ["users-groups", "bundle", dateRange],
-    queryFn: () => fetchJson(buildUrl("/api/users-groups/bundle", dateRange)),
+    queryKey: ["users-groups", "bundle", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/users-groups/bundle", dateRange, workspaceIds)),
     staleTime: STALE_TIME,
     enabled,
   });
@@ -347,11 +354,10 @@ export function useDashboardBundleFast(dateRange?: DateRange, workspaceIds?: str
  * @param dateRange - Date range for the query
  * @param enabled - Whether to enable the query (set false when tab not active)
  */
-export function useAIMLDashboardBundle(dateRange?: DateRange, enabled: boolean = true) {
+export function useAIMLDashboardBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<AIMLDashboardBundle>({
-    queryKey: ["aiml", "dashboard-bundle", dateRange],
-    queryFn: () =>
-      fetchJson(buildUrl("/api/aiml/dashboard-bundle", dateRange)),
+    queryKey: ["aiml", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/aiml/dashboard-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
   });
@@ -362,10 +368,10 @@ export function useAIMLDashboardBundle(dateRange?: DateRange, enabled: boolean =
  * @param dateRange - Date range for the query
  * @param enabled - Whether to enable the query (set false when tab not active)
  */
-export function useAppsDashboardBundle(dateRange?: DateRange, enabled: boolean = true) {
+export function useAppsDashboardBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<AppsDashboardBundle>({
-    queryKey: ["apps", "dashboard-bundle", dateRange],
-    queryFn: () => fetchJson(buildUrl("/api/apps/dashboard-bundle", dateRange)),
+    queryKey: ["apps", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/apps/dashboard-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
   });
@@ -376,11 +382,10 @@ export function useAppsDashboardBundle(dateRange?: DateRange, enabled: boolean =
  * @param dateRange - Date range for the query
  * @param enabled - Whether to enable the query (set false when tab not active)
  */
-export function useTaggingDashboardBundle(dateRange?: DateRange, enabled: boolean = true) {
+export function useTaggingDashboardBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<TaggingDashboardBundle>({
-    queryKey: ["tagging", "dashboard-bundle", dateRange],
-    queryFn: () =>
-      fetchJson(buildUrl("/api/tagging/dashboard-bundle", dateRange)),
+    queryKey: ["tagging", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/tagging/dashboard-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
   });
@@ -440,10 +445,10 @@ export function useDBSQLQueryCosts(dateRange?: DateRange, enabled: boolean = tru
  * Bundled infrastructure costs - fetches clusters, instance families, and timeseries
  * in a single request with server-side parallel execution.
  */
-export function useInfraBundle(dateRange?: DateRange, enabled: boolean = true) {
+export function useInfraBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<InfraBundleResponse>({
-    queryKey: ["billing", "infra-bundle", dateRange],
-    queryFn: () => fetchJson(buildUrl("/api/billing/infra-bundle", dateRange)),
+    queryKey: ["billing", "infra-bundle", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/billing/infra-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
   });
@@ -453,10 +458,10 @@ export function useInfraBundle(dateRange?: DateRange, enabled: boolean = true) {
  * Bundled KPIs - fetches platform KPIs and spend anomalies
  * in a single request with server-side parallel execution.
  */
-export function useKPIsBundle(dateRange?: DateRange, enabled: boolean = true) {
+export function useKPIsBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<KPIsBundleResponse>({
-    queryKey: ["billing", "kpis-bundle", dateRange],
-    queryFn: () => fetchJson(buildUrl("/api/billing/kpis-bundle", dateRange)),
+    queryKey: ["billing", "kpis-bundle", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/billing/kpis-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
   });

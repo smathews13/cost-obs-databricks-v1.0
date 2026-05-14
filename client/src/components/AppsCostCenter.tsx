@@ -312,7 +312,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const [artifactPage, setArtifactPage] = useState(1);
   const artifactsPerPage = 10;
 
-  const { data: freshData, isLoading: freshLoading } = useAppsDashboardBundle(dateRange, true);
+  const { data: freshData, isLoading: freshLoading } = useAppsDashboardBundle(dateRange, undefined, true);
 
   const data = freshData ?? initialData;
   const isLoading = freshLoading || initialLoading;

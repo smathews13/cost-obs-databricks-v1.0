@@ -1110,6 +1110,11 @@ function Dashboard() {
         onClose={() => setShowSettings(false)}
         tabVisibility={tabVisibility}
         appSettings={appSettings}
+        onWsPoolSaved={() => {
+          setAllWorkspaces([]);
+          setSelectedWorkspaceIds([]);
+          rqClient.invalidateQueries({ queryKey: ["billing", "dashboard-bundle-fast"] });
+        }}
         onTabVisibilityChange={(v) => {
           setTabVisibility(v);
           // If the active tab was hidden, switch to the first visible tab.

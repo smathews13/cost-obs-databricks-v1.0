@@ -32,8 +32,10 @@ interface SettingsConfigProps {
   setPendingWarehouseSwitch: (v: { id: string; name: string; state: string } | null) => void;
   switchWarehouseMutation: UseMutationResult<any, Error, string, unknown>;
   saveStatus: string | null;
+  setSaveStatus: (status: string | null) => void;
   localSettings: AppSettings;
   updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
+  onWsPoolSaved?: () => void;
 }
 
 export function SettingsConfig({
@@ -45,8 +47,10 @@ export function SettingsConfig({
   setPendingWarehouseSwitch,
   switchWarehouseMutation,
   saveStatus,
+  setSaveStatus,
   localSettings,
   updateSetting,
+  onWsPoolSaved,
 }: SettingsConfigProps) {
   const [mvRefreshing, setMvRefreshing] = useState(false);
   const [lookbackDays, setLookbackDays] = useState(180);
@@ -195,6 +199,9 @@ export function SettingsConfig({
         setWsPoolSaveStatus("Saved");
         setWsPoolEditing(false);
         refetchWsFilter();
+        setSaveStatus("Workspace filter pool updated — dashboard will refresh");
+        setTimeout(() => setSaveStatus(null), 4000);
+        onWsPoolSaved?.();
       } else {
         setWsPoolSaveStatus("Save failed");
       }

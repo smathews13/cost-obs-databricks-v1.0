@@ -122,6 +122,50 @@ def restore_auth_mode_from_delta() -> None:
         logger.warning(f"Could not restore auth mode from Delta table (non-fatal): {e}")
 
 
+# ── Workspace filter pool (survives deploys via Delta) ────────────────────────
+
+def _ensure_workspace_filter_table() -> None:
+    _ensure_config_table(
+        f"CREATE TABLE IF NOT EXISTS {_config_table('app_workspace_filter')} "
+        f"(workspace_ids_json STRING, updated_at TIMESTAMP) USING DELTA"
+    )
+
+
+def save_workspace_filter_to_table(workspace_ids: list) -> None:
+    """Persist workspace filter pool to the app Delta config table."""
+    import json as _json
+    from server.db import execute_write
+    _ensure_workspace_filter_table()
+    table = _config_table("app_workspace_filter")
+    execute_write(f"DELETE FROM {table}", None)
+    execute_write(
+        f"INSERT INTO {table} (workspace_ids_json, updated_at) "
+        f"VALUES (:ws_json, current_timestamp())",
+        {"ws_json": _json.dumps(workspace_ids)},
+    )
+    logger.info("Workspace filter pool saved to Delta: %d ids", len(workspace_ids))
+
+
+def restore_workspace_filter_from_delta() -> None:
+    """Read saved workspace filter pool from Delta and write to .settings file. Called at startup."""
+    import json as _json
+    try:
+        from server.db import execute_query
+        table = _config_table("app_workspace_filter")
+        rows = execute_query(f"SELECT workspace_ids_json FROM {table} LIMIT 1", None, no_cache=True)
+        if not rows or not rows[0].get("workspace_ids_json"):
+            return
+        workspace_ids = _json.loads(rows[0]["workspace_ids_json"])
+        settings_dir = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
+        settings_path = os.path.join(settings_dir, "workspace_filter.json")
+        os.makedirs(settings_dir, exist_ok=True)
+        with open(settings_path, "w") as f:
+            _json.dump({"workspace_ids": workspace_ids}, f)
+        logger.info("Restored workspace filter pool from Delta: %d ids", len(workspace_ids))
+    except Exception as e:
+        logger.warning(f"Could not restore workspace filter from Delta (non-fatal): {e}")
+
+
 class CloudConnectionCreate(BaseModel):
     name: str
     provider: str  # "azure", "aws", "gcp"

@@ -1005,7 +1005,7 @@ async def list_workspaces() -> dict:
 
 @router.get("/workspace-filter")
 async def get_workspace_filter() -> dict:
-    """Return the current workspace filter configuration from settings file."""
+    """Return the current workspace filter configuration from settings file (Delta fallback)."""
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
     import re as _re
     try:
@@ -1014,6 +1014,15 @@ async def get_workspace_filter() -> dict:
         workspace_ids = [str(i) for i in data.get("workspace_ids", []) if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
     except (FileNotFoundError, json.JSONDecodeError):
         workspace_ids = []
+        # File missing (fresh deploy) — try Delta table as fallback
+        try:
+            from server.routers.settings import restore_workspace_filter_from_delta
+            restore_workspace_filter_from_delta()
+            with open(settings_path) as f:
+                data = json.load(f)
+            workspace_ids = [str(i) for i in data.get("workspace_ids", []) if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
+        except Exception:
+            pass
     return {"workspace_ids": workspace_ids}
 
 
@@ -1035,16 +1044,14 @@ async def save_workspace_filter(request: Request) -> dict:
         logger.error("save-workspace-filter: could not write %s: %s", settings_path, e)
         raise HTTPException(status_code=500, detail=f"Failed to persist workspace filter: {e}")
 
-    env_val = ",".join(valid_ids)
-    return {
-        "saved": valid_ids,
-        "env_var": "COST_OBS_WORKSPACES",
-        "env_var_value": env_val,
-        "instruction": (
-            f"To make this permanent across redeploys, add "
-            f"COST_OBS_WORKSPACES={env_val} to your app environment variables."
-        ),
-    }
+    # Also persist to Delta so the pool survives redeploys
+    try:
+        from server.routers.settings import save_workspace_filter_to_table
+        save_workspace_filter_to_table(valid_ids)
+    except Exception as e:
+        logger.warning("save-workspace-filter: Delta write failed (non-fatal): %s", e)
+
+    return {"saved": valid_ids}
 
 
 @router.delete("/drop-materialized-views")

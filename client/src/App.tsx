@@ -384,7 +384,7 @@ function Dashboard() {
   const hasWsFilter = !!_wsIds;
 
   // DBU tab data - only load when tab is active
-  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, isDbuTab || activeTab === "sql");
+  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, isDbuTab);
   const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, isDbuTab);
   const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, isDbuTab);
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, isDbuTab);
@@ -416,7 +416,7 @@ function Dashboard() {
   const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, isInfraTab);
 
   // DBSQL/SQL Warehousing tab data
-  const { data: dbsqlData, isLoading: dbsqlLoading } = useDBSQLQueryCosts(dateRange, !hasWsFilter || activeTab === "sql");
+  const { data: dbsqlData, isLoading: dbsqlLoading } = useDBSQLQueryCosts(dateRange, _wsIds, !hasWsFilter || activeTab === "sql");
 
   // Users & Groups tab data
   const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, !hasWsFilter || isUsersTab);

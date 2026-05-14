@@ -431,11 +431,11 @@ export function useGCPActualCosts(dateRange?: DateRange, enabled: boolean = true
  * @param dateRange - Date range for the query
  * @param enabled - Whether to enable the query (set false when tab not active)
  */
-export function useDBSQLQueryCosts(dateRange?: DateRange, enabled: boolean = true) {
+export function useDBSQLQueryCosts(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<DBSQLDashboardBundle>({
-    queryKey: ["dbsql", "dashboard-bundle", dateRange],
+    queryKey: ["dbsql", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
     queryFn: () =>
-      fetchJson(buildUrl("/api/dbsql/dashboard-bundle", dateRange)),
+      fetchJson(buildUrlWithWs("/api/dbsql/dashboard-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
   });

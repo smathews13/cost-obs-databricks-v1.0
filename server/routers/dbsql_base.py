@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from server.db import execute_query, get_catalog_schema, get_host_url
+from server import workspace_filter as wf
 
 logger = logging.getLogger(__name__)
 
@@ -161,10 +162,21 @@ def create_dbsql_router(table_name: str) -> APIRouter:
     router = APIRouter()
     sql = _build_queries(table_name)
 
-    def _exec(query_key: str, params: dict, catalog: str, schema: str) -> list[dict]:
+    def _exec(query_key: str, params: dict, catalog: str, schema: str, ws_clause: str = "") -> list[dict]:
         """Execute a dbsql query against Delta."""
         template = sql[query_key]
-        return execute_query(template.format(catalog=catalog, schema=schema), params)
+        query = template.format(catalog=catalog, schema=schema)
+        if ws_clause:
+            query = query.replace(
+                "AND start_time < :end_date",
+                f"AND start_time < :end_date\n              {ws_clause}",
+                1,
+            )
+        return execute_query(query, params)
+
+    def _ws_clause(workspace_ids: str | None) -> str:
+        id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+        return wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
 
     async def check_mv_status() -> dict[str, Any]:
         catalog, schema = get_catalog_schema()
@@ -208,6 +220,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
     async def get_summary(
         start_date: str = Query(default=None),
         end_date: str = Query(default=None),
+        workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
         catalog, schema = get_catalog_schema()
         start_date, end_date = _default_dates(start_date, end_date)
@@ -221,7 +234,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
                 "end_date": end_date,
             }
 
-        results = _exec("summary", {"start_date": start_date, "end_date": end_date}, catalog, schema)
+        results = _exec("summary", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         data_range = status.get("data_range", {})
 
@@ -254,6 +267,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
     async def get_by_source(
         start_date: str = Query(default=None),
         end_date: str = Query(default=None),
+        workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
         catalog, schema = get_catalog_schema()
         start_date, end_date = _default_dates(start_date, end_date)
@@ -262,7 +276,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "sources": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("by_source", {"start_date": start_date, "end_date": end_date}, catalog, schema)
+        results = _exec("by_source", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         sources = []
         total_spend = 0
@@ -286,6 +300,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
     async def get_by_user(
         start_date: str = Query(default=None),
         end_date: str = Query(default=None),
+        workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
         catalog, schema = get_catalog_schema()
         start_date, end_date = _default_dates(start_date, end_date)
@@ -294,7 +309,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "users": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("by_user", {"start_date": start_date, "end_date": end_date}, catalog, schema)
+        results = _exec("by_user", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         users = []
         for row in results:
@@ -312,6 +327,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
     async def get_by_warehouse(
         start_date: str = Query(default=None),
         end_date: str = Query(default=None),
+        workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
         catalog, schema = get_catalog_schema()
         start_date, end_date = _default_dates(start_date, end_date)
@@ -320,7 +336,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "warehouses": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("by_warehouse", {"start_date": start_date, "end_date": end_date}, catalog, schema)
+        results = _exec("by_warehouse", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         # Look up warehouse names and types from system.compute.warehouses
         warehouse_meta: dict[str, dict[str, str]] = {}
@@ -377,6 +393,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         start_date: str = Query(default=None),
         end_date: str = Query(default=None),
         limit: int = Query(default=50, le=100),
+        workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
         catalog, schema = get_catalog_schema()
         start_date, end_date = _default_dates(start_date, end_date)
@@ -385,7 +402,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "queries": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("top_queries", {"start_date": start_date, "end_date": end_date, "limit": limit}, catalog, schema)
+        results = _exec("top_queries", {"start_date": start_date, "end_date": end_date, "limit": limit}, catalog, schema, _ws_clause(workspace_ids))
 
         host = get_host_url()
         queries = []
@@ -472,6 +489,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
     async def get_timeseries(
         start_date: str = Query(default=None),
         end_date: str = Query(default=None),
+        workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
         catalog, schema = get_catalog_schema()
         start_date, end_date = _default_dates(start_date, end_date)
@@ -480,7 +498,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "timeseries": [], "source_types": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("timeseries", {"start_date": start_date, "end_date": end_date}, catalog, schema)
+        results = _exec("timeseries", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         data_by_date: dict[str, dict[str, Any]] = {}
         source_types_set: set[str] = set()
@@ -569,6 +587,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
     async def get_dashboard_bundle(
         start_date: str = Query(default=None),
         end_date: str = Query(default=None),
+        workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
         start_date, end_date = _default_dates(start_date, end_date)
 
@@ -582,12 +601,12 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             }
 
         summary, by_source, by_user, by_warehouse, top_queries, timeseries, wh_type_ts = await asyncio.gather(
-            get_summary(start_date, end_date),
-            get_by_source(start_date, end_date),
-            get_by_user(start_date, end_date),
-            get_by_warehouse(start_date, end_date),
-            get_top_queries(start_date, end_date, limit=25),
-            get_timeseries(start_date, end_date),
+            get_summary(start_date, end_date, workspace_ids),
+            get_by_source(start_date, end_date, workspace_ids),
+            get_by_user(start_date, end_date, workspace_ids),
+            get_by_warehouse(start_date, end_date, workspace_ids),
+            get_top_queries(start_date, end_date, 25, workspace_ids),
+            get_timeseries(start_date, end_date, workspace_ids),
             get_warehouse_type_timeseries(start_date, end_date),
         )
 

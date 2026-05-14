@@ -156,9 +156,6 @@ function Dashboard() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>([]);
-  // Stable workspace list for the filter dropdown — accumulates seen workspaces and never
-  // shrinks, so the filter stays visible even when a selection scopes the bundle to 1 workspace.
-  const [allWorkspaces, setAllWorkspaces] = useState<{ workspace_id: string; workspace_name?: string }[]>([]);
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
   // "pending" = checking, "initializing" = auto-creating MVs, true = wizard, false = dashboard
   const [showSetupWizard, setShowSetupWizard] = useState<boolean | "pending" | "initializing">(
@@ -372,24 +369,6 @@ function Dashboard() {
     };
   }, [bundle?.timeseries, pricingMultiplier, applyPricing]);
 
-  // Accumulate known workspaces so the filter dropdown stays stable when a selection
-  // scopes the bundle response down to fewer workspaces.
-  useEffect(() => {
-    const ws = workspaces?.workspaces;
-    if (!ws?.length) return;
-    setAllWorkspaces((prev) => {
-      const map = new Map(prev.map((w) => [w.workspace_id, w]));
-      let changed = false;
-      for (const w of ws) {
-        if (!map.has(w.workspace_id)) {
-          map.set(w.workspace_id, { workspace_id: w.workspace_id, workspace_name: w.workspace_name ?? undefined });
-          changed = true;
-        }
-      }
-      return changed ? [...map.values()] : prev;
-    });
-  }, [workspaces?.workspaces]);
-
   // Load detailed breakdowns only when needed (lazy loading by tab)
   const isDbuTab = activeTab === "dbu";
   const isKpisTab = activeTab === "kpis";
@@ -441,6 +420,14 @@ function Dashboard() {
   // Alerts tab data - prefetch immediately on app load for fast tab switching
   const { data: alertsData } = useQuery({ queryKey: ["alerts", "recent", 30], queryFn: async () => { const r = await fetch("/api/alerts/recent?days_back=30"); if (!r.ok) throw new Error("Failed"); return r.json(); } });
   useQuery({ queryKey: ["alerts", "databricks"], queryFn: async () => { const r = await fetch("/api/alerts/databricks-alerts"); if (!r.ok) throw new Error("Failed"); return r.json(); } });
+
+  // Workspace list for the filter dropdown — pool-scoped, independent of the bundle.
+  const { data: wsListData } = useQuery<{ workspaces: { id: string; name: string }[] }>({
+    queryKey: ["billing", "workspaces"],
+    queryFn: () => fetch("/api/billing/workspaces").then(r => r.json()),
+    staleTime: 5 * 60 * 1000,
+  });
+  const wsFilterList = (wsListData?.workspaces ?? []).map(w => ({ workspace_id: w.id, workspace_name: w.name }));
 
   // Settings data - prefetch in background so permissions/config tabs load instantly
   useQuery({ queryKey: ["user-permissions"], queryFn: async () => { const r = await fetch("/api/settings/user-permissions"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
@@ -677,7 +664,7 @@ function Dashboard() {
             <div className="flex justify-center items-center gap-3">
               <DateRangePicker value={dateRange} onChange={setDateRange} />
               <WorkspaceFilter
-                workspaces={allWorkspaces}
+                workspaces={wsFilterList}
                 selectedIds={selectedWorkspaceIds}
                 onChange={setSelectedWorkspaceIds}
               />
@@ -1111,9 +1098,8 @@ function Dashboard() {
         tabVisibility={tabVisibility}
         appSettings={appSettings}
         onWsPoolSaved={() => {
-          setAllWorkspaces([]);
           setSelectedWorkspaceIds([]);
-          rqClient.invalidateQueries({ queryKey: ["billing", "dashboard-bundle-fast"] });
+          rqClient.invalidateQueries({ queryKey: ["billing", "workspaces"] });
         }}
         onTabVisibilityChange={(v) => {
           setTabVisibility(v);

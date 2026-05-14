@@ -24,6 +24,7 @@ interface AppsCostCenterProps {
   endDate?: string;
   dateRange?: DateRange;
   enableHostingComparison?: boolean;
+  workspaceIds?: string[];
   workspaceNameMap?: Record<string, string>;
 }
 
@@ -289,7 +290,7 @@ function AppHostingComparison({
   );
 }
 
-export function AppsCostCenter({ data: initialData, isLoading: initialLoading, host, startDate, endDate, dateRange, enableHostingComparison, workspaceNameMap }: AppsCostCenterProps) {
+export function AppsCostCenter({ data: initialData, isLoading: initialLoading, host, startDate, endDate, dateRange, enableHostingComparison, workspaceIds, workspaceNameMap }: AppsCostCenterProps) {
   const MINIMIZE_KEY = "cost-obs-minimize-apps-info";
 
   const [infoMinimized, setInfoMinimized] = useState(() => {
@@ -312,7 +313,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const [artifactPage, setArtifactPage] = useState(1);
   const artifactsPerPage = 10;
 
-  const { data: freshData, isLoading: freshLoading } = useAppsDashboardBundle(dateRange, undefined, true);
+  const { data: freshData, isLoading: freshLoading } = useAppsDashboardBundle(dateRange, workspaceIds, true);
 
   const data = freshData ?? initialData;
   const isLoading = freshLoading || initialLoading;

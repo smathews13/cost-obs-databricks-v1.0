@@ -369,48 +369,57 @@ function Dashboard() {
     };
   }, [bundle?.timeseries, pricingMultiplier, applyPricing]);
 
-  // Load detailed breakdowns only when needed (lazy loading by tab)
+  // Active tab flags — drive lazy loading when a workspace filter is active
   const isDbuTab = activeTab === "dbu";
   const isKpisTab = activeTab === "kpis";
+  const isInfraTab = activeTab === "infra";
+  const isAimlTab = activeTab === "aiml";
+  const isAppsTab = activeTab === "apps";
+  const isTaggingTab = activeTab === "tagging";
+  const isUsersTab = activeTab === "users-groups";
+
+  // Workspace filter — when active, only the current tab's bundle fires immediately;
+  // other tabs fetch on demand when navigated to. Without a filter, all preload eagerly.
+  const _wsIds = selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined;
+  const hasWsFilter = !!_wsIds;
 
   // DBU tab data - only load when tab is active
   const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, isDbuTab);
   const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, isDbuTab);
   const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, isDbuTab);
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, isDbuTab);
-  // Infra tab data - single bundled request (clusters + families + timeseries in parallel)
-  const _wsIds = selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined;
 
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, true);
+  // Infra tab data
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, !hasWsFilter || isInfraTab);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
-  // KPIs + anomalies - single bundled request (KPIs + anomalies in parallel)
-  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, _wsIds, isDbuTab || isKpisTab);
+  // KPIs + anomalies
+  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, _wsIds, !hasWsFilter || isDbuTab || isKpisTab);
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;
   const kpisLoading = kpisBundleLoading;
 
-  // AI/ML tab data - prefetch for fast tab switching
-  const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, _wsIds, true);
+  // AI/ML tab data
+  const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, _wsIds, !hasWsFilter || isAimlTab);
 
   // Apps tab data
-  const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, _wsIds, true);
+  const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, _wsIds, !hasWsFilter || isAppsTab);
 
-  // Tagging tab data - prefetch for fast tab switching
-  const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, _wsIds, true);
+  // Tagging tab data
+  const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, _wsIds, !hasWsFilter || isTaggingTab);
 
-  // Cloud actual costs — fetch all clouds; CloudCostsView shows tabs when multiple have data
-  const { data: awsActualData, isLoading: awsActualLoading } = useAWSActualCosts(dateRange, activeTab === "infra");
-  const { data: azureActualData, isLoading: azureActualLoading } = useAzureActualCosts(dateRange, activeTab === "infra");
-  const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, activeTab === "infra");
+  // Cloud actual costs — fetch only when on infra tab (cloud provider data doesn't support ws filter)
+  const { data: awsActualData, isLoading: awsActualLoading } = useAWSActualCosts(dateRange, isInfraTab);
+  const { data: azureActualData, isLoading: azureActualLoading } = useAzureActualCosts(dateRange, isInfraTab);
+  const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, isInfraTab);
 
-  // DBSQL/SQL Warehousing tab data - prefetch for fast tab switching
-  const { data: dbsqlData, isLoading: dbsqlLoading } = useDBSQLQueryCosts(dateRange, true);
+  // DBSQL/SQL Warehousing tab data
+  const { data: dbsqlData, isLoading: dbsqlLoading } = useDBSQLQueryCosts(dateRange, !hasWsFilter || activeTab === "sql");
 
-  // Users & Groups tab data - prefetch for fast tab switching
-  const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, true);
+  // Users & Groups tab data
+  const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, !hasWsFilter || isUsersTab);
 
   // Use Cases tab data - only fetch when feature is enabled
   const useCasesEnabled = appSettings.enableUseCaseTracking;
@@ -1055,6 +1064,7 @@ function Dashboard() {
             endDate={dateRange.endDate}
             dateRange={dateRange}
             enableHostingComparison={appSettings.enableAppHostingComparison}
+            workspaceIds={_wsIds}
             workspaceNameMap={workspaces?.workspaces?.reduce((m, w) => { m[w.workspace_id] = w.workspace_name || w.workspace_id; return m; }, {} as Record<string, string>)}
           />
           </TabErrorBoundary>

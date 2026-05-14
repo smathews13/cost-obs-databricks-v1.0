@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 
 from server.materialized_views import (
     _MV_TABLES,
@@ -1030,9 +1030,10 @@ async def save_workspace_filter(request: Request) -> dict:
         os.makedirs(SETTINGS_DIR, exist_ok=True)
         with open(settings_path, "w") as f:
             json.dump({"workspace_ids": valid_ids}, f)
-        logger.info("Workspace filter saved: %s", valid_ids)
+        logger.info("Workspace filter saved: %s ids=%s path=%s", len(valid_ids), valid_ids, settings_path)
     except Exception as e:
-        logger.warning("save-workspace-filter: could not write settings: %s", e)
+        logger.error("save-workspace-filter: could not write %s: %s", settings_path, e)
+        raise HTTPException(status_code=500, detail=f"Failed to persist workspace filter: {e}")
 
     env_val = ",".join(valid_ids)
     return {

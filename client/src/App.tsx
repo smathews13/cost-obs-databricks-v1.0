@@ -1130,8 +1130,9 @@ function Dashboard() {
         appSettings={appSettings}
         onWsPoolSaved={() => {
           setSelectedWorkspaceIds([]);
-          // Pool change affects ALL server-side queries (pool is a server-side filter).
-          // Invalidate everything so every tab re-fetches with the new pool applied.
+          // Force-refetch the workspace dropdown immediately so it reflects the new pool.
+          rqClient.refetchQueries({ queryKey: ["billing", "workspaces"] });
+          // Invalidate everything else so every tab re-fetches with the new pool applied.
           rqClient.invalidateQueries();
         }}
         onTabVisibilityChange={(v) => {

@@ -189,12 +189,17 @@ export function SettingsConfig({
 
   const saveWsPool = async () => {
     setWsPoolSaving(true);
+    setWsPoolSaveStatus(null);
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 30_000);
     try {
       const res = await fetch("/api/setup/save-workspace-filter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspace_ids: wsPoolDraft }),
+        signal: controller.signal,
       });
+      clearTimeout(abortTimer);
       if (res.ok) {
         setWsPoolSaveStatus("Saved");
         setWsPoolEditing(false);
@@ -203,11 +208,20 @@ export function SettingsConfig({
         setTimeout(() => setSaveStatus(null), 4000);
         onWsPoolSaved?.();
       } else {
-        setWsPoolSaveStatus("Save failed");
+        let detail = `HTTP ${res.status}`;
+        try { const d = await res.json(); detail = d.detail || detail; } catch { /* ignore */ }
+        setWsPoolSaveStatus(`Save failed: ${detail}`);
+      }
+    } catch (err) {
+      clearTimeout(abortTimer);
+      if (err instanceof Error && err.name === "AbortError") {
+        setWsPoolSaveStatus("Timed out — check server logs");
+      } else {
+        setWsPoolSaveStatus("Save failed — network error");
       }
     } finally {
       setWsPoolSaving(false);
-      setTimeout(() => setWsPoolSaveStatus(null), 3000);
+      setTimeout(() => setWsPoolSaveStatus(null), 5000);
     }
   };
 
@@ -962,23 +976,34 @@ export function SettingsConfig({
                       </label>
                     ))}
                   </div>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-col gap-1.5 pt-1">
                     {wsPoolSaveStatus && (
-                      <span className={`text-[10px] font-medium ${wsPoolSaveStatus === "Saved" ? "text-green-600" : "text-red-500"}`}>{wsPoolSaveStatus}</span>
+                      <span className={`text-[11px] font-medium ${wsPoolSaveStatus === "Saved" ? "text-green-600" : "text-red-600"}`}>
+                        {wsPoolSaveStatus}
+                      </span>
                     )}
-                    <button
-                      onClick={saveWsPool}
-                      disabled={wsPoolSaving}
-                      className="rounded bg-[#FF3621] px-3 py-1 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-50"
-                    >
-                      {wsPoolSaving ? "Saving…" : "Save"}
-                    </button>
-                    <button
-                      onClick={() => { setWsPoolEditing(false); setWsPoolSaveStatus(null); }}
-                      className="rounded px-3 py-1 text-xs text-gray-500 hover:bg-gray-100"
-                    >
-                      Cancel
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={saveWsPool}
+                        disabled={wsPoolSaving}
+                        className="flex items-center gap-1.5 rounded bg-[#FF3621] px-3 py-1 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-60"
+                      >
+                        {wsPoolSaving && (
+                          <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                          </svg>
+                        )}
+                        {wsPoolSaving ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        onClick={() => { setWsPoolEditing(false); setWsPoolSaveStatus(null); }}
+                        disabled={wsPoolSaving}
+                        className="rounded px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

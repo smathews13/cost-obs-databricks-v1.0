@@ -971,7 +971,7 @@ async def get_tagging_dashboard_bundle(
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else []
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     def _ws(sql: str) -> str:

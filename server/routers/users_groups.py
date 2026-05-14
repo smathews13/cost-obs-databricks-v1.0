@@ -438,7 +438,7 @@ async def get_users_groups_bundle(
         start_date = (date.today() - timedelta(days=30)).isoformat()
 
     params = {"start_date": start_date, "end_date": end_date}
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else []
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     def _ws(sql: str) -> str:

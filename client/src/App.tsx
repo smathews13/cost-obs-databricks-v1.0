@@ -596,15 +596,6 @@ function Dashboard() {
                         {accountInfo.account_name}
                       </span>
                     )}
-                    {authStatus && (
-                      <span
-                        title={authStatus.identity === "user_oauth" ? "Queries running as your OAuth token" : authStatus.locked_to_sp ? "Locked to service principal (token failed scope check)" : "Queries running as service principal"}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${authStatus.identity === "user_oauth" ? "bg-green-500/20 text-green-200" : "bg-amber-400/20 text-amber-200"}`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${authStatus.identity === "user_oauth" ? "bg-green-400" : "bg-amber-400"}`} />
-                        {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}
-                      </span>
-                    )}
                     {selectedWorkspaceIds.length > 0 && (
                       <div className="flex items-center gap-1">
                         {selectedWorkspaceIds.length <= 2
@@ -641,6 +632,15 @@ function Dashboard() {
             </div>
             {user && (
               <div className="flex items-center gap-2">
+                {authStatus && (
+                  <span
+                    title={authStatus.identity === "user_oauth" ? "Queries running as your OAuth token" : authStatus.locked_to_sp ? "Locked to service principal (token failed scope check)" : "Queries running as service principal"}
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${authStatus.identity === "user_oauth" ? "bg-green-500/20 text-green-200" : "bg-amber-400/20 text-amber-200"}`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${authStatus.identity === "user_oauth" ? "bg-green-400" : "bg-amber-400"}`} />
+                    {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}
+                  </span>
+                )}
                 <span className="text-sm opacity-90">
                   {user.email}
                 </span>
@@ -1127,7 +1127,9 @@ function Dashboard() {
         appSettings={appSettings}
         onWsPoolSaved={() => {
           setSelectedWorkspaceIds([]);
-          rqClient.invalidateQueries({ queryKey: ["billing", "workspaces"] });
+          // Pool change affects ALL server-side queries (pool is a server-side filter).
+          // Invalidate everything so every tab re-fetches with the new pool applied.
+          rqClient.invalidateQueries();
         }}
         onTabVisibilityChange={(v) => {
           setTabVisibility(v);

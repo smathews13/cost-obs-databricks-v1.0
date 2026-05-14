@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 
 interface Workspace {
-  workspace_id: string;
-  workspace_name?: string;
+  workspace_id: string | null;
+  workspace_name?: string | null;
 }
 
 interface WorkspaceFilterProps {
@@ -23,11 +23,13 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
     }
   }, [isOpen]);
 
-  if (workspaces.length <= 1) return null;
+  const validWorkspaces = workspaces.filter((ws) => ws.workspace_id != null);
+  if (validWorkspaces.length <= 1) return null;
 
   const allSelected = selectedIds.length === 0;
 
-  function toggle(id: string) {
+  function toggle(id: string | null) {
+    if (!id) return;
     if (selectedIds.includes(id)) {
       const next = selectedIds.filter((x) => x !== id);
       onChange(next);
@@ -39,7 +41,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
   function label() {
     if (allSelected) return "All Workspaces";
     if (selectedIds.length === 1) {
-      const ws = workspaces.find((w) => w.workspace_id === selectedIds[0]);
+      const ws = validWorkspaces.find((w) => w.workspace_id === selectedIds[0]);
       return ws?.workspace_name || selectedIds[0];
     }
     return `${selectedIds.length} Workspaces`;
@@ -122,10 +124,10 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
           </div>
           <div className="space-y-1 max-h-60 overflow-y-auto">
             {(() => {
-              const filtered = workspaces.filter((ws) => {
+              const filtered = validWorkspaces.filter((ws) => {
                 if (!search) return true;
                 const q = search.toLowerCase();
-                return (ws.workspace_name || ws.workspace_id).toLowerCase().includes(q);
+                return (ws.workspace_name || ws.workspace_id || "").toLowerCase().includes(q);
               });
               if (filtered.length === 0) {
                 return (
@@ -133,20 +135,21 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
                 );
               }
               return filtered.map((ws) => {
-                const checked = selectedIds.includes(ws.workspace_id);
+                const id = ws.workspace_id!;
+                const checked = selectedIds.includes(id);
                 return (
                   <label
-                    key={ws.workspace_id}
+                    key={id}
                     className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50"
                   >
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => toggle(ws.workspace_id)}
+                      onChange={() => toggle(id)}
                       className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
                     />
                     <span className="flex-1 truncate text-sm text-gray-700">
-                      {ws.workspace_name || ws.workspace_id}
+                      {ws.workspace_name || id}
                     </span>
                   </label>
                 );
@@ -155,7 +158,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
           </div>
           {!allSelected && (
             <div className="mt-2 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
-              {selectedIds.length} of {workspaces.length} selected
+              {selectedIds.length} of {validWorkspaces.length} selected
             </div>
           )}
         </div>

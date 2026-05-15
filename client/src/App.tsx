@@ -371,7 +371,6 @@ function Dashboard() {
 
   // Active tab flags — drive lazy loading when a workspace filter is active
   const isDbuTab = activeTab === "dbu";
-  const isKpisTab = activeTab === "kpis";
   const isInfraTab = activeTab === "infra";
   const isAimlTab = activeTab === "aiml";
   const isAppsTab = activeTab === "apps";

@@ -1019,7 +1019,12 @@ async def get_workspace_filter() -> dict:
 
 @router.post("/save-workspace-filter")
 async def save_workspace_filter(request: Request) -> dict:
-    """Persist selected workspace IDs to .settings/workspace_filter.json."""
+    """Persist selected workspace IDs to .settings/workspace_filter.json. Admin only."""
+    from server.routers.user import _get_user_role
+    user_email = request.headers.get("X-Forwarded-Email", os.getenv("USER", ""))
+    if _get_user_role(user_email) != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required to modify the workspace filter pool")
+
     import re as _re
     body = await request.json()
     raw_ids: list = body.get("workspace_ids", [])

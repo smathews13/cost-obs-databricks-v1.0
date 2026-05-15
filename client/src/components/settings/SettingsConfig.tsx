@@ -182,6 +182,13 @@ export function SettingsConfig({
     queryFn: () => fetch("/api/setup/workspace-filter").then(r => r.json()).catch(() => null),
     staleTime: 60 * 1000,
   });
+  const { data: currentUser } = useQuery<{ email: string; name: string; role: string } | null>({
+    queryKey: ["user-me"],
+    queryFn: () => fetch("/api/user/me").then(r => r.json()).catch(() => null),
+    staleTime: 5 * 60 * 1000,
+  });
+  const isAdmin = !currentUser || currentUser.role === "admin";
+
   const [wsPoolEditing, setWsPoolEditing] = useState(false);
   const [wsPoolDraft, setWsPoolDraft] = useState<string[]>([]);
   const [wsPoolSaving, setWsPoolSaving] = useState(false);
@@ -190,16 +197,13 @@ export function SettingsConfig({
   const saveWsPool = async () => {
     setWsPoolSaving(true);
     setWsPoolSaveStatus(null);
-    const controller = new AbortController();
-    const abortTimer = setTimeout(() => controller.abort(), 30_000);
     try {
       const res = await fetch("/api/setup/save-workspace-filter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspace_ids: wsPoolDraft }),
-        signal: controller.signal,
+        signal: AbortSignal.timeout(8_000),
       });
-      clearTimeout(abortTimer);
       if (res.ok) {
         setWsPoolSaveStatus("Saved");
         setWsPoolEditing(false);
@@ -210,18 +214,17 @@ export function SettingsConfig({
       } else {
         let detail = `HTTP ${res.status}`;
         try { const d = await res.json(); detail = d.detail || detail; } catch { /* ignore */ }
-        setWsPoolSaveStatus(`Save failed: ${detail}`);
+        setWsPoolSaveStatus(`Failed: ${detail}`);
       }
     } catch (err) {
-      clearTimeout(abortTimer);
-      if (err instanceof Error && err.name === "AbortError") {
+      if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
         setWsPoolSaveStatus("Timed out — check server logs");
       } else {
         setWsPoolSaveStatus("Save failed — network error");
       }
     } finally {
       setWsPoolSaving(false);
-      setTimeout(() => setWsPoolSaveStatus(null), 5000);
+      setTimeout(() => setWsPoolSaveStatus(null), 6000);
     }
   };
 
@@ -918,10 +921,18 @@ export function SettingsConfig({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
               <h4 className="text-sm font-semibold text-gray-900">Workspace Filter Pool</h4>
+              {!isAdmin && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-4V7a3 3 0 00-6 0v4M5 21h14a2 2 0 002-2v-5a2 2 0 00-2-2H5a2 2 0 00-2 2v5a2 2 0 002 2z" />
+                  </svg>
+                  Admin only
+                </span>
+              )}
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
               <p className="text-xs text-gray-500">
-                Control which workspaces are available in the dashboard workspace filter. When all are selected, all workspaces are shown. Changes take effect immediately.
+                Control which workspaces appear in the dashboard workspace filter dropdown. Non-admins can still use the dropdown — this setting only controls which workspaces are available to choose from.
               </p>
               {!wsPoolEditing ? (
                 <div className="flex items-center justify-between">
@@ -931,15 +942,19 @@ export function SettingsConfig({
                       : <span className="text-gray-400">All workspaces (no filter configured)</span>
                     }
                   </div>
-                  <button
-                    onClick={() => {
-                      setWsPoolDraft(wsFilterData?.workspace_ids ?? []);
-                      setWsPoolEditing(true);
-                    }}
-                    className="text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded px-2 py-0.5"
-                  >
-                    Edit
-                  </button>
+                  {isAdmin ? (
+                    <button
+                      onClick={() => {
+                        setWsPoolDraft(wsFilterData?.workspace_ids ?? []);
+                        setWsPoolEditing(true);
+                      }}
+                      className="text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded px-2 py-0.5"
+                    >
+                      Edit
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-gray-400 italic">Contact an admin to change</span>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -975,6 +990,9 @@ export function SettingsConfig({
                         <span className="text-xs text-gray-700">{ws.name || ws.id}</span>
                       </label>
                     ))}
+                    {(allWorkspacesData?.workspaces ?? []).length === 0 && (
+                      <p className="py-2 text-center text-[11px] text-gray-400">No workspaces found</p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1.5 pt-1">
                     {wsPoolSaveStatus && (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsExperimental, SettingsAccuracyChecks, SettingsPermissions } from "./settings";
+import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsExperimental, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
 
 export interface TabVisibility {
   dbu: boolean;
@@ -130,7 +130,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings, onRerunWizard, onWsPoolSaved }: SettingsDialogProps) {
-  const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "experimental" | "accuracy-checks" | "permissions">("general");
+  const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "experimental" | "accuracy-checks" | "permissions" | "debugger">("general");
   const [localVisibility, setLocalVisibility] = useState<TabVisibility>(tabVisibility);
   const [localSettings, setLocalSettings] = useState<AppSettings>(appSettings);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -310,6 +310,18 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                     Accuracy Checks
                   </button>
                 )}
+                <button
+                  onClick={() => setActiveSection("debugger")}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    activeSection === "debugger" ? "text-white" : "text-gray-600 hover:bg-gray-100"
+                  }`}
+                  style={activeSection === "debugger" ? { backgroundColor: '#1B3139' } : {}}
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  Debugger
+                </button>
               </div>
               <div className="relative group">
                 <button
@@ -386,6 +398,9 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
             {activeSection === "permissions" && (
               <SettingsPermissions />
             )}
+            {activeSection === "debugger" && (
+              <SettingsDebugger />
+            )}
           </div>
 
           {/* Footer */}
@@ -412,7 +427,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 Save Settings
               </button>
             )}
-            {(activeSection === "accuracy-checks" || activeSection === "permissions") && (
+            {(activeSection === "accuracy-checks" || activeSection === "permissions" || activeSection === "debugger") && (
               <button
                 onClick={onClose}
                 className="btn-brand inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors"

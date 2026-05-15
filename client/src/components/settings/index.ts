@@ -4,3 +4,4 @@ export { SettingsTabs } from "./SettingsTabs";
 export { SettingsExperimental } from "./SettingsExperimental";
 export { SettingsAccuracyChecks } from "./SettingsAccuracyChecks";
 export { SettingsPermissions } from "./SettingsPermissions";
+export { SettingsDebugger } from "./SettingsDebugger";

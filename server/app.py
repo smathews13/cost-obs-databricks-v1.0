@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from server.routers import aiml, alerts, apps, aws_actual, azure_actual, gcp_actual, billing, dbsql, dbsql_prpr, genie, health, permissions, query_origin, settings, setup, tagging, use_cases, user, users_groups, warehouse_health
+from server.routers import aiml, alerts, apps, aws_actual, azure_actual, gcp_actual, billing, dbsql, dbsql_prpr, debug, genie, health, permissions, query_origin, settings, setup, tagging, use_cases, user, users_groups, warehouse_health
 
 # Configure structured logging
 logging.basicConfig(
@@ -739,6 +739,7 @@ app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(users_groups.router, prefix="/api/users-groups", tags=["users-groups"])
 app.include_router(query_origin.router, prefix="/api/sql/query-origin", tags=["query-origin"])
 app.include_router(warehouse_health.router, prefix="/api/sql/warehouse-health", tags=["warehouse-health"])
+app.include_router(debug.router, prefix="/api/debug", tags=["debug"])
 
 # Serve static files in production.
 # index.html gets Cache-Control: no-cache so browsers always fetch the latest

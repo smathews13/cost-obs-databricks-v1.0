@@ -197,6 +197,7 @@ export function SettingsConfig({
   const saveWsPool = async () => {
     setWsPoolSaving(true);
     setWsPoolSaveStatus(null);
+    const t0 = performance.now();
     try {
       const res = await fetch("/api/setup/save-workspace-filter", {
         method: "POST",
@@ -204,7 +205,9 @@ export function SettingsConfig({
         body: JSON.stringify({ workspace_ids: wsPoolDraft }),
         signal: AbortSignal.timeout(8_000),
       });
+      const elapsed = Math.round(performance.now() - t0);
       if (res.ok) {
+        console.info(`[ws-pool] saved ${wsPoolDraft.length} ids in ${elapsed}ms`);
         setWsPoolSaveStatus("Saved");
         setWsPoolEditing(false);
         refetchWsFilter();
@@ -214,12 +217,16 @@ export function SettingsConfig({
       } else {
         let detail = `HTTP ${res.status}`;
         try { const d = await res.json(); detail = d.detail || detail; } catch { /* ignore */ }
+        console.error(`[ws-pool] save failed in ${elapsed}ms — ${detail}`);
         setWsPoolSaveStatus(`Failed: ${detail}`);
       }
     } catch (err) {
+      const elapsed = Math.round(performance.now() - t0);
       if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
-        setWsPoolSaveStatus("Timed out — check server logs");
+        console.error(`[ws-pool] timed out after ${elapsed}ms — server did not respond within 8s`);
+        setWsPoolSaveStatus("Timed out after 8s — check server logs");
       } else {
+        console.error(`[ws-pool] network error after ${elapsed}ms —`, err);
         setWsPoolSaveStatus("Save failed — network error");
       }
     } finally {

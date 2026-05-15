@@ -1020,24 +1020,34 @@ async def get_workspace_filter() -> dict:
 @router.post("/save-workspace-filter")
 async def save_workspace_filter(request: Request) -> dict:
     """Persist selected workspace IDs to .settings/workspace_filter.json. Admin only."""
+    import time as _time
+    import re as _re
+    t0 = _time.monotonic()
+
     from server.routers.user import _get_user_role
     user_email = request.headers.get("X-Forwarded-Email", os.getenv("USER", ""))
-    if _get_user_role(user_email) != "admin":
+    logger.info("save-workspace-filter: request from %s", user_email or "(unknown)")
+
+    role = _get_user_role(user_email)
+    logger.info("save-workspace-filter: user role=%s (%.1fms)", role, (_time.monotonic() - t0) * 1000)
+    if role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required to modify the workspace filter pool")
 
-    import re as _re
     body = await request.json()
     raw_ids: list = body.get("workspace_ids", [])
     valid_ids = [str(i) for i in raw_ids if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
+    logger.info("save-workspace-filter: validated %d/%d ids (%.1fms)", len(valid_ids), len(raw_ids), (_time.monotonic() - t0) * 1000)
 
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
     try:
         os.makedirs(SETTINGS_DIR, exist_ok=True)
         with open(settings_path, "w") as f:
             json.dump({"workspace_ids": valid_ids}, f)
-        logger.info("Workspace filter saved: %s ids=%s", len(valid_ids), valid_ids)
+        elapsed_ms = (_time.monotonic() - t0) * 1000
+        logger.info("save-workspace-filter: wrote %s in %.1fms — ids=%s", settings_path, elapsed_ms, valid_ids)
     except Exception as e:
-        logger.error("save-workspace-filter: could not write %s: %s", settings_path, e)
+        elapsed_ms = (_time.monotonic() - t0) * 1000
+        logger.error("save-workspace-filter: write failed after %.1fms — path=%s error=%s", elapsed_ms, settings_path, e)
         raise HTTPException(status_code=500, detail=f"Failed to persist workspace filter: {e}")
 
     return {"saved": valid_ids}

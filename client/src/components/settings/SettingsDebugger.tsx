@@ -16,12 +16,13 @@ interface DiagResult {
   summary: { passed: number; failed: number; warned: number; total: number };
 }
 
-const CATEGORY_ORDER = ["configuration", "permissions", "materialized_views", "data"];
+const CATEGORY_ORDER = ["configuration", "permissions", "materialized_views", "data", "tab_health"];
 const CATEGORY_LABELS: Record<string, string> = {
   configuration: "Configuration",
   permissions: "System Table Permissions",
   materialized_views: "Materialized Views",
   data: "Data",
+  tab_health: "Tab Visualizations",
 };
 
 function StatusIcon({ status }: { status: DiagCheck["status"] }) {

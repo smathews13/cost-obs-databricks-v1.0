@@ -191,15 +191,18 @@ def _check_warehouse_configured() -> dict:
         from server.db import get_workspace_client
         wc = get_workspace_client()
         wh = wc.warehouses.get(wh_id)
-        state = str(wh.state or "").upper()
-        if state == "RUNNING":
+        # SDK returns a State enum — str() gives "State.RUNNING"; check with "in"
+        state_str = str(wh.state or "").upper()
+        if "RUNNING" in state_str:
             return {"status": "pass", "detail": f"Warehouse '{wh.name}' ({wh.cluster_size}) is running"}
+        if "STARTING" in state_str or "RESIZING" in state_str:
+            return {"status": "warn", "detail": f"Warehouse '{wh.name}' ({wh.cluster_size}) is starting up — queries will queue briefly"}
         return {
             "status": "warn",
-            "detail": f"Warehouse '{wh.name}' ({wh.cluster_size}) is {state} — first query will start it",
+            "detail": f"Warehouse '{wh.name}' ({wh.cluster_size}) is stopped — first query will auto-start it (may take ~30s)",
         }
     except Exception as e:
-        return {"status": "warn", "detail": f"Warehouse {wh_id} configured but could not verify: {e}"}
+        return {"status": "warn", "detail": f"Warehouse {wh_id} configured but could not verify state: {e}"}
 
 
 def _check_sp_identity() -> dict:
@@ -237,6 +240,141 @@ def _check_workspace_pool() -> dict:
         return {"status": "warn", "detail": f"Could not read workspace_filter.json: {e}"}
 
 
+# ── Per-tab visualization health checks ──────────────────────────────────────
+
+def _tab_dbu() -> dict:
+    from server.db import execute_query, get_catalog_schema
+    catalog, schema = get_catalog_schema()
+    try:
+        result = execute_query(
+            f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend), 0) AS spend "
+            f"FROM {catalog}.{schema}.daily_usage_summary "
+            f"WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
+            None, no_cache=True
+        )
+        row = (result or [{}])[0]
+        cnt, spend = int(row.get("cnt", 0)), float(row.get("spend") or 0)
+        if cnt == 0:
+            return {"status": "fail", "detail": "No rows in last 30 days — all charts will show $0", "fix": "Rebuild materialized views. Confirm system.billing.usage has recent data."}
+        if spend == 0:
+            return {"status": "warn", "detail": f"{cnt:,} rows but $0 spend — list_prices may be missing", "fix": "Verify system.billing.list_prices has data (see Permissions section)"}
+        return {"status": "pass", "detail": f"${spend:,.0f} spend across {cnt:,} day-workspace rows in last 30 days"}
+    except Exception as e:
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+
+
+def _tab_kpis() -> dict:
+    from server.db import execute_query, get_catalog_schema
+    catalog, schema = get_catalog_schema()
+    try:
+        result = execute_query(
+            f"SELECT COUNT(*) AS cnt FROM {catalog}.{schema}.daily_query_stats "
+            f"WHERE query_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
+            None, no_cache=True
+        )
+        cnt = int((result or [{}])[0].get("cnt", 0))
+        if cnt == 0:
+            return {"status": "warn", "detail": "No query stats rows in last 30 days — KPI metrics relying on query history will show 0", "fix": "Verify system.query.history access and rebuild MVs"}
+        return {"status": "pass", "detail": f"{cnt:,} query-stat rows in last 30 days"}
+    except Exception as e:
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+
+
+def _tab_sql() -> dict:
+    from server.db import execute_query, get_catalog_schema
+    catalog, schema = get_catalog_schema()
+    try:
+        r1 = execute_query(
+            f"SELECT COUNT(*) AS cnt FROM {catalog}.{schema}.sql_tool_attribution "
+            f"WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
+            None, no_cache=True
+        )
+        r2 = execute_query(
+            f"SELECT COUNT(*) AS cnt FROM {catalog}.{schema}.dbsql_cost_per_query "
+            f"WHERE query_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
+            None, no_cache=True
+        )
+        cnt1 = int((r1 or [{}])[0].get("cnt", 0))
+        cnt2 = int((r2 or [{}])[0].get("cnt", 0))
+        if cnt1 == 0 and cnt2 == 0:
+            return {"status": "warn", "detail": "No SQL attribution or per-query cost data in last 30 days — SQL tab charts will be empty", "fix": "Verify system.query.history access. SQL tab requires active DBSQL warehouse usage."}
+        parts = []
+        if cnt1 > 0: parts.append(f"{cnt1:,} tool-attribution rows")
+        if cnt2 > 0: parts.append(f"{cnt2:,} per-query cost rows")
+        return {"status": "pass", "detail": ", ".join(parts) + " in last 30 days"}
+    except Exception as e:
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+
+
+def _tab_aiml() -> dict:
+    from server.db import execute_query
+    try:
+        result = execute_query(
+            "SELECT COUNT(*) AS cnt FROM system.billing.usage "
+            "WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) "
+            "AND (product_category LIKE '%Model Serving%' OR product_category LIKE '%Foundation Model%' "
+            "     OR product_category LIKE '%Inference%' OR product_category LIKE '%Vector Search%') LIMIT 1",
+            None, no_cache=True
+        )
+        cnt = int((result or [{}])[0].get("cnt", 0))
+        if cnt == 0:
+            return {"status": "warn", "detail": "No AI/ML usage rows in last 30 days — AIML tab will show $0", "fix": "AIML tab only shows data if your account uses Model Serving, Foundation Model APIs, or Vector Search. This may be expected if those features aren't in use."}
+        return {"status": "pass", "detail": f"{cnt:,} AI/ML billing rows in last 30 days"}
+    except Exception as e:
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+
+
+def _tab_apps() -> dict:
+    from server.db import execute_query
+    try:
+        result = execute_query(
+            "SELECT COUNT(*) AS cnt FROM system.billing.usage "
+            "WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) "
+            "AND product_category LIKE '%Apps%' LIMIT 1",
+            None, no_cache=True
+        )
+        cnt = int((result or [{}])[0].get("cnt", 0))
+        if cnt == 0:
+            return {"status": "warn", "detail": "No Databricks Apps usage rows in last 30 days — Apps tab will show $0", "fix": "Apps tab only shows data if your account runs Databricks Apps. Expected to be empty if Apps aren't deployed."}
+        return {"status": "pass", "detail": f"{cnt:,} Apps billing rows in last 30 days"}
+    except Exception as e:
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+
+
+def _tab_tagging() -> dict:
+    from server.db import execute_query
+    try:
+        result = execute_query(
+            "SELECT COUNT(*) AS cnt FROM system.compute.clusters "
+            "WHERE last_event_time >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
+            None, no_cache=True
+        )
+        cnt = int((result or [{}])[0].get("cnt", 0))
+        if cnt == 0:
+            return {"status": "warn", "detail": "No cluster activity in last 30 days — Tagging tab untagged resource lists will be empty", "fix": "Tagging tab requires system.compute.clusters access and active clusters. Verify the app identity has SELECT on system.compute.clusters."}
+        return {"status": "pass", "detail": f"{cnt:,} cluster events in last 30 days — untagged resource analysis available"}
+    except Exception as e:
+        return {"status": "warn", "detail": f"Query failed (system.compute.clusters may not be accessible): {str(e)[:200]}", "fix": "Grant SELECT on system.compute.clusters to the app identity"}
+
+
+def _tab_infra() -> dict:
+    from server.db import execute_query
+    try:
+        # Check for any cloud cost data (AWS/Azure/GCP actual cost tables)
+        result = execute_query(
+            "SELECT COUNT(*) AS cnt FROM system.billing.usage "
+            "WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) "
+            "AND product_category NOT IN ('All Purpose Compute', 'Jobs Compute', 'SQL', 'DLT') LIMIT 1",
+            None, no_cache=True
+        )
+        cnt = int((result or [{}])[0].get("cnt", 0))
+        if cnt == 0:
+            return {"status": "warn", "detail": "No infrastructure/cloud cost data found in last 30 days", "fix": "Infra tab shows cloud provider actual costs (AWS CUR, Azure, GCP billing exports). Configure cloud cost exports in the Configuration tab."}
+        return {"status": "pass", "detail": f"{cnt:,} infrastructure billing rows in last 30 days"}
+    except Exception as e:
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+
+
 # Ordered check registry
 _CHECKS = [
     {"id": "sp_identity",        "category": "configuration",      "label": "Service principal identity",              "fn": _check_sp_identity},
@@ -249,6 +387,13 @@ _CHECKS = [
     {"id": "mv_existence",       "category": "materialized_views", "label": "Materialized view tables exist",          "fn": _check_mv_existence},
     {"id": "mv_populated",       "category": "materialized_views", "label": "Materialized views have data",            "fn": _check_mv_populated},
     {"id": "recent_billing_data","category": "data",               "label": "Recent billing data (last 30 days)",      "fn": _check_recent_billing_data},
+    {"id": "tab_dbu",            "category": "tab_health",         "label": "DBU & Billing tab",                       "fn": _tab_dbu},
+    {"id": "tab_kpis",           "category": "tab_health",         "label": "Platform KPIs tab",                       "fn": _tab_kpis},
+    {"id": "tab_sql",            "category": "tab_health",         "label": "SQL Warehousing tab",                     "fn": _tab_sql},
+    {"id": "tab_aiml",           "category": "tab_health",         "label": "AI/ML tab",                               "fn": _tab_aiml},
+    {"id": "tab_apps",           "category": "tab_health",         "label": "Apps tab",                                "fn": _tab_apps},
+    {"id": "tab_tagging",        "category": "tab_health",         "label": "Tagging tab",                             "fn": _tab_tagging},
+    {"id": "tab_infra",          "category": "tab_health",         "label": "Infrastructure (Cloud Costs) tab",        "fn": _tab_infra},
 ]
 
 

@@ -24,7 +24,7 @@ function lazyWithRetry<T>(factory: () => Promise<T>): Promise<T> {
   return factory().catch(() => factory());
 }
 
-// Lazy-loaded tab views — only downloaded when the user first visits that tab
+// Lazy-loaded tab views — chunks download on first render
 const InteractiveBreakdown = lazy(() => lazyWithRetry(() => import("@/components/InteractiveBreakdown").then(m => ({ default: m.InteractiveBreakdown }))));
 const CloudCostsView = lazy(() => lazyWithRetry(() => import("@/components/CloudCostsView").then(m => ({ default: m.CloudCostsView }))));
 const GenieChatView = lazy(() => lazyWithRetry(() => import("@/components/GenieChatView").then(m => ({ default: m.GenieChatView }))));
@@ -38,6 +38,33 @@ const ContractBurndown = lazy(() => lazyWithRetry(() => import("@/components/Con
 const Alerts = lazy(() => lazyWithRetry(() => import("@/pages/Alerts")));
 const UseCases = lazy(() => lazyWithRetry(() => import("@/pages/UseCases")));
 const UsersGroups = lazy(() => lazyWithRetry(() => import("@/pages/UsersGroups")));
+
+// Preload all lazy chunks during browser idle time so tab switches are instant.
+// React.lazy caches the promise, so these import() calls prime the module cache
+// before the component ever renders.
+function preloadTabChunks() {
+  import("@/components/InteractiveBreakdown");
+  import("@/components/CloudCostsView");
+  import("@/components/PlatformKPIsView");
+  import("@/components/AIMLCostCenter");
+  import("@/components/AppsCostCenter");
+  import("@/components/TaggingHub");
+  import("@/components/SQLWarehousing360");
+  import("@/components/ForecastingView");
+  import("@/components/ContractBurndown");
+  import("@/pages/Alerts");
+  import("@/pages/UseCases");
+  import("@/pages/UsersGroups");
+  import("@/components/GenieChatView");
+}
+
+if (typeof window !== "undefined") {
+  if ("requestIdleCallback" in window) {
+    requestIdleCallback(preloadTabChunks, { timeout: 5000 });
+  } else {
+    setTimeout(preloadTabChunks, 2000);
+  }
+}
 import {
   useAccountInfo,
   useAWSActualCosts,

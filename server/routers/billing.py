@@ -110,17 +110,23 @@ def _check_mv_available() -> bool:
         return False
 
 
-def _get_mv_query(mv_query: str) -> str:
+def _get_mv_query(mv_query: str, ws_filter: str = "") -> str:
     """Format a materialized view query with the correct catalog/schema and apply table overrides."""
     from server.db import apply_mv_overrides
     catalog, schema = get_catalog_schema()
-    sql = mv_query.format(catalog=catalog, schema=schema)
+    sql = mv_query.format(catalog=catalog, schema=schema, ws_filter=ws_filter)
     return apply_mv_overrides(sql, catalog, schema)
 
 
-def _exec_mv(mv_template: str, params: dict) -> list[dict]:
+def _exec_mv(mv_template: str, params: dict, ws_filter: str = "") -> list[dict]:
     """Execute a materialized view query against Delta."""
-    return execute_query(_get_mv_query(mv_template), params)
+    return execute_query(_get_mv_query(mv_template, ws_filter), params)
+
+
+def _mv_ws_clause(id_list: list[str] | None) -> str:
+    """Build a workspace filter clause for MV queries (plain workspace_id column, no table alias)."""
+    from server import workspace_filter as wf
+    return wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
 
 
 def get_workspace_name() -> str | None:
@@ -213,12 +219,12 @@ async def get_billing_summary(
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
-    use_mv = _check_mv_available() and not ws_clause
+    use_mv = _check_mv_available()
 
     if use_mv:
-        results = _exec_mv(MV_BILLING_SUMMARY, params)
+        results = _exec_mv(MV_BILLING_SUMMARY, params, _mv_ws_clause(id_list))
         if not results:
-            results = execute_query(BILLING_SUMMARY, params)
+            results = execute_query(_inject_ws_filter(BILLING_SUMMARY, ws_clause), params)
     else:
         results = execute_query(_inject_ws_filter(BILLING_SUMMARY, ws_clause), params)
 
@@ -375,13 +381,10 @@ async def get_sql_breakdown(
 
     try:
         use_mv = _check_mv_available()
-        if ws_clause:
-            # MV can't be workspace-filtered; fall back to direct query with injection
-            results = execute_query(_inject_ws_filter(SQL_TOOL_ATTRIBUTION, ws_clause), params)
-        elif use_mv:
-            results = _exec_mv(MV_SQL_TOOL_ATTRIBUTION, params)
+        if use_mv:
+            results = _exec_mv(MV_SQL_TOOL_ATTRIBUTION, params, _mv_ws_clause(id_list))
         else:
-            results = execute_query(SQL_TOOL_ATTRIBUTION, params)
+            results = execute_query(_inject_ws_filter(SQL_TOOL_ATTRIBUTION, ws_clause), params)
 
         products = []
         total_spend = 0
@@ -1219,42 +1222,40 @@ async def get_dashboard_bundle_fast(
 
     # Build workspace filter — dropdown selection overrides env/file config.
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
+    mv_ws = _mv_ws_clause(id_list)
 
-    # Skip MVs when a workspace filter is active: MVs are pre-aggregated
-    # account-wide and cannot be filtered to a subset of workspaces.
-    use_mv = _check_mv_available() and not ws_clause
+    use_mv = _check_mv_available()
 
     if use_mv:
         # Use materialized views — much faster than live system.billing.usage scans.
-        # Fallbacks to live queries are handled in _format_summary / _format_workspaces
-        # if MV returns empty (e.g. mid-rebuild on startup).
+        # MVs now include workspace_id so they support workspace filtering directly.
         logger.info("Using materialized views for dashboard bundle")
 
         def _mv_summary():
-            r = _exec_mv(MV_BILLING_SUMMARY, params)
+            r = _exec_mv(MV_BILLING_SUMMARY, params, mv_ws)
             # Fall back if empty or if MV returned zero spend (table exists but not yet populated)
             if r and float((r[0] if r else {}).get("total_spend") or 0) > 0:
                 return r
-            return execute_query(BILLING_SUMMARY, params)
+            return execute_query(_inject_ws_filter(BILLING_SUMMARY, ws_clause), params)
 
         def _mv_timeseries():
-            r = _exec_mv(MV_BILLING_TIMESERIES, params)
-            return r if r else execute_query(BILLING_TIMESERIES_FAST, params)
+            r = _exec_mv(MV_BILLING_TIMESERIES, params, mv_ws)
+            return r if r else execute_query(_inject_ws_filter(BILLING_TIMESERIES_FAST, ws_clause), params)
 
         def _mv_products():
-            r = _exec_mv(MV_BILLING_BY_PRODUCT, params)
-            return r if r else execute_query(BILLING_BY_PRODUCT_FAST, params)
+            r = _exec_mv(MV_BILLING_BY_PRODUCT, params, mv_ws)
+            return r if r else execute_query(_inject_ws_filter(BILLING_BY_PRODUCT_FAST, ws_clause), params)
 
         def _mv_workspaces():
-            r = _exec_mv(MV_BILLING_BY_WORKSPACE, params)
-            return r if r else execute_query(BILLING_BY_WORKSPACE, params)
+            r = _exec_mv(MV_BILLING_BY_WORKSPACE, params, mv_ws)
+            return r if r else execute_query(_inject_ws_filter(BILLING_BY_WORKSPACE, ws_clause), params)
 
         queries = [
             ("summary", _mv_summary),
             ("products", _mv_products),
             ("workspaces", _mv_workspaces),
             ("timeseries", _mv_timeseries),
-            ("etl_breakdown", lambda: _exec_mv(MV_ETL_BREAKDOWN, params)),
+            ("etl_breakdown", lambda: _exec_mv(MV_ETL_BREAKDOWN, params, mv_ws)),
         ]
     else:
         # Fall back to fast queries without MVs; inject workspace filter when active.
@@ -1978,7 +1979,7 @@ async def get_kpis_bundle(
     """
 
     # Direct Delta query for query stats — used as fallback if Lakebase daily_query_stats is empty
-    delta_query_stats_sql = MV_PLATFORM_KPIS.format(catalog=catalog, schema=schema)
+    delta_query_stats_sql = MV_PLATFORM_KPIS.format(catalog=catalog, schema=schema, ws_filter="")
 
     anomalies_sql = SPEND_ANOMALIES
 
@@ -2092,7 +2093,7 @@ async def get_kpi_trend(
     if kpi == "total_spend" or kpi == "avg_daily_spend":
         if use_mv:
             catalog, schema = get_catalog_schema()
-            query = f"SELECT usage_date as date, total_spend as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date ORDER BY usage_date"
+            query = f"SELECT usage_date as date, SUM(total_spend) as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
             mv_fallback_query = """
         WITH usage_with_price AS (
           SELECT
@@ -2139,7 +2140,7 @@ async def get_kpi_trend(
     elif kpi == "total_dbus":
         if use_mv:
             catalog, schema = get_catalog_schema()
-            query = f"SELECT usage_date as date, total_dbus as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date ORDER BY usage_date"
+            query = f"SELECT usage_date as date, SUM(total_dbus) as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
             mv_fallback_query = """
         SELECT
           usage_date as date,
@@ -2164,7 +2165,7 @@ async def get_kpi_trend(
     elif kpi == "workspace_count":
         if use_mv:
             catalog, schema = get_catalog_schema()
-            query = f"SELECT usage_date as date, workspace_count as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date ORDER BY usage_date"
+            query = f"SELECT usage_date as date, COUNT(DISTINCT workspace_id) as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
             mv_fallback_query = """
         SELECT
           usage_date as date,
@@ -2962,9 +2963,9 @@ async def get_contract_burndown() -> dict[str, Any]:
     catalog, schema = get_catalog_schema()
     import asyncio as _asyncio
     _sql = (
-        f"SELECT usage_date, total_spend FROM `{catalog}`.`{schema}`.`daily_usage_summary`"
+        f"SELECT usage_date, SUM(total_spend) as total_spend FROM `{catalog}`.`{schema}`.`daily_usage_summary`"
         f" WHERE usage_date >= '{start_str}' AND usage_date <= '{query_end.isoformat()}'"
-        f" ORDER BY usage_date"
+        f" GROUP BY usage_date ORDER BY usage_date"
     )
     loop = _asyncio.get_running_loop()
     rows = await loop.run_in_executor(None, execute_query, _sql)

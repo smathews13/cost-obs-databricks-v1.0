@@ -566,13 +566,6 @@ def startup_tasks():
     except Exception as e:
         logger.warning(f"Could not restore auth mode from Delta (non-fatal): {e}")
 
-    # Step 0a2: Restore workspace filter pool from Delta (survives redeploys)
-    try:
-        from server.routers.settings import restore_workspace_filter_from_delta
-        restore_workspace_filter_from_delta()
-    except Exception as e:
-        logger.warning(f"Could not restore workspace filter from Delta (non-fatal): {e}")
-
     # Step 0b: Enable system.access schema for workspace name resolution
     setup_system_access_schema()
 

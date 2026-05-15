@@ -1140,10 +1140,12 @@ function Dashboard() {
         appSettings={appSettings}
         onWsPoolSaved={() => {
           setSelectedWorkspaceIds([]);
-          // Force-refetch the workspace dropdown immediately so it reflects the new pool.
+          // Refetch workspace dropdown so it reflects new pool immediately.
           rqClient.refetchQueries({ queryKey: ["billing", "workspaces"] });
-          // Invalidate everything else so every tab re-fetches with the new pool applied.
-          rqClient.invalidateQueries();
+          // Invalidate only data bundles so tabs re-fetch with updated pool.
+          // Avoid invalidateQueries() with no args — it fires every registered query simultaneously.
+          const bundleKeys = ["billing", "aiml", "apps", "tagging", "dbsql", "users-groups"];
+          bundleKeys.forEach(k => rqClient.invalidateQueries({ queryKey: [k] }));
         }}
         onTabVisibilityChange={(v) => {
           setTabVisibility(v);

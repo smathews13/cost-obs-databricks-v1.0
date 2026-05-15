@@ -1018,7 +1018,7 @@ async def get_workspace_filter() -> dict:
 
 
 @router.post("/save-workspace-filter")
-async def save_workspace_filter(request: Request, background_tasks: BackgroundTasks) -> dict:
+async def save_workspace_filter(request: Request) -> dict:
     """Persist selected workspace IDs to .settings/workspace_filter.json."""
     import re as _re
     body = await request.json()
@@ -1030,20 +1030,10 @@ async def save_workspace_filter(request: Request, background_tasks: BackgroundTa
         os.makedirs(SETTINGS_DIR, exist_ok=True)
         with open(settings_path, "w") as f:
             json.dump({"workspace_ids": valid_ids}, f)
-        logger.info("Workspace filter saved: %s ids=%s path=%s", len(valid_ids), valid_ids, settings_path)
+        logger.info("Workspace filter saved: %s ids=%s", len(valid_ids), valid_ids)
     except Exception as e:
         logger.error("save-workspace-filter: could not write %s: %s", settings_path, e)
         raise HTTPException(status_code=500, detail=f"Failed to persist workspace filter: {e}")
-
-    # Persist to Delta in background — Delta DDL+writes are slow and must not block the HTTP response
-    def _delta_write() -> None:
-        try:
-            from server.routers.settings import save_workspace_filter_to_table
-            save_workspace_filter_to_table(valid_ids)
-        except Exception as e:
-            logger.warning("save-workspace-filter: Delta write failed (non-fatal): %s", e)
-
-    background_tasks.add_task(_delta_write)
 
     return {"saved": valid_ids}
 

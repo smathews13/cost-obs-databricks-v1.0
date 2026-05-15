@@ -48,13 +48,13 @@ WITH usage_with_price AS (
 )
 SELECT
   usage_date,
+  workspace_id,
   SUM(usage_quantity) as total_dbus,
   SUM(usage_quantity * price_per_dbu) as total_spend,
-  SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend,
-  COUNT(DISTINCT workspace_id) as workspace_count
+  SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend
 FROM usage_with_price
-GROUP BY usage_date
-ORDER BY usage_date
+GROUP BY usage_date, workspace_id
+ORDER BY usage_date, workspace_id
 """
 
 # Daily product breakdown table - replaces BILLING_BY_PRODUCT_FAST
@@ -95,14 +95,14 @@ WITH usage_with_price AS (
 )
 SELECT
   usage_date,
+  workspace_id,
   product_category,
   SUM(usage_quantity) as total_dbus,
   SUM(usage_quantity * price_per_dbu) as total_spend,
-  SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend,
-  COUNT(DISTINCT workspace_id) as workspace_count
+  SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend
 FROM usage_with_price
-GROUP BY usage_date, product_category
-ORDER BY usage_date, product_category
+GROUP BY usage_date, workspace_id, product_category
+ORDER BY usage_date, workspace_id, product_category
 """
 
 # Daily workspace breakdown table - replaces BILLING_BY_WORKSPACE
@@ -147,17 +147,19 @@ WITH sql_query_work AS (
       ELSE 'DBSQL'
     END AS sql_product,
     DATE(start_time) AS usage_date,
+    workspace_id,
     compute.warehouse_id AS warehouse_id,
     SUM(total_task_duration_ms) AS work_ms
   FROM system.query.history
   WHERE executed_as_user_id IS NOT NULL
     AND compute.warehouse_id IS NOT NULL
     AND DATE(start_time) >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
-  GROUP BY 1, 2, 3
+  GROUP BY 1, 2, 3, 4
 ),
 sql_usage AS (
   SELECT
     u.usage_date,
+    u.workspace_id,
     u.usage_metadata.warehouse_id as warehouse_id,
     SUM(u.usage_quantity) as total_dbus,
     SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) as total_spend,
@@ -170,19 +172,21 @@ sql_usage AS (
   WHERE u.billing_origin_product = 'SQL'
     AND u.usage_date >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
     AND u.usage_quantity > 0
-  GROUP BY 1, 2
+  GROUP BY 1, 2, 3
 ),
 warehouse_totals AS (
   SELECT
     usage_date,
+    workspace_id,
     warehouse_id,
     SUM(work_ms) as total_work_ms
   FROM sql_query_work
-  GROUP BY usage_date, warehouse_id
+  GROUP BY usage_date, workspace_id, warehouse_id
 )
 SELECT
   q.sql_product,
   q.usage_date,
+  q.workspace_id,
   q.warehouse_id,
   CASE
     WHEN w.total_work_ms > 0 THEN (q.work_ms / w.total_work_ms) * s.total_dbus
@@ -197,14 +201,15 @@ SELECT
     ELSE 0
   END as attributed_effective_list_spend
 FROM sql_query_work q
-JOIN warehouse_totals w ON q.usage_date = w.usage_date AND q.warehouse_id = w.warehouse_id
-LEFT JOIN sql_usage s ON q.usage_date = s.usage_date AND q.warehouse_id = s.warehouse_id
+JOIN warehouse_totals w ON q.usage_date = w.usage_date AND q.workspace_id = w.workspace_id AND q.warehouse_id = w.warehouse_id
+LEFT JOIN sql_usage s ON q.usage_date = s.usage_date AND q.workspace_id = s.workspace_id AND q.warehouse_id = s.warehouse_id
 """
 
 CREATE_QUERY_STATS = """
 CREATE OR REPLACE TABLE {catalog}.{schema}.daily_query_stats AS
 SELECT
   DATE(start_time) as usage_date,
+  workspace_id,
   COUNT(*) as total_queries,
   COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) as unique_query_users,
   SUM(COALESCE(read_rows, 0)) as total_rows_read,
@@ -212,8 +217,8 @@ SELECT
   SUM(COALESCE(total_task_duration_ms, 0)) / 1000.0 as total_compute_seconds
 FROM system.query.history
 WHERE DATE(start_time) >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
-GROUP BY DATE(start_time)
-ORDER BY usage_date
+GROUP BY DATE(start_time), workspace_id
+ORDER BY usage_date, workspace_id
 """
 
 
@@ -1023,12 +1028,13 @@ MV_BILLING_SUMMARY = """
 SELECT
   SUM(total_dbus) as total_dbus,
   SUM(total_spend) as total_spend,
-  MAX(workspace_count) as workspace_count,
+  COUNT(DISTINCT workspace_id) as workspace_count,
   COUNT(DISTINCT usage_date) as days_in_range,
   MIN(usage_date) as first_date,
   MAX(usage_date) as last_date
 FROM {catalog}.{schema}.daily_usage_summary
 WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
 """
 
 MV_BILLING_BY_PRODUCT = """
@@ -1036,9 +1042,10 @@ SELECT
   product_category,
   SUM(total_dbus) as total_dbus,
   SUM(total_spend) as total_spend,
-  MAX(workspace_count) as workspace_count
+  COUNT(DISTINCT workspace_id) as workspace_count
 FROM {catalog}.{schema}.daily_product_breakdown
 WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
 GROUP BY product_category
 ORDER BY total_spend DESC
 """
@@ -1047,10 +1054,12 @@ MV_BILLING_TIMESERIES = """
 SELECT
   usage_date,
   product_category,
-  total_dbus,
-  total_spend
+  SUM(total_dbus) as total_dbus,
+  SUM(total_spend) as total_spend
 FROM {catalog}.{schema}.daily_product_breakdown
 WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
+GROUP BY usage_date, product_category
 ORDER BY usage_date, product_category
 """
 
@@ -1062,6 +1071,7 @@ SELECT
   SUM(total_spend) as total_spend
 FROM {catalog}.{schema}.daily_workspace_breakdown
 WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
 GROUP BY workspace_id
 ORDER BY total_spend DESC
 """
@@ -1073,6 +1083,7 @@ SELECT
   SUM(attributed_spend) as total_spend
 FROM {catalog}.{schema}.sql_tool_attribution
 WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
 GROUP BY sql_product
 ORDER BY total_spend DESC
 """
@@ -1087,6 +1098,7 @@ SELECT
   SUM(total_spend) as total_spend
 FROM {catalog}.{schema}.daily_product_breakdown
 WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
   AND product_category IN ('ETL - Streaming', 'ETL - Batch')
 GROUP BY product_category
 ORDER BY total_spend DESC
@@ -1101,4 +1113,5 @@ SELECT
   SUM(total_compute_seconds) as total_compute_seconds
 FROM {catalog}.{schema}.daily_query_stats
 WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
 """

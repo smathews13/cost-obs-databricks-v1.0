@@ -378,24 +378,25 @@ function Dashboard() {
   const isTaggingTab = activeTab === "tagging";
   const isUsersTab = activeTab === "users-groups";
 
-  // Workspace filter — when active, only the current tab's bundle fires immediately;
-  // other tabs fetch on demand when navigated to. Without a filter, all preload eagerly.
+  // Workspace filter — when active, only workspace-sensitive bundles gate on the tab;
+  // account-wide queries always preload. Without a filter, everything preloads eagerly.
   const _wsIds = selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined;
   const hasWsFilter = !!_wsIds;
 
-  // DBU tab data - only load when tab is active
-  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, isDbuTab);
-  const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, isDbuTab);
-  const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, isDbuTab);
-  const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, isDbuTab);
+  // DBU tab sub-queries: pipelines, interactive, SKU are account-wide → always preload.
+  // sqlBreakdown supports workspace filter → gate on tab when filter active.
+  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, !hasWsFilter || isDbuTab);
+  const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, true);
+  const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, true);
+  const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, true);
 
-  // Infra tab data (account-wide, no workspace filter)
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, undefined, isInfraTab);
+  // Infra tab data (account-wide, no workspace filter) — always preload
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, undefined, true);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
-  // KPIs + anomalies (account-wide, no workspace filter)
-  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, undefined, isDbuTab || isKpisTab);
+  // KPIs + anomalies (account-wide, no workspace filter) — always preload
+  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, undefined, true);
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;

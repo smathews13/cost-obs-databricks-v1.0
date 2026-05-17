@@ -400,7 +400,7 @@ def _tab_dbu() -> dict:
             return {"status": "warn", "detail": f"{cnt:,} rows but $0 spend — list_prices may be missing", "fix": "Verify system.billing.list_prices has data (see Permissions section)"}
         return {"status": "pass", "detail": f"${spend:,.0f} spend across {cnt:,} day-workspace rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has SELECT on the daily_usage_summary materialized view. If the table is missing or schema is stale, rebuild materialized views from the Configuration tab."}
 
 
 def _tab_kpis() -> dict:
@@ -417,7 +417,7 @@ def _tab_kpis() -> dict:
             return {"status": "warn", "detail": "No query stats rows in last 30 days — KPI metrics relying on query history will show 0", "fix": "Verify system.query.history access and rebuild MVs"}
         return {"status": "pass", "detail": f"{cnt:,} query-stat rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has SELECT on daily_query_stats. If the column schema looks wrong, rebuild materialized views. Also check that system.query.history access is granted (see Permissions section)."}
 
 
 def _tab_sql() -> dict:
@@ -443,7 +443,7 @@ def _tab_sql() -> dict:
         if cnt2 > 0: parts.append(f"{cnt2:,} per-query cost rows")
         return {"status": "pass", "detail": ", ".join(parts) + " in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has SELECT on the SQL MV tables (sql_tool_attribution, dbsql_cost_per_query). If the column schema is stale, rebuild materialized views from the Configuration tab."}
 
 
 def _tab_aiml() -> dict:
@@ -461,7 +461,7 @@ def _tab_aiml() -> dict:
             return {"status": "warn", "detail": "No AI/ML usage rows in last 30 days — AIML tab will show $0", "fix": "AIML tab only shows data if your account uses Model Serving, Foundation Model APIs, or Vector Search. This may be expected if those features aren't in use."}
         return {"status": "pass", "detail": f"{cnt:,} AI/ML billing rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
 
 
 def _tab_apps() -> dict:
@@ -478,7 +478,7 @@ def _tab_apps() -> dict:
             return {"status": "warn", "detail": "No Databricks Apps usage rows in last 30 days — Apps tab will show $0", "fix": "Apps tab only shows data if your account runs Databricks Apps. Expected to be empty if Apps aren't deployed."}
         return {"status": "pass", "detail": f"{cnt:,} Apps billing rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
 
 
 def _tab_tagging() -> dict:
@@ -512,7 +512,7 @@ def _tab_infra() -> dict:
             return {"status": "warn", "detail": "No infrastructure/cloud cost data found in last 30 days", "fix": "Infra tab shows cloud provider actual costs (AWS CUR, Azure, GCP billing exports). Configure cloud cost exports in the Configuration tab."}
         return {"status": "pass", "detail": f"{cnt:,} infrastructure billing rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}"}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
 
 
 # Ordered check registry
@@ -525,8 +525,8 @@ _CHECKS = [
     {"id": "list_prices",          "category": "permissions",        "label": "system.billing.list_prices access",               "fn": _check_list_prices},
     {"id": "query_history",        "category": "permissions",        "label": "system.query.history access",                     "fn": _check_query_history},
     {"id": "workspaces_table",     "category": "permissions",        "label": "system.access.workspaces_latest access",          "fn": _check_workspaces_table},
-    {"id": "mv_existence",         "category": "materialized_views", "label": "Materialized view tables exist",                  "fn": _check_mv_existence},
-    {"id": "mv_populated",         "category": "materialized_views", "label": "Materialized views have data",                    "fn": _check_mv_populated},
+    {"id": "mv_existence",         "category": "materialized_views", "label": "Materialized view table presence",                "fn": _check_mv_existence},
+    {"id": "mv_populated",         "category": "materialized_views", "label": "Materialized view data availability",             "fn": _check_mv_populated},
     {"id": "mv_consistency",       "category": "materialized_views", "label": "MV table spend consistency (partial-zeros check)", "fn": _check_mv_consistency},
     {"id": "recent_billing_data",  "category": "data",               "label": "Recent billing data (last 30 days)",              "fn": _check_recent_billing_data},
     {"id": "tab_dbu",            "category": "tab_health",         "label": "DBU & Billing tab",                       "fn": _tab_dbu},

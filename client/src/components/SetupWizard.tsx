@@ -68,6 +68,97 @@ const CLOUD_LABELS: Record<string, string> = {
   gcp: "Google Cloud Platform",
 };
 
+function PermissionErrorBlock({ error, onGranted }: { error: string; onGranted: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const [grantStatus, setGrantStatus] = useState<"idle" | "running" | "ok" | "fail">("idle");
+  const [grantMessage, setGrantMessage] = useState("");
+
+  // Extract the GRANT SQL from the error message — use [\s\S] so periods in
+  // email addresses (e.g. sam.mathews@databricks.com) don't break the match
+  const grantMatch = error.match(/(GRANT [\s\S]+)$/);
+  const rawGrants = grantMatch ? grantMatch[1].trim() : null;
+  // Normalise to one statement per line
+  const grantSql = rawGrants ? rawGrants.replace(/;\s*/g, ";\n").trim() : null;
+
+  const msgPart = grantMatch ? error.slice(0, error.indexOf(grantMatch[1])).trim() : error;
+
+  const handleCopy = () => {
+    if (grantSql) {
+      navigator.clipboard.writeText(grantSql).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  };
+
+  const handleGrant = async () => {
+    setGrantStatus("running");
+    setGrantMessage("");
+    try {
+      const res = await fetch("/api/setup/grant-catalog-access", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setGrantStatus("ok");
+        setGrantMessage(data.message);
+        setTimeout(onGranted, 1500);
+      } else {
+        setGrantStatus("fail");
+        setGrantMessage(data.message);
+      }
+    } catch {
+      setGrantStatus("fail");
+      setGrantMessage("Request failed — check server logs");
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 space-y-3">
+      <p className="text-sm text-red-700">{msgPart}</p>
+
+      {grantSql && (
+        <div className="rounded border border-gray-700 bg-gray-900 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-700">
+            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">SQL — run as metastore admin</span>
+            <button
+              onClick={handleCopy}
+              className="text-[11px] font-medium text-gray-400 hover:text-white transition-colors"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <pre className="px-3 py-2.5 font-mono text-xs text-green-400 whitespace-pre overflow-x-auto">
+            {grantSql}
+          </pre>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={handleGrant}
+          disabled={grantStatus === "running" || grantStatus === "ok"}
+          className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60 transition-colors"
+          style={{ backgroundColor: grantStatus === "ok" ? "#16a34a" : "#FF3621" }}
+        >
+          {grantStatus === "running" && (
+            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+            </svg>
+          )}
+          {grantStatus === "ok" ? "Granted!" : grantStatus === "running" ? "Granting…" : "Try to grant access"}
+        </button>
+        <p className="text-[11px] text-red-600">
+          {grantStatus === "ok" || grantStatus === "running"
+            ? grantMessage
+            : grantStatus === "fail"
+            ? <span className="text-red-700">{grantMessage} — copy the SQL above and ask a metastore admin to run it.</span>
+            : "Requires metastore admin rights. If this fails, copy the SQL above and ask your admin."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [step, setStep] = useState<WizardStep>("welcome");
   const [config, setConfig] = useState<ConfigData | null>(null);
@@ -272,19 +363,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         {/* Body */}
         <div className="min-h-[320px] px-8 py-6">
           {error && (() => {
-            // If the error contains GRANT SQL, split it out into a code block
-            const grantMatch = error.match(/^(.*?)(GRANT [^.]+(?:;\s*GRANT [^.]+)*)$/s);
-            if (grantMatch) {
-              const [, msg, grants] = grantMatch;
-              return (
-                <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 space-y-2">
-                  <p>{msg.trim()}</p>
-                  <pre className="rounded bg-gray-800 px-3 py-2 font-mono text-xs text-green-400 whitespace-pre-wrap overflow-x-auto">
-                    {grants.trim().replace(/;\s*/g, ';\n')}
-                  </pre>
-                  <p className="text-xs">Run these in your workspace SQL editor as a catalog owner or metastore admin, then click <strong>Create Tables</strong> again.</p>
-                </div>
-              );
+            // Detect permission errors that include GRANT SQL
+            const isPermissionError = /needs.*CREATE SCHEMA|needs.*USE CATALOG|GRANT USE CATALOG|GRANT CREATE SCHEMA/i.test(error);
+            if (isPermissionError) {
+              return <PermissionErrorBlock error={error} onGranted={() => { setError(null); }} />;
             }
             return (
               <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">

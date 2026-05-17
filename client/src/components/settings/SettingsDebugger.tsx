@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+// Module-level so state survives tab switches (useState resets on unmount)
+let _persistedRunKey = 0;
+let _persistedHasRun = false;
+
 interface DiagCheck {
   id: string;
   category: string;
@@ -58,26 +62,20 @@ function CheckRow({ check }: { check: DiagCheck }) {
   const [expanded, setExpanded] = useState(false);
   const hasFix = check.fix && check.status !== "pass";
 
+  const fixBtnClass = check.status === "fail"
+    ? "shrink-0 rounded px-2.5 py-1 text-[11px] font-medium text-white bg-red-500 hover:bg-red-600"
+    : "shrink-0 rounded px-2.5 py-1 text-[11px] font-medium text-white bg-amber-500 hover:bg-amber-600";
+
   return (
     <div className={`rounded border px-3 py-2 ${
       check.status === "fail" ? "border-red-100 bg-red-50" :
       check.status === "warn" ? "border-amber-100 bg-amber-50" :
       "border-gray-100 bg-white"
     }`}>
-      <div className="flex items-start gap-2">
+      <div className="flex items-center gap-2">
         <StatusIcon status={check.status} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-gray-800">{check.label}</span>
-            {hasFix && (
-              <button
-                onClick={() => setExpanded(e => !e)}
-                className="shrink-0 text-[10px] text-gray-500 hover:text-gray-700 underline"
-              >
-                {expanded ? "Hide fix" : "How to fix"}
-              </button>
-            )}
-          </div>
+          <span className="text-xs font-medium text-gray-800">{check.label}</span>
           {check.detail && (
             <p className="mt-0.5 text-[11px] text-gray-600">{check.detail}</p>
           )}
@@ -87,6 +85,11 @@ function CheckRow({ check }: { check: DiagCheck }) {
             </pre>
           )}
         </div>
+        {hasFix && (
+          <button onClick={() => setExpanded(e => !e)} className={fixBtnClass}>
+            {expanded ? "Hide" : "Fix"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -120,10 +123,13 @@ function CategorySection({ category, checks }: { category: string; checks: DiagC
   );
 }
 
-export function SettingsDebugger() {
-  const [runKey, setRunKey] = useState(0);
-  const [hasRun, setHasRun] = useState(false);
-  const [rebuildStatus, setRebuildStatus] = useState<{ type: "idle" | "running" | "done" | "error"; message: string }>({ type: "idle", message: "" });
+interface SettingsDebuggerProps {
+  onGoToConfig?: () => void;
+}
+
+export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
+  const [runKey, setRunKey] = useState(_persistedRunKey);
+  const [hasRun, setHasRun] = useState(_persistedHasRun);
 
   const { data: result, isFetching, isError } = useQuery<DiagResult>({
     queryKey: ["debug-run", runKey],
@@ -138,28 +144,11 @@ export function SettingsDebugger() {
   });
 
   const handleRun = () => {
-    setRunKey(k => k + 1);
+    const next = _persistedRunKey + 1;
+    _persistedRunKey = next;
+    _persistedHasRun = true;
+    setRunKey(next);
     setHasRun(true);
-    setRebuildStatus({ type: "idle", message: "" });
-  };
-
-  const handleRebuild = async () => {
-    setRebuildStatus({ type: "running", message: "Starting MV rebuild in background…" });
-    try {
-      const res = await fetch("/api/debug/rebuild-mvs", {
-        method: "POST",
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRebuildStatus({ type: "done", message: data.message || "Rebuild started — re-run diagnostics in a few minutes" });
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setRebuildStatus({ type: "error", message: data.detail || `HTTP ${res.status}` });
-      }
-    } catch {
-      setRebuildStatus({ type: "error", message: "Request failed — check server logs" });
-    }
   };
 
   const hasMvFailure = result?.checks.some(c => c.category === "materialized_views" && c.status === "fail");
@@ -245,26 +234,16 @@ export function SettingsDebugger() {
           </svg>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium text-red-800">Materialized views are missing or empty</p>
-            <p className="mt-0.5 text-[11px] text-red-700">This is the most common cause of $0 across the entire dashboard. Rebuild to fix it.</p>
-            {rebuildStatus.message && (
-              <p className={`mt-1.5 text-[11px] font-medium ${rebuildStatus.type === "error" ? "text-red-700" : "text-green-700"}`}>
-                {rebuildStatus.message}
-              </p>
-            )}
+            <p className="mt-0.5 text-[11px] text-red-700">This is the most common cause of $0 across the entire dashboard. Go to Configuration to rebuild them.</p>
           </div>
-          <button
-            onClick={handleRebuild}
-            disabled={rebuildStatus.type === "running"}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
-          >
-            {rebuildStatus.type === "running" && (
-              <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-              </svg>
-            )}
-            {rebuildStatus.type === "running" ? "Starting…" : "Rebuild MVs"}
-          </button>
+          {onGoToConfig && (
+            <button
+              onClick={onGoToConfig}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            >
+              Go to Config
+            </button>
+          )}
         </div>
       )}
 

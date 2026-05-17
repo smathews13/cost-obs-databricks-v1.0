@@ -771,6 +771,91 @@ async def bootstrap_admin(request: Request) -> dict[str, Any]:
 
 
 # ============================================================================
+# Catalog Permission Grant (setup wizard helper)
+# ============================================================================
+
+
+@router.post("/grant-catalog-access")
+async def grant_catalog_access(request: Request) -> dict[str, Any]:
+    """Attempt to grant the current user CREATE SCHEMA on the target catalog.
+
+    Called from the setup wizard when table creation fails with a permission
+    error. Uses the user's OAuth token — only succeeds if they are a metastore
+    admin or catalog owner. Returns ok=True/False with a message so the frontend
+    can either show success and let them retry, or confirm they need an admin.
+    """
+    import asyncio as _asyncio
+
+    catalog, _ = get_catalog_schema()
+    user_email = request.headers.get("X-Forwarded-Email", "")
+
+    try:
+        from server.db import get_user_workspace_client
+        from databricks.sdk.service.catalog import SecurableType
+
+        loop = _asyncio.get_running_loop()
+
+        def _do_grants():
+            w = get_user_workspace_client()
+            if not user_email:
+                me = w.current_user.me()
+                principal = me.user_name or ""
+            else:
+                principal = user_email
+
+            errors = []
+            for privilege, securable_type, full_name in [
+                ("USE CATALOG",    SecurableType.CATALOG, catalog),
+                ("CREATE SCHEMA",  SecurableType.CATALOG, catalog),
+            ]:
+                try:
+                    from databricks.sdk.service.catalog import PermissionsChange, Privilege
+                    w.grants.update(
+                        securable_type=securable_type,
+                        full_name=full_name,
+                        changes=[PermissionsChange(
+                            add=[Privilege(privilege)],
+                            principal=principal,
+                        )],
+                    )
+                except Exception as e:
+                    errors.append(f"{privilege}: {e}")
+
+            return principal, errors
+
+        principal, errors = await loop.run_in_executor(None, _do_grants)
+
+        if errors:
+            return {
+                "ok": False,
+                "message": f"Could not apply all grants — you may not have metastore admin rights. "
+                           f"Errors: {'; '.join(errors)}",
+                "sql": (
+                    f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{principal}`;\n"
+                    f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{principal}`;"
+                ),
+            }
+
+        return {
+            "ok": True,
+            "message": f"Granted USE CATALOG and CREATE SCHEMA on `{catalog}` to `{principal}`. "
+                       f"Click Create Tables to continue.",
+        }
+
+    except Exception as e:
+        catalog, _ = get_catalog_schema()
+        user = user_email or "your-user@example.com"
+        return {
+            "ok": False,
+            "message": f"Grant attempt failed: {e}",
+            "sql": (
+                f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{user}`;\n"
+                f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{user}`;"
+            ),
+        }
+
+
+# ============================================================================
 # Token Generation (for local development)
 # ============================================================================
 

@@ -99,7 +99,7 @@ export function SettingsConfig({
   const [telemetryDraft, setTelemetryDraft] = useState<TelemetryConfig>({ catalog: "", schema_name: "", table_prefix: "" });
   const [telemetrySaving, setTelemetrySaving] = useState(false);
   const [telemetryError, setTelemetryError] = useState<string | null>(null);
-  const { data: tablesStatus = null, isLoading: tablesLoading, refetch: refetchTables } = useQuery<{
+  const { data: tablesStatus = null, isLoading: tablesLoading, isFetching: tablesFetching, refetch: refetchTables } = useQuery<{
     catalog: string | null;
     schema: string | null;
     auth_error?: string | null;
@@ -695,11 +695,11 @@ export function SettingsConfig({
                 </select>
                 <button
                   onClick={() => refetchTables()}
-                  disabled={mvRefreshing}
+                  disabled={mvRefreshing || tablesFetching}
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Refresh table status"
                 >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className={`h-3.5 w-3.5 ${tablesFetching && !mvRefreshing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                   Status
@@ -716,6 +716,21 @@ export function SettingsConfig({
                 </button>
               </div>
             </div>
+
+            {/* Rebuild error banner */}
+            {!mvRefreshing && tablesStatus?.refresh_status?.status && ["error", "partial_error"].includes(tablesStatus.refresh_status.status) && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800 flex gap-2 items-start">
+                <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                <div>
+                  <span className="font-medium">Last rebuild failed</span>
+                  {tablesStatus.refresh_status.error && (
+                    <p className="mt-0.5 text-red-700">{tablesStatus.refresh_status.error}</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Auth error banner */}
             {tablesStatus?.auth_error && (

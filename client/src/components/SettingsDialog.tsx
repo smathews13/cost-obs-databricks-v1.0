@@ -399,7 +399,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
               <SettingsPermissions />
             )}
             {activeSection === "debugger" && (
-              <SettingsDebugger />
+              <SettingsDebugger onGoToConfig={() => setActiveSection("config")} />
             )}
           </div>
 

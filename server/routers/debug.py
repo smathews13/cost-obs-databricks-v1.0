@@ -223,6 +223,71 @@ def _check_sp_identity() -> dict:
     return {"status": "pass", "detail": f"Service principal configured: {client_id}"}
 
 
+def _check_warehouse_list_access() -> dict:
+    """Check that at least one warehouse is visible to list_warehouses — the root cause of 'No warehouses found'."""
+    from server.db import get_workspace_client, get_user_workspace_client
+
+    http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
+    configured_id = http_path.split("/")[-1] if http_path and "/" in http_path else None
+
+    user_count = sp_count = 0
+    user_error = sp_error = None
+
+    # Test user OAuth token listing
+    try:
+        user_client = get_user_workspace_client()
+        user_whs = list(user_client.warehouses.list())
+        user_count = len(user_whs)
+    except Exception as e:
+        user_error = str(e)[:200]
+
+    # Test SP M2M token listing
+    try:
+        sp_client = get_workspace_client()
+        sp_whs = list(sp_client.warehouses.list())
+        sp_count = len(sp_whs)
+    except Exception as e:
+        sp_error = str(e)[:200]
+
+    # If at least one returns warehouses, the UI will work
+    if user_count > 0 or sp_count > 0:
+        parts = []
+        if user_count > 0:
+            parts.append(f"{user_count} via user OAuth")
+        if sp_count > 0:
+            parts.append(f"{sp_count} via SP")
+        return {"status": "pass", "detail": f"Warehouses visible: {', '.join(parts)}"}
+
+    # Both empty — this is the 'No warehouses found' bug
+    fix_lines = [
+        "The 'No warehouses found' error means neither the user OAuth token nor the",
+        "service principal has CAN_USE permission on any SQL warehouse.",
+        "",
+        "Fix — grant CAN_USE on the app warehouse to the service principal:",
+        "  1. In Databricks: SQL Warehouses → select the warehouse → Permissions",
+        "  2. Add the SP (client ID or display name) with 'Can use' permission",
+        "  3. Alternatively, grant via REST API:",
+        f"     PUT /api/2.0/permissions/warehouses/<warehouse-id>",
+        f"     Body: {{\"access_control_list\": [{{\"service_principal_name\": \"<SP-client-id>\", \"permission_level\": \"CAN_USE\"}}]}}",
+        "",
+        "If using User OAuth mode, the end-user also needs CAN_USE on the warehouse.",
+    ]
+    if configured_id:
+        fix_lines.insert(0, f"Configured warehouse ID: {configured_id}")
+
+    detail_parts = ["warehouses.list() returned 0 for both user OAuth and SP tokens"]
+    if user_error:
+        detail_parts.append(f"user token error: {user_error}")
+    if sp_error:
+        detail_parts.append(f"SP token error: {sp_error}")
+
+    return {
+        "status": "fail",
+        "detail": "; ".join(detail_parts),
+        "fix": "\n".join(fix_lines),
+    }
+
+
 def _check_workspace_pool() -> dict:
     import json
     settings_dir = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
@@ -238,6 +303,77 @@ def _check_workspace_pool() -> dict:
         return {"status": "pass", "detail": "No workspace pool configured — all workspaces visible in the filter dropdown"}
     except Exception as e:
         return {"status": "warn", "detail": f"Could not read workspace_filter.json: {e}"}
+
+
+def _check_mv_consistency() -> dict:
+    """Cross-check spend totals across core MV tables to catch partial build failures.
+
+    This is the root cause of the 'some tabs show $0, others show real data' pattern:
+    some tables built successfully, others timed out or errored during the initial build.
+    """
+    from server.db import execute_query, get_catalog_schema
+    catalog, schema = get_catalog_schema()
+
+    _TABLES = {
+        "daily_usage_summary":    f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
+        "daily_product_breakdown":f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM {catalog}.{schema}.daily_product_breakdown WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
+        "daily_workspace_breakdown":f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM {catalog}.{schema}.daily_workspace_breakdown WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
+    }
+
+    stats: dict = {}
+    for tbl, sql in _TABLES.items():
+        try:
+            row = (execute_query(sql, None, no_cache=True) or [{}])[0]
+            stats[tbl] = {"cnt": int(row.get("cnt", 0)), "spend": float(row.get("spend") or 0)}
+        except Exception as exc:
+            stats[tbl] = {"cnt": -1, "spend": -1, "error": str(exc)[:120]}
+
+    valid = {t: s for t, s in stats.items() if s["cnt"] >= 0}
+    max_spend = max((s["spend"] for s in valid.values()), default=0)
+
+    # Tables that exist but are completely empty
+    empty = [t for t, s in valid.items() if s["cnt"] == 0]
+    # Tables with rows but $0 spend (list_prices was missing when MVs were built)
+    zero_spend = [t for t, s in valid.items() if s["cnt"] > 0 and s["spend"] == 0]
+    # Errors (table doesn't exist or query failed)
+    errored = [t for t, s in stats.items() if s.get("cnt", -1) == -1]
+
+    if not empty and not zero_spend and not errored:
+        summary = "; ".join(f"{t.split('_',1)[1]}: {s['cnt']:,}r/${s['spend']:,.0f}" for t, s in valid.items())
+        return {"status": "pass", "detail": f"All core MV tables consistent — {summary}"}
+
+    issues = []
+    if empty and max_spend > 0:
+        issues.append(f"Partial build failure — empty tables while others have data: {', '.join(empty)}")
+    elif empty:
+        issues.append(f"Empty tables (no data in last 30 days): {', '.join(empty)}")
+    if zero_spend:
+        issues.append(f"Rows present but $0 spend (list_prices missing at build time): {', '.join(zero_spend)}")
+    if errored:
+        issues.append(f"Tables missing or inaccessible: {', '.join(errored)}")
+
+    fix_parts = [
+        "This causes the 'some tabs show $0, others show real data' pattern.",
+        "Root cause: the initial MV build partially failed — some tables timed out or",
+        "errored mid-build while others completed.",
+        "",
+        "Fix: click 'Rebuild Materialized Views' in this Debugger or the Configuration tab.",
+        "The rebuild recreates all tables from scratch and is safe to re-run.",
+    ]
+    if zero_spend:
+        fix_parts += [
+            "",
+            "If $0 spend persists after rebuild: system.billing.list_prices may have been",
+            "empty when the MVs first built. Wait for list_prices to populate then rebuild again.",
+        ]
+
+    status = "fail" if (empty and max_spend > 0) or errored else "warn"
+    return {
+        "status": status,
+        "detail": "; ".join(issues),
+        "fix": "\n".join(fix_parts),
+        "table_summary": {t: {"rows": s.get("cnt", -1), "spend": round(s.get("spend", 0), 2)} for t, s in stats.items()},
+    }
 
 
 # ── Per-tab visualization health checks ──────────────────────────────────────
@@ -377,16 +513,18 @@ def _tab_infra() -> dict:
 
 # Ordered check registry
 _CHECKS = [
-    {"id": "sp_identity",        "category": "configuration",      "label": "Service principal identity",              "fn": _check_sp_identity},
-    {"id": "warehouse",          "category": "configuration",      "label": "SQL warehouse configured",                "fn": _check_warehouse_configured},
-    {"id": "workspace_pool",     "category": "configuration",      "label": "Workspace filter pool",                   "fn": _check_workspace_pool},
-    {"id": "billing_usage",      "category": "permissions",        "label": "system.billing.usage access",             "fn": _check_billing_usage},
-    {"id": "list_prices",        "category": "permissions",        "label": "system.billing.list_prices access",       "fn": _check_list_prices},
-    {"id": "query_history",      "category": "permissions",        "label": "system.query.history access",             "fn": _check_query_history},
-    {"id": "workspaces_table",   "category": "permissions",        "label": "system.access.workspaces_latest access",  "fn": _check_workspaces_table},
-    {"id": "mv_existence",       "category": "materialized_views", "label": "Materialized view tables exist",          "fn": _check_mv_existence},
-    {"id": "mv_populated",       "category": "materialized_views", "label": "Materialized views have data",            "fn": _check_mv_populated},
-    {"id": "recent_billing_data","category": "data",               "label": "Recent billing data (last 30 days)",      "fn": _check_recent_billing_data},
+    {"id": "sp_identity",          "category": "configuration",      "label": "Service principal identity",                      "fn": _check_sp_identity},
+    {"id": "warehouse",            "category": "configuration",      "label": "SQL warehouse configured",                        "fn": _check_warehouse_configured},
+    {"id": "warehouse_list_access","category": "configuration",      "label": "Warehouse list access (Switch Warehouse UI)",      "fn": _check_warehouse_list_access},
+    {"id": "workspace_pool",       "category": "configuration",      "label": "Workspace filter pool",                           "fn": _check_workspace_pool},
+    {"id": "billing_usage",        "category": "permissions",        "label": "system.billing.usage access",                     "fn": _check_billing_usage},
+    {"id": "list_prices",          "category": "permissions",        "label": "system.billing.list_prices access",               "fn": _check_list_prices},
+    {"id": "query_history",        "category": "permissions",        "label": "system.query.history access",                     "fn": _check_query_history},
+    {"id": "workspaces_table",     "category": "permissions",        "label": "system.access.workspaces_latest access",          "fn": _check_workspaces_table},
+    {"id": "mv_existence",         "category": "materialized_views", "label": "Materialized view tables exist",                  "fn": _check_mv_existence},
+    {"id": "mv_populated",         "category": "materialized_views", "label": "Materialized views have data",                    "fn": _check_mv_populated},
+    {"id": "mv_consistency",       "category": "materialized_views", "label": "MV table spend consistency (partial-zeros check)", "fn": _check_mv_consistency},
+    {"id": "recent_billing_data",  "category": "data",               "label": "Recent billing data (last 30 days)",              "fn": _check_recent_billing_data},
     {"id": "tab_dbu",            "category": "tab_health",         "label": "DBU & Billing tab",                       "fn": _tab_dbu},
     {"id": "tab_kpis",           "category": "tab_health",         "label": "Platform KPIs tab",                       "fn": _tab_kpis},
     {"id": "tab_sql",            "category": "tab_health",         "label": "SQL Warehousing tab",                     "fn": _tab_sql},

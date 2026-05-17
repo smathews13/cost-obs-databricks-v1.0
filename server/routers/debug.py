@@ -340,7 +340,11 @@ def _check_mv_consistency() -> dict:
 
     if not empty and not zero_spend and not errored:
         summary = "; ".join(f"{t.split('_',1)[1]}: {s['cnt']:,}r/${s['spend']:,.0f}" for t, s in valid.items())
-        return {"status": "pass", "detail": f"All core MV tables consistent — {summary}"}
+        return {
+            "status": "pass",
+            "detail": f"All core MV tables consistent — {summary}",
+            "table_summary": {t: {"rows": s.get("cnt", -1), "spend": round(s.get("spend", 0), 2)} for t, s in stats.items()},
+        }
 
     issues = []
     if empty and max_spend > 0:

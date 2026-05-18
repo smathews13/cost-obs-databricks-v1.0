@@ -37,9 +37,11 @@ def _check_billing_usage() -> dict:
                 "  GRANT USE SCHEMA ON SCHEMA system.billing TO `<identity>`;\n"
                 "  GRANT SELECT ON TABLE system.billing.usage TO `<identity>`"
             )
+            root_cause = "Missing SELECT permission on system.billing.usage"
         else:
             fix = "Check that the SQL warehouse is running and the app identity has SELECT on system.billing.usage"
-        return {"status": "fail", "detail": err[:250], "fix": fix}
+            root_cause = "SQL warehouse or query execution error"
+        return {"status": "fail", "detail": err[:250], "root_cause": root_cause, "fix": fix}
 
 
 def _check_list_prices() -> dict:
@@ -57,6 +59,7 @@ def _check_list_prices() -> dict:
         return {
             "status": "fail",
             "detail": str(e)[:250],
+            "root_cause": "Missing SELECT permission on system.billing.list_prices",
             "fix": "Grant SELECT on system.billing.list_prices to the app identity",
         }
 
@@ -75,6 +78,7 @@ def _check_query_history() -> dict:
         return {
             "status": "fail",
             "detail": str(e)[:250],
+            "root_cause": "Missing SELECT permission on system.query.history",
             "fix": "Grant USE SCHEMA on system.query and SELECT on system.query.history to the app identity. SQL tab data depends on this.",
         }
 
@@ -94,6 +98,7 @@ def _check_workspaces_table() -> dict:
         return {
             "status": "warn",
             "detail": f"system.access.workspaces_latest not accessible: {str(e)[:150]}",
+            "root_cause": "system.access schema not enabled in this workspace",
             "fix": (
                 "Enable the system.access schema via Databricks CLI:\n"
                 "  databricks unity-catalog system-schemas enable --schema access\n"
@@ -114,6 +119,7 @@ def _check_mv_existence() -> dict:
         return {
             "status": "fail",
             "detail": f"Could not list tables in {catalog}.{schema}: {e}",
+            "root_cause": "Missing USE CATALOG or USE SCHEMA permissions",
             "fix": "Verify the app identity has USE CATALOG and USE SCHEMA on the app catalog/schema",
         }
 
@@ -123,6 +129,7 @@ def _check_mv_existence() -> dict:
     return {
         "status": "fail",
         "detail": f"Missing: {', '.join(missing)}",
+        "root_cause": "Materialized views have not been built yet",
         "fix": "Click 'Rebuild Materialized Views' below. This is the most common cause of zeros across the entire dashboard.",
         "missing_tables": missing,
     }
@@ -144,6 +151,7 @@ def _check_mv_populated() -> dict:
             return {
                 "status": "fail",
                 "detail": "daily_usage_summary exists but has no rows",
+                "root_cause": "MV tables exist but ETL did not populate them",
                 "fix": "The MV tables were created but the ETL did not complete. Click 'Rebuild Materialized Views' below.",
             }
         return {"status": "pass", "detail": f"{cnt:,} rows, latest usage_date: {latest}"}
@@ -151,6 +159,7 @@ def _check_mv_populated() -> dict:
         return {
             "status": "warn",
             "detail": f"Could not query daily_usage_summary: {str(e)[:200]}",
+            "root_cause": "Could not read daily_usage_summary MV",
             "fix": "Rebuild materialized views if they were recently dropped or are missing",
         }
 
@@ -187,11 +196,13 @@ def _check_warehouse_configured() -> dict:
             return {
                 "status": "warn",
                 "detail": f"DATABRICKS_WAREHOUSE_ID is set ({warehouse_id}) but DATABRICKS_HTTP_PATH hasn't resolved — first query will trigger resolution",
+                "root_cause": "Warehouse ID found but HTTP path not yet resolved",
                 "fix": "Restart the app to force warehouse resolution, or set DATABRICKS_HTTP_PATH explicitly in app.yaml.",
             }
         return {
             "status": "fail",
             "detail": "No SQL warehouse configured — all queries will fail with 'Missing DATABRICKS_HTTP_PATH'",
+            "root_cause": "No SQL warehouse resource attached to the app",
             "fix": (
                 "Add a SQL warehouse resource in the Databricks Apps UI:\n"
                 "  1. App settings → Resources → + Add resource → SQL warehouse\n"
@@ -228,6 +239,7 @@ def _check_sp_identity() -> dict:
         return {
             "status": "warn",
             "detail": "DATABRICKS_CLIENT_ID not set — app runs as the deploying user identity, not a dedicated service principal",
+            "root_cause": "No service principal configured",
             "fix": "Set DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET in App config for a dedicated SP. Required for scheduled MV refreshes.",
         }
     client_secret = os.getenv("DATABRICKS_CLIENT_SECRET", "")
@@ -235,6 +247,7 @@ def _check_sp_identity() -> dict:
         return {
             "status": "warn",
             "detail": f"SP client_id is set ({client_id}) but DATABRICKS_CLIENT_SECRET is missing",
+            "root_cause": "Service principal secret not configured",
             "fix": "Set DATABRICKS_CLIENT_SECRET in the App configuration",
         }
     return {"status": "pass", "detail": f"Service principal configured: {client_id}"}
@@ -301,6 +314,7 @@ def _check_warehouse_list_access() -> dict:
     return {
         "status": "fail",
         "detail": "; ".join(detail_parts),
+        "root_cause": "No warehouse visible to app identity or user token",
         "fix": "\n".join(fix_lines),
     }
 
@@ -389,9 +403,18 @@ def _check_mv_consistency() -> dict:
         ]
 
     status = "fail" if (empty and max_spend > 0) or errored else "warn"
+    if errored:
+        root_cause = "One or more MV tables are missing or inaccessible"
+    elif empty and max_spend > 0:
+        root_cause = "MV build partially failed — some tables built, others errored"
+    elif zero_spend:
+        root_cause = "list_prices table was empty when MVs were built"
+    else:
+        root_cause = "MV tables have incomplete or inconsistent data"
     return {
         "status": status,
         "detail": "; ".join(issues),
+        "root_cause": root_cause,
         "fix": "\n".join(fix_parts),
         "table_summary": {t: {"rows": s.get("cnt", -1), "spend": round(s.get("spend", 0), 2)} for t, s in stats.items()},
     }
@@ -412,12 +435,12 @@ def _tab_dbu() -> dict:
         row = (result or [{}])[0]
         cnt, spend = int(row.get("cnt", 0)), float(row.get("spend") or 0)
         if cnt == 0:
-            return {"status": "fail", "detail": "No rows in last 30 days — all charts will show $0", "fix": "Rebuild materialized views. Confirm system.billing.usage has recent data."}
+            return {"status": "fail", "detail": "No rows in last 30 days — all charts will show $0", "root_cause": "daily_usage_summary MV is empty or not built", "fix": "Rebuild materialized views. Confirm system.billing.usage has recent data."}
         if spend == 0:
-            return {"status": "warn", "detail": f"{cnt:,} rows but $0 spend — list_prices may be missing", "fix": "Verify system.billing.list_prices has data (see Permissions section)"}
+            return {"status": "warn", "detail": f"{cnt:,} rows but $0 spend — list_prices may be missing", "root_cause": "Rows present but no cost data (list_prices empty at build time)", "fix": "Verify system.billing.list_prices has data (see Permissions section)"}
         return {"status": "pass", "detail": f"${spend:,.0f} spend across {cnt:,} day-workspace rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has SELECT on the daily_usage_summary materialized view. If the table is missing or schema is stale, rebuild materialized views from the Configuration tab."}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "MV table not accessible or missing", "fix": "Verify the app identity has SELECT on the daily_usage_summary materialized view. If the table is missing or schema is stale, rebuild materialized views from the Configuration tab."}
 
 
 def _tab_kpis() -> dict:
@@ -431,10 +454,10 @@ def _tab_kpis() -> dict:
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
         if cnt == 0:
-            return {"status": "warn", "detail": "No query stats rows in last 30 days — KPI metrics relying on query history will show 0", "fix": "Verify system.query.history access and rebuild MVs"}
+            return {"status": "warn", "detail": "No query stats rows in last 30 days — KPI metrics relying on query history will show 0", "root_cause": "daily_query_stats MV is empty or has no recent data", "fix": "Verify system.query.history access and rebuild MVs"}
         return {"status": "pass", "detail": f"{cnt:,} query-stat rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has SELECT on daily_query_stats. If the column schema looks wrong, rebuild materialized views. Also check that system.query.history access is granted (see Permissions section)."}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "daily_query_stats MV not accessible or missing", "fix": "Verify the app identity has SELECT on daily_query_stats. If the column schema looks wrong, rebuild materialized views. Also check that system.query.history access is granted (see Permissions section)."}
 
 
 def _tab_sql() -> dict:
@@ -454,13 +477,13 @@ def _tab_sql() -> dict:
         cnt1 = int((r1 or [{}])[0].get("cnt", 0))
         cnt2 = int((r2 or [{}])[0].get("cnt", 0))
         if cnt1 == 0 and cnt2 == 0:
-            return {"status": "warn", "detail": "No SQL attribution or per-query cost data in last 30 days — SQL tab charts will be empty", "fix": "Verify system.query.history access. SQL tab requires active DBSQL warehouse usage."}
+            return {"status": "warn", "detail": "No SQL attribution or per-query cost data in last 30 days — SQL tab charts will be empty", "root_cause": "No DBSQL warehouse usage or MV tables are empty", "fix": "Verify system.query.history access. SQL tab requires active DBSQL warehouse usage."}
         parts = []
         if cnt1 > 0: parts.append(f"{cnt1:,} tool-attribution rows")
         if cnt2 > 0: parts.append(f"{cnt2:,} per-query cost rows")
         return {"status": "pass", "detail": ", ".join(parts) + " in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has SELECT on the SQL MV tables (sql_tool_attribution, dbsql_cost_per_query). If the column schema is stale, rebuild materialized views from the Configuration tab."}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "SQL MV tables not accessible or missing", "fix": "Verify the app identity has SELECT on the SQL MV tables (sql_tool_attribution, dbsql_cost_per_query). If the column schema is stale, rebuild materialized views from the Configuration tab."}
 
 
 def _tab_aiml() -> dict:
@@ -475,10 +498,10 @@ def _tab_aiml() -> dict:
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
         if cnt == 0:
-            return {"status": "warn", "detail": "No AI/ML usage rows in last 30 days — AIML tab will show $0", "fix": "AIML tab only shows data if your account uses Model Serving, Foundation Model APIs, or Vector Search. This may be expected if those features aren't in use."}
+            return {"status": "warn", "detail": "No AI/ML usage rows in last 30 days — AIML tab will show $0", "root_cause": "No Model Serving, Foundation Model, or Vector Search usage detected", "fix": "AIML tab only shows data if your account uses Model Serving, Foundation Model APIs, or Vector Search. This may be expected if those features aren't in use."}
         return {"status": "pass", "detail": f"{cnt:,} AI/ML billing rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "Missing permission on system.billing.usage", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
 
 
 def _tab_apps() -> dict:
@@ -492,10 +515,10 @@ def _tab_apps() -> dict:
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
         if cnt == 0:
-            return {"status": "warn", "detail": "No Databricks Apps usage rows in last 30 days — Apps tab will show $0", "fix": "Apps tab only shows data if your account runs Databricks Apps. Expected to be empty if Apps aren't deployed."}
+            return {"status": "warn", "detail": "No Databricks Apps usage rows in last 30 days — Apps tab will show $0", "root_cause": "No Databricks Apps deployed or no Apps usage in last 30 days", "fix": "Apps tab only shows data if your account runs Databricks Apps. Expected to be empty if Apps aren't deployed."}
         return {"status": "pass", "detail": f"{cnt:,} Apps billing rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "Missing permission on system.billing.usage", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
 
 
 def _tab_tagging() -> dict:
@@ -508,10 +531,10 @@ def _tab_tagging() -> dict:
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
         if cnt == 0:
-            return {"status": "warn", "detail": "No cluster activity in last 30 days — Tagging tab untagged resource lists will be empty", "fix": "Tagging tab requires system.compute.clusters access and active clusters. Verify the app identity has SELECT on system.compute.clusters."}
+            return {"status": "warn", "detail": "No cluster activity in last 30 days — Tagging tab untagged resource lists will be empty", "root_cause": "No cluster activity or system.compute.clusters has no recent data", "fix": "Tagging tab requires system.compute.clusters access and active clusters. Verify the app identity has SELECT on system.compute.clusters."}
         return {"status": "pass", "detail": f"{cnt:,} cluster events in last 30 days — untagged resource analysis available"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed (system.compute.clusters may not be accessible): {str(e)[:200]}", "fix": "Grant SELECT on system.compute.clusters to the app identity"}
+        return {"status": "warn", "detail": f"Query failed (system.compute.clusters may not be accessible): {str(e)[:200]}", "root_cause": "Missing SELECT permission on system.compute.clusters", "fix": "Grant SELECT on system.compute.clusters to the app identity"}
 
 
 def _tab_infra() -> dict:
@@ -526,10 +549,10 @@ def _tab_infra() -> dict:
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
         if cnt == 0:
-            return {"status": "warn", "detail": "No infrastructure/cloud cost data found in last 30 days", "fix": "Infra tab shows cloud provider actual costs (AWS CUR, Azure, GCP billing exports). Configure cloud cost exports in the Configuration tab."}
+            return {"status": "warn", "detail": "No infrastructure/cloud cost data found in last 30 days", "root_cause": "Cloud cost exports not configured or no infrastructure usage", "fix": "Infra tab shows cloud provider actual costs (AWS CUR, Azure, GCP billing exports). Configure cloud cost exports in the Configuration tab."}
         return {"status": "pass", "detail": f"{cnt:,} infrastructure billing rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
+        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "Missing permission on system.billing.usage", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}
 
 
 # Ordered check registry

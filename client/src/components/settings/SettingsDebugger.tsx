@@ -12,6 +12,7 @@ interface DiagCheck {
   status: "pass" | "fail" | "warn" | "skip";
   detail: string;
   fix: string;
+  root_cause?: string;
   missing_tables?: string[];
 }
 
@@ -61,6 +62,10 @@ function StatusIcon({ status }: { status: DiagCheck["status"] }) {
 function CheckRow({ check }: { check: DiagCheck }) {
   const [expanded, setExpanded] = useState(false);
   const hasFix = check.fix && check.status !== "pass";
+  const isAlert = check.status === "fail" || check.status === "warn";
+  const truncatedDetail = check.detail && check.detail.length > 50
+    ? check.detail.slice(0, 50) + "…"
+    : check.detail;
 
   const fixBtnClass = check.status === "fail"
     ? "shrink-0 rounded px-2.5 py-1 text-[11px] font-medium text-white bg-red-500 hover:bg-red-600"
@@ -76,9 +81,18 @@ function CheckRow({ check }: { check: DiagCheck }) {
         <StatusIcon status={check.status} />
         <div className="min-w-0 flex-1">
           <span className="text-xs font-medium text-gray-800">{check.label}</span>
-          {check.detail && (
+          {isAlert ? (
+            <>
+              {check.detail && (
+                <p className="mt-0.5 text-[11px] text-red-400">{truncatedDetail}</p>
+              )}
+              {check.root_cause && (
+                <p className="mt-0.5 text-[11px] font-bold text-gray-900">{check.root_cause}</p>
+              )}
+            </>
+          ) : check.detail ? (
             <p className="mt-0.5 text-[11px] text-gray-600">{check.detail}</p>
-          )}
+          ) : null}
           {expanded && hasFix && (
             <pre className="mt-2 whitespace-pre-wrap rounded border border-gray-200 bg-white px-2.5 py-2 text-[10px] leading-relaxed text-gray-700">
               {check.fix}

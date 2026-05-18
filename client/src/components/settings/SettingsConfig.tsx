@@ -38,6 +38,19 @@ interface SettingsConfigProps {
   onWsPoolSaved?: () => void;
 }
 
+function ColWarn({ error, align = "left" }: { error: string; align?: "left" | "right" }) {
+  return (
+    <span className="group relative inline-block ml-1 cursor-help">
+      <svg className="h-3 w-3 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+      </svg>
+      <span className={`pointer-events-none invisible absolute ${align === "right" ? "right-0" : "left-0"} top-full z-[9999] mt-1 w-64 rounded-lg bg-gray-900 px-2.5 py-2 text-[11px] leading-snug text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100`}>
+        {error}
+      </span>
+    </span>
+  );
+}
+
 export function SettingsConfig({
   configLoading,
   appConfig,
@@ -193,6 +206,7 @@ export function SettingsConfig({
   const [wsPoolDraft, setWsPoolDraft] = useState<string[]>([]);
   const [wsPoolSaving, setWsPoolSaving] = useState(false);
   const [wsPoolSaveStatus, setWsPoolSaveStatus] = useState<string | null>(null);
+  const [wsPoolSearch, setWsPoolSearch] = useState("");
 
   const saveWsPool = async () => {
     setWsPoolSaving(true);
@@ -527,7 +541,7 @@ export function SettingsConfig({
           </div>
 
           {/* Storage Location & Tables */}
-          <div>
+          <div id="storage-location-tables">
             <div className="flex items-center gap-2 mb-2">
               <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
@@ -696,7 +710,7 @@ export function SettingsConfig({
                 <button
                   onClick={() => refetchTables()}
                   disabled={mvRefreshing || tablesFetching}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-gray-600 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Refresh table status"
                 >
                   <svg className={`h-3.5 w-3.5 ${tablesFetching && !mvRefreshing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -707,7 +721,7 @@ export function SettingsConfig({
                 <button
                   onClick={handleMvRefresh}
                   disabled={mvRefreshing}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-gray-600 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className={`h-3.5 w-3.5 ${mvRefreshing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -815,9 +829,7 @@ export function SettingsConfig({
                               <span className="text-green-500">✓</span>
                             )}
                             {t.name}
-                            {t.error && (
-                              <span className="ml-1 text-red-400" title={t.error}>⚠</span>
-                            )}
+                            {t.error && <ColWarn error={t.error} />}
                           </td>
                           <td className="px-3 py-2 text-gray-500">
                             {t.table_type ? (
@@ -828,7 +840,7 @@ export function SettingsConfig({
                               }`}>
                                 {t.table_type}
                               </span>
-                            ) : "—"}
+                            ) : t.error ? <ColWarn error={t.error} /> : "—"}
                           </td>
                           <td className="px-3 py-2 text-[11px]">
                             {t.owner ? (() => {
@@ -845,10 +857,10 @@ export function SettingsConfig({
                                   {t.owner.length > 28 ? t.owner.slice(0, 28) + "…" : t.owner}
                                 </span>
                               );
-                            })() : <span className="text-gray-300">—</span>}
+                            })() : t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} /></> : <span className="text-gray-300">—</span>}
                           </td>
                           <td className="px-3 py-2 text-right text-gray-500 tabular-nums">
-                            {t.row_count != null ? t.row_count.toLocaleString() : "—"}
+                            {t.row_count != null ? t.row_count.toLocaleString() : t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} align="right" /></> : "—"}
                           </td>
                           <td className="px-3 py-2 text-right text-gray-500 tabular-nums">
                             {t.min_date && t.max_date ? (() => {
@@ -860,17 +872,17 @@ export function SettingsConfig({
                               if (years > 0 && remMonths > 0) return `${years}yr ${remMonths}mo`;
                               if (years > 0) return `${years}yr`;
                               return `${months}mo`;
-                            })() : "—"}
+                            })() : t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} align="right" /></> : "—"}
                           </td>
                           <td className="px-3 py-2 text-right text-gray-400 text-[11px]">
                             {RETENTION[t.name] ?? "—"}
                           </td>
                           <td className="px-3 py-2 text-right font-mono text-gray-500">
-                            {t.max_date ? t.max_date.slice(0, 10) : "—"}
+                            {t.max_date ? t.max_date.slice(0, 10) : t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} align="right" /></> : "—"}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {t.days_behind == null ? (
-                              <span className="text-gray-300">—</span>
+                              t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} align="right" /></> : <span className="text-gray-300">—</span>
                             ) : t.days_behind === 0 ? (
                               <span className="text-green-600 font-medium">Today</span>
                             ) : t.days_behind === 1 ? (
@@ -994,8 +1006,19 @@ export function SettingsConfig({
                       >None</button>
                     </div>
                   </div>
+                  {(allWorkspacesData?.workspaces ?? []).length > 5 && (
+                    <input
+                      type="text"
+                      value={wsPoolSearch}
+                      onChange={e => setWsPoolSearch(e.target.value)}
+                      placeholder="Search workspaces…"
+                      className="w-full rounded border border-gray-200 px-2 py-1 text-xs placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                    />
+                  )}
                   <div className="max-h-48 overflow-y-auto space-y-1 rounded border border-gray-100 p-2">
-                    {(allWorkspacesData?.workspaces ?? []).map(ws => (
+                    {(allWorkspacesData?.workspaces ?? [])
+                      .filter(ws => !wsPoolSearch || (ws.name || ws.id).toLowerCase().includes(wsPoolSearch.toLowerCase()))
+                      .map(ws => (
                       <label key={ws.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 hover:bg-gray-50">
                         <input
                           type="checkbox"
@@ -1014,6 +1037,11 @@ export function SettingsConfig({
                     ))}
                     {(allWorkspacesData?.workspaces ?? []).length === 0 && (
                       <p className="py-2 text-center text-[11px] text-gray-400">No workspaces found</p>
+                    )}
+                    {(allWorkspacesData?.workspaces ?? []).length > 0 &&
+                      wsPoolSearch &&
+                      (allWorkspacesData?.workspaces ?? []).filter(ws => (ws.name || ws.id).toLowerCase().includes(wsPoolSearch.toLowerCase())).length === 0 && (
+                      <p className="py-2 text-center text-[11px] text-gray-400">No workspaces match "{wsPoolSearch}"</p>
                     )}
                   </div>
                   <div className="flex flex-col gap-1.5 pt-1">

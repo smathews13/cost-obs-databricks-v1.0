@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsExperimental, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
@@ -136,6 +136,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [generalDirty, setGeneralDirty] = useState(false);
   const [pendingWarehouseSwitch, setPendingWarehouseSwitch] = useState<{ id: string; name: string; state: string } | null>(null);
+  const contentScrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   // ── Queries ──────────────────────────────────────────────────────────
@@ -349,7 +350,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div ref={contentScrollRef} className="flex-1 overflow-y-auto px-6 py-4">
             {activeSection === "config" && (
               <SettingsConfig
                 configLoading={configLoading}
@@ -399,7 +400,13 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
               <SettingsPermissions />
             )}
             {activeSection === "debugger" && (
-              <SettingsDebugger onGoToConfig={() => setActiveSection("config")} />
+              <SettingsDebugger onGoToConfig={() => {
+                setActiveSection("config");
+                setTimeout(() => {
+                  const el = contentScrollRef.current?.querySelector("#storage-location-tables");
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }, 50);
+              }} />
             )}
           </div>
 

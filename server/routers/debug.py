@@ -181,10 +181,27 @@ def _check_recent_billing_data() -> dict:
 def _check_warehouse_configured() -> dict:
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
     if not http_path or http_path == "auto":
+        warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
+        if warehouse_id:
+            # Resource binding is present — path just hasn't resolved yet
+            return {
+                "status": "warn",
+                "detail": f"DATABRICKS_WAREHOUSE_ID is set ({warehouse_id}) but DATABRICKS_HTTP_PATH hasn't resolved — first query will trigger resolution",
+                "fix": "Restart the app to force warehouse resolution, or set DATABRICKS_HTTP_PATH explicitly in app.yaml.",
+            }
         return {
-            "status": "warn",
-            "detail": "DATABRICKS_HTTP_PATH not set — app will auto-create a warehouse on startup",
-            "fix": "Set DATABRICKS_HTTP_PATH in the Databricks App configuration for a specific warehouse (avoids cold-start delay)",
+            "status": "fail",
+            "detail": "No SQL warehouse configured — all queries will fail with 'Missing DATABRICKS_HTTP_PATH'",
+            "fix": (
+                "Add a SQL warehouse resource in the Databricks Apps UI:\n"
+                "  1. App settings → Resources → + Add resource → SQL warehouse\n"
+                "  2. Select your warehouse, set permission to 'Can use'\n"
+                "  3. Leave resource key as 'sql-warehouse' (the app.yaml expects this key)\n"
+                "  4. Save and redeploy the app\n\n"
+                "Alternatively, set DATABRICKS_HTTP_PATH explicitly in app.yaml:\n"
+                "  - name: DATABRICKS_HTTP_PATH\n"
+                "    value: /sql/1.0/warehouses/<your-warehouse-id>"
+            ),
         }
     wh_id = http_path.split("/")[-1] if "/" in http_path else http_path
     try:

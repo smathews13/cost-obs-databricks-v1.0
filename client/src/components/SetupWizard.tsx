@@ -507,8 +507,8 @@ function WelcomeStep({ config, cloud, loading, onWarehouseSelected }: { config: 
     if (!config || config.warehouse) return;
     setWarehousesLoading(true);
     fetch("/api/settings/warehouses")
-      .then(r => r.json())
-      .then(data => { setWarehouses(data); setWarehousesLoading(false); })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("Failed")))
+      .then(data => { setWarehouses(Array.isArray(data) ? data : []); setWarehousesLoading(false); })
       .catch(() => setWarehousesLoading(false));
   }, [config]);
 

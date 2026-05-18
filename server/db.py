@@ -519,7 +519,17 @@ def get_connection() -> Generator[Any, None, None]:
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
 
     if not http_path:
-        raise ValueError("Missing DATABRICKS_HTTP_PATH environment variable.")
+        # Startup warehouse resolution may have failed — try again lazily.
+        # This handles cases where DATABRICKS_WAREHOUSE_ID is injected by the
+        # Apps resource binding but setup_warehouse_connection() failed at boot.
+        try:
+            http_path = setup_warehouse_connection()
+        except Exception as e:
+            raise ValueError(
+                "SQL warehouse not configured. "
+                "Add a SQL warehouse resource (key: sql-warehouse) in the Databricks Apps UI, "
+                "or set DATABRICKS_HTTP_PATH explicitly in app.yaml."
+            ) from e
 
     # 1. User authorization (Databricks Apps preview feature)
     user_token = _user_token.get()

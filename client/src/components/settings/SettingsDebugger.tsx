@@ -63,8 +63,8 @@ function CheckRow({ check }: { check: DiagCheck }) {
   const [expanded, setExpanded] = useState(false);
   const hasFix = check.fix && check.status !== "pass";
   const isAlert = check.status === "fail" || check.status === "warn";
-  const truncatedDetail = check.detail && check.detail.length > 50
-    ? check.detail.slice(0, 50) + "…"
+  const truncatedDetail = check.detail && check.detail.length > 175
+    ? check.detail.slice(0, 175) + "…"
     : check.detail;
 
   const fixBtnClass = check.status === "fail"

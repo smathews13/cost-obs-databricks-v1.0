@@ -279,42 +279,102 @@ def _check_warehouse_list_access() -> dict:
     except Exception as e:
         sp_error = str(e)[:200]
 
-    # If at least one returns warehouses, the UI will work
-    if user_count > 0 or sp_count > 0:
-        parts = []
-        if user_count > 0:
-            parts.append(f"{user_count} via user OAuth")
-        if sp_count > 0:
-            parts.append(f"{sp_count} via SP")
-        return {"status": "pass", "detail": f"Warehouses visible: {', '.join(parts)}"}
+    def _is_scope_err(msg: str) -> bool:
+        m = msg.lower()
+        return "required scopes" in m or "does not have required scopes" in m or "insufficient_scope" in m
 
-    # Both empty — this is the 'No warehouses found' bug
-    fix_lines = [
-        "The 'No warehouses found' error means neither the user OAuth token nor the",
-        "service principal has CAN_USE permission on any SQL warehouse.",
-        "",
-        "Fix — grant CAN_USE on the app warehouse to the service principal:",
-        "  1. In Databricks: SQL Warehouses → select the warehouse → Permissions",
-        "  2. Add the SP (client ID or display name) with 'Can use' permission",
-        "  3. Alternatively, grant via REST API:",
-        f"     PUT /api/2.0/permissions/warehouses/<warehouse-id>",
-        f"     Body: {{\"access_control_list\": [{{\"service_principal_name\": \"<SP-client-id>\", \"permission_level\": \"CAN_USE\"}}]}}",
-        "",
-        "If using User OAuth mode, the end-user also needs CAN_USE on the warehouse.",
-    ]
-    if configured_id:
-        fix_lines.insert(0, f"Configured warehouse ID: {configured_id}")
+    # Both paths have warehouses — fully healthy
+    if user_count > 0 and sp_count > 0:
+        return {"status": "pass", "detail": f"Warehouses visible: {user_count} via user OAuth, {sp_count} via SP"}
 
+    # User token errored (likely OAuth scope issue) but SP has warehouses — SP fallback active, will work
+    if user_error and sp_count > 0:
+        root_cause = (
+            "User OAuth token raised an exception calling warehouses.list() — the forwarded "
+            "token may only have 'sql' scope and not 'all-apis' scope required for the warehouse "
+            "management REST API. The SP fallback is active so the setup wizard will still show "
+            f"warehouses, but this indicates a token scope limitation. Error: {user_error}"
+        )
+        return {
+            "status": "warn",
+            "detail": f"User token errored on warehouses.list() but SP found {sp_count} warehouse(s) — SP fallback active",
+            "root_cause": root_cause,
+            "fix": (
+                "This is non-blocking — warehouse listing falls back to the SP automatically. "
+                "If queries should run as the user (User OAuth mode), ensure the app requests "
+                "'all-apis' OAuth scope or grant the user's token broader access. "
+                "Alternatively, switch to SP auth mode in Settings → Permissions."
+            ),
+        }
+
+    # User token returned empty but SP has warehouses — SP fallback active, will work
+    if user_count == 0 and not user_error and sp_count > 0:
+        return {
+            "status": "warn",
+            "detail": f"User OAuth token sees 0 warehouses but SP found {sp_count} — SP fallback active",
+            "root_cause": (
+                "The user's OAuth token has no CAN_USE grants on any warehouse (common when "
+                "permissions were only granted to the app's service principal, not the end-user). "
+                "The setup wizard will show the SP's warehouses via the fallback path."
+            ),
+            "fix": (
+                "This is non-blocking — warehouse listing falls back to the SP automatically. "
+                "If you want the user token to list warehouses directly (User OAuth mode), "
+                "grant CAN_USE on the warehouse to the end-user or their group."
+            ),
+        }
+
+    # User has warehouses but SP errored or is empty — healthy for user OAuth mode but risky for SP mode
+    if user_count > 0 and sp_count == 0:
+        detail = f"User OAuth token found {user_count} warehouse(s) but SP sees 0"
+        if sp_error:
+            detail += f" (SP error: {sp_error})"
+        return {
+            "status": "warn",
+            "detail": detail,
+            "root_cause": "The app service principal has no CAN_USE grant on any warehouse. Queries running as the SP (e.g. background jobs, scheduled refresh) will fail.",
+            "fix": (
+                "Grant CAN_USE on the warehouse to the app SP: "
+                "SQL Warehouses → [warehouse name] → Permissions tab → add SP with 'Can use'. "
+                "Warehouse permissions cannot be granted via SQL — use the UI or REST API."
+            ),
+        }
+
+    # Both failed — the 'No warehouses found' bug in full
     detail_parts = ["warehouses.list() returned 0 for both user OAuth and SP tokens"]
     if user_error:
         detail_parts.append(f"user token error: {user_error}")
     if sp_error:
         detail_parts.append(f"SP token error: {sp_error}")
 
+    if user_error and _is_scope_err(user_error):
+        root_cause = (
+            "The forwarded user OAuth token lacks the 'all-apis' scope required to call the "
+            "warehouse management REST API, AND the SP also has no warehouse access. "
+            "Fix the SP CAN_USE grant first; the OAuth scope issue is secondary."
+        )
+    else:
+        root_cause = "No warehouse visible to app identity or user token"
+
+    fix_lines = [
+        "Neither the user OAuth token nor the service principal has CAN_USE on any warehouse.",
+        "",
+        "Fix — grant CAN_USE on the app warehouse to the service principal:",
+        "  1. In Databricks: SQL Warehouses → select the warehouse → Permissions",
+        "  2. Add the SP (client ID or display name) with 'Can use' permission",
+        "  3. Alternatively, grant via REST API:",
+        "     PUT /api/2.0/permissions/warehouses/<warehouse-id>",
+        "     Body: {\"access_control_list\": [{\"service_principal_name\": \"<SP-client-id>\", \"permission_level\": \"CAN_USE\"}]}",
+        "",
+        "If using User OAuth mode, the end-user also needs CAN_USE on the warehouse.",
+    ]
+    if configured_id:
+        fix_lines.insert(0, f"Configured warehouse ID: {configured_id}")
+
     return {
         "status": "fail",
         "detail": "; ".join(detail_parts),
-        "root_cause": "No warehouse visible to app identity or user token",
+        "root_cause": root_cause,
         "fix": "\n".join(fix_lines),
     }
 

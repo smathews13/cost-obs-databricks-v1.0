@@ -825,6 +825,28 @@ async def list_warehouses():
                 "is_current": wh.id == current_id,
             })
 
+        # If the user token returned nothing, merge in warehouses visible to the SP.
+        # Common during first-time setup: the admin granted CAN_USE only to the SP
+        # (not to the user personally), so the user's OAuth token sees an empty list
+        # even though the app will work fine once a warehouse is selected.
+        if not result:
+            from server.db import get_workspace_client as _get_sp_client
+            try:
+                sp_warehouses = list(_get_sp_client().warehouses.list())
+                for wh in sp_warehouses:
+                    state = str(wh.state.value) if wh.state else "UNKNOWN"
+                    result.append({
+                        "id": wh.id,
+                        "name": wh.name,
+                        "size": wh.cluster_size,
+                        "state": state,
+                        "is_current": wh.id == current_id,
+                    })
+                if result:
+                    logger.info(f"User token saw 0 warehouses; SP token found {len(result)} — using SP list for setup")
+            except Exception as sp_err:
+                logger.warning(f"SP warehouse list fallback also failed: {sp_err}")
+
         # If the currently configured warehouse isn't in the list (token visibility gap),
         # try fetching it directly — first with the user token, then fall back to the
         # SP M2M client (handles cases where forwarded OAuth token has narrower scope).
@@ -846,10 +868,25 @@ async def list_warehouses():
         return result
     except Exception as e:
         logger.error(f"Failed to list warehouses: {e}")
-        # warehouses.list() failed (scope/permissions issue) — try fetching the
-        # configured warehouse directly via SP client so we return real name/state.
+        # User token raised an exception (e.g. OAuth token lacks all-apis scope).
+        # Try the SP M2M client for listing — covers first-time setup where no
+        # warehouse is configured yet (current_id is None).
+        from server.db import get_workspace_client as _sp
+        try:
+            sp_client = _sp()
+            sp_whs = list(sp_client.warehouses.list())
+            if sp_whs:
+                logger.info(f"User token warehouses.list() failed; SP found {len(sp_whs)} warehouse(s)")
+                sp_result = []
+                for wh in sp_whs:
+                    state = str(wh.state.value) if wh.state else "UNKNOWN"
+                    sp_result.append({"id": wh.id, "name": wh.name, "size": wh.cluster_size, "state": state, "is_current": wh.id == current_id})
+                sp_result.sort(key=lambda x: (not x["is_current"], x["state"] != "RUNNING", x["name"] or ""))
+                return sp_result
+        except Exception as sp_err:
+            logger.warning(f"SP warehouses.list() fallback also failed: {sp_err}")
+        # Both failed — last resort: return the currently configured warehouse by ID
         if current_id:
-            from server.db import get_workspace_client as _sp
             try:
                 wh = _sp().warehouses.get(current_id)
                 state = str(wh.state.value) if wh.state else "STOPPED"

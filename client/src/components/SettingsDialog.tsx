@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsExperimental, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
 
 export interface TabVisibility {
@@ -136,7 +136,6 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [generalDirty, setGeneralDirty] = useState(false);
   const contentScrollRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
 
   // ── Queries ──────────────────────────────────────────────────────────
   const { data: appConfig, isLoading: configLoading } = useQuery<{

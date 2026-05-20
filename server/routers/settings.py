@@ -679,7 +679,12 @@ async def check_billing_access():
     Always runs as the service principal (clears user token) so the result
     reflects SP grants, not the current user's OAuth permissions.
     Used by the frontend to detect missing post-deploy SP grants.
+
+    Returns reason: "warehouse_access" when the SP can't use the SQL endpoint,
+    "grants_missing" when UC table privileges are missing.
+    Includes warehouse_id so the frontend can show the exact grant command.
     """
+    import os as _os
     from server.db import _user_token, execute_query
     tok = _user_token.set("")
     try:
@@ -687,8 +692,21 @@ async def check_billing_access():
         return {"ok": True}
     except Exception as e:
         err = str(e)
+        http_path = _os.environ.get("DATABRICKS_HTTP_PATH", "")
+        warehouse_id = http_path.rstrip("/").split("/")[-1] if "/" in http_path else ""
+        sp_client_id = _os.environ.get("DATABRICKS_CLIENT_ID", "")
+        # Warehouse CAN_USE failure — distinct from UC table grant failure
+        if "not authorized to use this sql endpoint" in err.lower() or (
+            "permission_denied" in err.lower() and "sql endpoint" in err.lower()
+        ):
+            return {
+                "ok": False,
+                "reason": "warehouse_access",
+                "warehouse_id": warehouse_id,
+                "sp_client_id": sp_client_id,
+            }
         if any(s in err.lower() for s in ("permission_denied", "insufficient_privileges", "not authorized", "user does not have")):
-            return {"ok": False, "reason": "grants_missing"}
+            return {"ok": False, "reason": "grants_missing", "sp_client_id": sp_client_id}
         return {"ok": False, "reason": "error", "error": err[:200]}
     finally:
         _user_token.reset(tok)

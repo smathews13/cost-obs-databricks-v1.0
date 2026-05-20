@@ -1018,9 +1018,39 @@ async def get_workspace_filter() -> dict:
     return {"workspace_ids": workspace_ids}
 
 
+def restore_workspace_filter_from_delta() -> None:
+    """Restore workspace filter from Delta to the settings file on startup.
+
+    The .settings/ directory is ephemeral in Databricks Apps — wiped on every
+    git deploy. This function reads the last-saved filter from the Delta table
+    and writes it back to the file so workspace_filter.py can read it normally.
+    Safe to call when the table doesn't exist yet (first deploy).
+    """
+    settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
+    if os.path.exists(settings_path):
+        return
+    try:
+        from server.db import execute_query, get_catalog_schema
+        catalog, schema = get_catalog_schema()
+        rows = execute_query(
+            f"SELECT workspace_ids FROM `{catalog}`.`{schema}`.app_workspace_filter LIMIT 1",
+            no_cache=True,
+        )
+        if rows and rows[0].get("workspace_ids"):
+            ids = [i.strip() for i in str(rows[0]["workspace_ids"]).split(",") if i.strip()]
+            os.makedirs(SETTINGS_DIR, exist_ok=True)
+            with open(settings_path, "w") as f:
+                json.dump({"workspace_ids": ids}, f)
+            logger.info("Workspace filter restored from Delta: %d workspace(s)", len(ids))
+        else:
+            logger.info("No workspace filter saved in Delta — showing all workspaces")
+    except Exception as e:
+        logger.warning("Workspace filter restore from Delta failed (non-fatal): %s", e)
+
+
 @router.post("/save-workspace-filter")
 async def save_workspace_filter(request: Request) -> dict:
-    """Persist selected workspace IDs to .settings/workspace_filter.json. Admin only."""
+    """Persist selected workspace IDs to .settings/workspace_filter.json and Delta. Admin only."""
     import time as _time
     import re as _re
     t0 = _time.monotonic()
@@ -1039,6 +1069,7 @@ async def save_workspace_filter(request: Request) -> dict:
     valid_ids = [str(i) for i in raw_ids if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
     logger.info("save-workspace-filter: validated %d/%d ids (%.1fms)", len(valid_ids), len(raw_ids), (_time.monotonic() - t0) * 1000)
 
+    # Write to file (fast path for running workers)
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
     try:
         os.makedirs(SETTINGS_DIR, exist_ok=True)
@@ -1050,6 +1081,27 @@ async def save_workspace_filter(request: Request) -> dict:
         elapsed_ms = (_time.monotonic() - t0) * 1000
         logger.error("save-workspace-filter: write failed after %.1fms — path=%s error=%s", elapsed_ms, settings_path, e)
         raise HTTPException(status_code=500, detail=f"Failed to persist workspace filter: {e}")
+
+    # Write to Delta (survives redeploys — restored to file on next startup)
+    try:
+        from server.db import execute_query, get_catalog_schema
+        catalog, schema = get_catalog_schema()
+        ids_csv = ",".join(valid_ids)
+        execute_query(
+            f"CREATE TABLE IF NOT EXISTS `{catalog}`.`{schema}`.app_workspace_filter "
+            f"(workspace_ids STRING) USING DELTA",
+            no_cache=True,
+        )
+        execute_query(
+            f"MERGE INTO `{catalog}`.`{schema}`.app_workspace_filter AS t "
+            f"USING (SELECT '{ids_csv}' AS workspace_ids) AS s ON TRUE "
+            f"WHEN MATCHED THEN UPDATE SET t.workspace_ids = s.workspace_ids "
+            f"WHEN NOT MATCHED THEN INSERT (workspace_ids) VALUES (s.workspace_ids)",
+            no_cache=True,
+        )
+        logger.info("save-workspace-filter: persisted to Delta in %.1fms", (_time.monotonic() - t0) * 1000)
+    except Exception as e:
+        logger.warning("save-workspace-filter: Delta write failed (non-fatal — file is primary): %s", e)
 
     return {"saved": valid_ids}
 

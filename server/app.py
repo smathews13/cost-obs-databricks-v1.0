@@ -258,6 +258,18 @@ def setup_system_table_grants():
                         logger.debug(f"SP pre-grant failed (non-fatal): {grant_sql} — {e}")
             logger.info(f"SP schema pre-grants: {sp_ok}/{len(sp_schema_grants)} applied for {sp_client_id}")
 
+            # Warehouse CAN_USE — must use REST API (SQL syntax not supported)
+            if warehouse_id:
+                try:
+                    from server.routers.setup import _grant_warehouse_can_use
+                    _grant_warehouse_can_use(w, sp_client_id)
+                    logger.info(f"Warehouse CAN_USE granted for SP {sp_client_id} on warehouse {warehouse_id}")
+                except Exception as wh_err:
+                    logger.warning(
+                        f"Warehouse CAN_USE grant failed for {sp_client_id} on {warehouse_id} — "
+                        f"a workspace admin may need to grant this manually: {wh_err}"
+                    )
+
     except Exception as e:
         logger.warning(f"System table grant setup failed (non-fatal): {e}")
 
@@ -553,6 +565,13 @@ def startup_tasks():
 
     # Step 1: Create materialized views if needed
     setup_materialized_views()
+
+    # Step 1b: Restore workspace filter from Delta (file is ephemeral, wiped on redeploy)
+    try:
+        from server.routers.setup import restore_workspace_filter_from_delta
+        restore_workspace_filter_from_delta()
+    except Exception as e:
+        logger.warning(f"Workspace filter restore failed (non-fatal): {e}")
 
     # Step 3: Pre-warm cache (billing - fast queries first)
     prewarm_cache_sync()

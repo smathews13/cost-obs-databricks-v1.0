@@ -134,14 +134,17 @@ function SpGrantsBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   const spMode = authStatus && !authStatus.user_token_active && authStatus.identity === "service_principal";
 
-  const { data: billingAccess } = useQuery<{ ok: boolean; reason?: string } | null>({
+  const { data: billingAccess } = useQuery<{ ok: boolean; reason?: string; warehouse_id?: string; sp_client_id?: string } | null>({
     queryKey: ["settings-billing-access"],
     queryFn: () => fetch("/api/settings/billing-access").then(r => r.json()).catch(() => null),
     staleTime: 5 * 60_000,
     enabled: !!spMode,
   });
 
-  if (dismissed || !spMode || !billingAccess || billingAccess.ok !== false || billingAccess.reason !== "grants_missing") return null;
+  const isWarehouseIssue = billingAccess?.reason === "warehouse_access";
+  const isGrantsIssue = billingAccess?.reason === "grants_missing";
+
+  if (dismissed || !spMode || !billingAccess || billingAccess.ok !== false || (!isWarehouseIssue && !isGrantsIssue)) return null;
 
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-2.5 bg-amber-50 border-b border-amber-200">
@@ -149,10 +152,20 @@ function SpGrantsBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
         <svg className="h-4 w-4 shrink-0 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
         </svg>
-        <span className="text-xs text-amber-800">
-          <strong>SP grants missing</strong> — the service principal lacks access to billing data after the last git deploy.
-          A metastore admin must re-run SP grants to restore the dashboard.
-        </span>
+        {isWarehouseIssue ? (
+          <span className="text-xs text-amber-800">
+            <strong>SP missing warehouse access</strong> — the service principal{billingAccess.sp_client_id ? ` (${billingAccess.sp_client_id})` : ""} cannot use the SQL warehouse.
+            A workspace admin must run:{" "}
+            <code className="rounded bg-amber-100 px-1 font-mono">
+              GRANT CAN_USE ON WAREHOUSE {billingAccess.warehouse_id || "<warehouse_id>"} TO `{billingAccess.sp_client_id || "<sp_client_id>"}`
+            </code>
+          </span>
+        ) : (
+          <span className="text-xs text-amber-800">
+            <strong>SP grants missing</strong> — the service principal lacks system table access after the last git deploy.
+            Re-run the Permissions setup to restore access.
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <button
@@ -160,7 +173,7 @@ function SpGrantsBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
           className="text-xs font-medium px-3 py-1.5 rounded"
           style={{ background: "#FF3621", color: "#fff" }}
         >
-          Open Settings → Permissions
+          {isWarehouseIssue ? "Open Settings → Permissions" : "Re-run Permissions"}
         </button>
         <button
           onClick={() => { sessionStorage.setItem("coc-sp-grants-dismissed", "1"); setDismissed(true); }}

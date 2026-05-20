@@ -96,53 +96,12 @@ def get_host_url() -> str:
     return host
 
 
-_CATALOG_SETTINGS_FILE = os.path.join(
-    os.path.dirname(__file__), "..", ".settings", "catalog_settings.json"
-)
-
-
-def _load_catalog_override() -> dict | None:
-    """Load catalog/schema override from local settings file, if present."""
-    try:
-        with open(_CATALOG_SETTINGS_FILE) as f:
-            data = json.load(f)
-        catalog = data.get("catalog", "").strip()
-        schema = data.get("schema", "").strip()
-        if catalog and schema:
-            return {"catalog": catalog, "schema": schema}
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        pass
-    return None
-
-
-def save_catalog_override(catalog: str, schema: str) -> None:
-    """Persist a catalog/schema override to the local settings file."""
-    os.makedirs(os.path.dirname(_CATALOG_SETTINGS_FILE), exist_ok=True)
-    with open(_CATALOG_SETTINGS_FILE, "w") as f:
-        json.dump({"catalog": catalog.strip(), "schema": schema.strip()}, f)
-    logger.info(f"Catalog override saved: {catalog}.{schema}")
-
-
-def clear_catalog_override() -> None:
-    """Remove the catalog/schema override, reverting to env var values."""
-    try:
-        os.remove(_CATALOG_SETTINGS_FILE)
-        logger.info("Catalog override cleared")
-    except FileNotFoundError:
-        pass
-
-
 def get_catalog_schema() -> tuple[str, str]:
-    """Get the catalog and schema for cost observability tables.
+    """Return the catalog and schema for cost observability tables.
 
-    Priority:
-    1. Local override file (.settings/catalog_settings.json) — set via settings UI
-    2. COST_OBS_CATALOG / COST_OBS_SCHEMA env vars (from app.yaml)
-    3. Defaults: main / cost_obs
+    Source: COST_OBS_CATALOG / COST_OBS_SCHEMA env vars (set in app.yaml).
+    Defaults to main.cost_obs when env vars are absent.
     """
-    override = _load_catalog_override()
-    if override:
-        return override["catalog"], override["schema"]
     catalog = os.getenv("COST_OBS_CATALOG", "main")
     schema = os.getenv("COST_OBS_SCHEMA", "cost_obs")
     return catalog, schema
@@ -188,23 +147,10 @@ def apply_mv_overrides(sql: str, catalog: str, schema: str) -> str:
 
 
 def get_catalog_schema_info() -> dict:
-    """Return catalog/schema along with source metadata for the settings UI."""
-    override = _load_catalog_override()
-    if override:
-        return {
-            "catalog": override["catalog"],
-            "schema": override["schema"],
-            "source": "override",
-            "env_catalog": os.getenv("COST_OBS_CATALOG", "main"),
-            "env_schema": os.getenv("COST_OBS_SCHEMA", "cost_obs"),
-        }
-    return {
-        "catalog": os.getenv("COST_OBS_CATALOG", "main"),
-        "schema": os.getenv("COST_OBS_SCHEMA", "cost_obs"),
-        "source": "env",
-        "env_catalog": os.getenv("COST_OBS_CATALOG", "main"),
-        "env_schema": os.getenv("COST_OBS_SCHEMA", "cost_obs"),
-    }
+    """Return catalog/schema info for the settings read-only display."""
+    catalog = os.getenv("COST_OBS_CATALOG", "main")
+    schema = os.getenv("COST_OBS_SCHEMA", "cost_obs")
+    return {"catalog": catalog, "schema": schema, "source": "env"}
 
 
 # Dedicated warehouse configuration
@@ -375,20 +321,6 @@ def ensure_dedicated_warehouse() -> tuple[str, str]:
     except Exception as e:
         logger.error(f"Failed to create dedicated warehouse: {e}")
         raise
-
-
-def _load_saved_warehouse_http_path() -> str:
-    """Read the warehouse HTTP path persisted by the settings UI, if any."""
-    import json
-    settings_file = os.path.join(
-        os.path.dirname(__file__), "..", ".settings", "warehouse_settings.json"
-    )
-    try:
-        with open(settings_file) as f:
-            data = json.load(f)
-        return data.get("http_path", "")
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return ""
 
 
 def setup_warehouse_connection() -> str:

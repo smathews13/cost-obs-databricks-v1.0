@@ -1181,10 +1181,6 @@ function Dashboard() {
           }
         }}
         onSettingsChange={setAppSettings}
-        onRerunWizard={() => {
-          setShowSettings(false);
-          setShowSetupWizard(true);
-        }}
       />
     </div>
   );

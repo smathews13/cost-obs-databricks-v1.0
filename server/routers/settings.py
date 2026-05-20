@@ -31,7 +31,6 @@ SETTINGS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
 CLOUD_CONNECTIONS_FILE = os.path.join(SETTINGS_DIR, "cloud_connections.json")
 WEBHOOK_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "webhook_settings.json")
 WAREHOUSE_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "warehouse_settings.json")
-TELEMETRY_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "telemetry_settings.json")
 PRICING_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "pricing_settings.json")
 USER_PERMISSIONS_FILE = os.path.join(SETTINGS_DIR, "user_permissions.json")
 # Legacy file path for backward compatibility
@@ -72,54 +71,6 @@ def _ensure_webhook_table() -> None:
         f"CREATE TABLE IF NOT EXISTS {_config_table('app_webhook_settings')} "
         f"(slack_webhook_url STRING, updated_at TIMESTAMP) USING DELTA"
     )
-
-
-def _ensure_warehouse_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_warehouse_settings')} "
-        f"(warehouse_id STRING, http_path STRING, warehouse_name STRING, "
-        f"switched_at STRING, updated_at TIMESTAMP) USING DELTA"
-    )
-
-
-def _ensure_telemetry_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_telemetry_settings')} "
-        f"(catalog STRING, schema_name STRING, table_prefix STRING, "
-        f"updated_at TIMESTAMP) USING DELTA"
-    )
-
-
-def _ensure_auth_mode_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_auth_settings')} "
-        f"(mode STRING, updated_at TIMESTAMP) USING DELTA"
-    )
-
-
-def _save_auth_mode_to_table(mode: str) -> None:
-    from server.db import execute_write
-    _ensure_auth_mode_table()
-    table = _config_table("app_auth_settings")
-    execute_write(f"DELETE FROM {table}", None)
-    execute_write(
-        f"INSERT INTO {table} (mode, updated_at) VALUES (:mode, current_timestamp())",
-        {"mode": mode},
-    )
-
-
-def restore_auth_mode_from_delta() -> None:
-    """Read saved auth mode from Delta table and apply it. Called at startup after warehouse ready."""
-    try:
-        from server.db import execute_query, set_auth_mode_override
-        table = _config_table("app_auth_settings")
-        rows = execute_query(f"SELECT mode FROM {table} LIMIT 1", None, no_cache=True)
-        if rows and rows[0].get("mode"):
-            mode = rows[0]["mode"]
-            set_auth_mode_override(mode)
-            logger.info(f"Restored auth mode override from Delta table: {mode}")
-    except Exception as e:
-        logger.warning(f"Could not restore auth mode from Delta table (non-fatal): {e}")
 
 
 # ── Workspace filter pool (survives deploys via Delta) ────────────────────────
@@ -399,7 +350,6 @@ async def get_tables_status(request: Request):
         "app_cloud_connections",
         "app_webhook_settings",
         "app_warehouse_settings",
-        "app_telemetry_settings",
     ]
     # Which tables are conceptually "materialized views" (rebuilt on schedule)
     # vs persistent managed tables
@@ -422,7 +372,7 @@ async def get_tables_status(request: Request):
     }
     no_date_tables = {
         "app_user_permissions", "app_contract_settings", "app_cloud_connections",
-        "app_webhook_settings", "app_warehouse_settings", "app_telemetry_settings",
+        "app_webhook_settings", "app_warehouse_settings",
     }
 
     min_date_expr_overrides = {
@@ -502,7 +452,7 @@ async def get_tables_status(request: Request):
     # Config tables are created lazily on first save — not existing yet is expected
     CONFIG_TABLES = {
         "app_contract_settings", "app_cloud_connections",
-        "app_webhook_settings", "app_warehouse_settings", "app_telemetry_settings",
+        "app_webhook_settings", "app_warehouse_settings",
     }
 
     # Build task list: (table_name, fqn, table_type)
@@ -510,19 +460,6 @@ async def get_tables_status(request: Request):
         (t, f"`{catalog}`.`{schema}`.`{t}`", "Materialized View" if t in MV_SET else "Table")
         for t in MV_TABLES
     ]
-
-    # Add app telemetry OTel tables if configured
-    tel = _load_telemetry_settings()
-    tel_catalog = tel.get("catalog", "").strip()
-    tel_schema = tel.get("schema_name", "").strip()
-    tel_prefix = tel.get("table_prefix", "").strip()
-    if tel_catalog and tel_schema:
-        otel_tables = ["otel_spans", "otel_metrics", "otel_logs"]
-        for ot in otel_tables:
-            full_name = f"{tel_prefix}{ot}" if tel_prefix else ot
-            fqn = f"`{tel_catalog}`.`{tel_schema}`.`{full_name}`"
-            tasks.append((full_name, fqn, "Telemetry"))
-            no_date_tables.add(full_name)  # OTel tables don't have usage_date
 
     results = []
     _TABLE_CHECK_TIMEOUT = 25  # seconds — keeps total request under proxy timeout limits
@@ -696,29 +633,6 @@ async def get_catalog_settings():
     """Return current catalog/schema and whether it's from an override or env vars."""
     from server.db import get_catalog_schema_info
     return get_catalog_schema_info()
-
-
-@router.post("/catalog")
-async def set_catalog_settings(body: dict):
-    """Save a catalog/schema override. Clears the query cache so new values take effect immediately."""
-    from server.db import save_catalog_override, clear_query_cache
-    catalog = (body.get("catalog") or "").strip()
-    schema = (body.get("schema") or "").strip()
-    if not catalog or not schema:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="catalog and schema are required")
-    save_catalog_override(catalog, schema)
-    clear_query_cache()
-    return {"status": "ok", "catalog": catalog, "schema": schema, "source": "override"}
-
-
-@router.delete("/catalog")
-async def reset_catalog_settings():
-    """Remove catalog/schema override and revert to env var values."""
-    from server.db import clear_catalog_override, get_catalog_schema_info, clear_query_cache
-    clear_catalog_override()
-    clear_query_cache()
-    return {"status": "ok", **get_catalog_schema_info()}
 
 
 @router.post("/refresh-mvs")
@@ -895,122 +809,6 @@ async def list_warehouses():
             except Exception as e2:
                 logger.warning(f"SP warehouses.get fallback also failed: {e2}")
                 return [{"id": current_id, "name": None, "size": None, "state": "UNKNOWN", "is_current": True}]
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-def _load_warehouse_settings() -> dict:
-    """Load warehouse preference from Delta table, falling back to local file."""
-    try:
-        from server.db import execute_query
-        table = _config_table("app_warehouse_settings")
-        rows = execute_query(f"SELECT * FROM {table} LIMIT 1", None, no_cache=True)
-        if rows:
-            r = rows[0]
-            return {
-                "warehouse_id": r.get("warehouse_id") or "",
-                "http_path": r.get("http_path") or "",
-                "warehouse_name": r.get("warehouse_name") or "",
-                "switched_at": r.get("switched_at") or "",
-            }
-    except Exception as e:
-        logger.warning(f"Could not load warehouse settings from Delta table: {e}")
-
-    if os.path.exists(WAREHOUSE_SETTINGS_FILE):
-        try:
-            with open(WAREHOUSE_SETTINGS_FILE) as f:
-                data = json.load(f)
-            if data.get("warehouse_id"):
-                try:
-                    _save_warehouse_to_table(data)
-                    logger.info("Migrated warehouse settings from file to Delta table")
-                except Exception as e:
-                    logger.warning(f"Could not migrate warehouse settings to Delta: {e}")
-            return data
-        except (json.JSONDecodeError, IOError):
-            pass
-    return {}
-
-
-def _save_warehouse_to_table(settings: dict) -> None:
-    from server.db import execute_write
-    _ensure_warehouse_table()
-    table = _config_table("app_warehouse_settings")
-    execute_write(f"DELETE FROM {table}", None)
-    execute_write(
-        f"INSERT INTO {table} (warehouse_id, http_path, warehouse_name, switched_at, updated_at) "
-        f"VALUES (:warehouse_id, :http_path, :warehouse_name, :switched_at, current_timestamp())",
-        {
-            "warehouse_id": settings.get("warehouse_id") or "",
-            "http_path": settings.get("http_path") or "",
-            "warehouse_name": settings.get("warehouse_name") or "",
-            "switched_at": settings.get("switched_at") or "",
-        },
-    )
-
-
-def _save_warehouse_settings(settings: dict) -> None:
-    """Save warehouse preference to Delta table (primary) and file (dev fallback)."""
-    try:
-        _save_warehouse_to_table(settings)
-    except Exception as e:
-        logger.warning(f"Could not save warehouse settings to Delta table: {e}")
-    os.makedirs(SETTINGS_DIR, exist_ok=True)
-    with open(WAREHOUSE_SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=2)
-
-
-class WarehouseSwitch(BaseModel):
-    warehouse_id: str
-
-
-@router.post("/warehouse")
-async def switch_warehouse(body: WarehouseSwitch):
-    """Switch the active SQL warehouse powering the app."""
-    from server.db import get_workspace_client
-
-    warehouse_id = body.warehouse_id
-    try:
-        w = get_workspace_client()
-        # Verify the warehouse exists and is accessible
-        wh = w.warehouses.get(warehouse_id)
-
-        # Update the environment variable so all future queries use this warehouse
-        new_http_path = f"/sql/1.0/warehouses/{warehouse_id}"
-        os.environ["DATABRICKS_HTTP_PATH"] = new_http_path
-
-        state = str(wh.state.value) if wh.state else "UNKNOWN"
-
-        # If the warehouse is stopped, attempt to start it
-        if state == "STOPPED":
-            try:
-                w.warehouses.start(warehouse_id)
-                logger.info(f"Started warehouse {warehouse_id} ({wh.name})")
-                state = "STARTING"
-            except Exception as e:
-                logger.warning(f"Could not start warehouse {warehouse_id}: {e}")
-
-        # Persist the warehouse preference to disk so it survives restarts
-        _save_warehouse_settings({
-            "warehouse_id": warehouse_id,
-            "http_path": new_http_path,
-            "warehouse_name": wh.name,
-            "switched_at": datetime.utcnow().isoformat(),
-        })
-
-        logger.info(f"Switched active warehouse to {warehouse_id} ({wh.name})")
-
-        return {
-            "success": True,
-            "warehouse": {
-                "id": wh.id,
-                "name": wh.name,
-                "size": wh.cluster_size,
-                "state": state,
-            },
-            "http_path": new_http_path,
-        }
-    except Exception as e:
-        logger.error(f"Failed to switch warehouse: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1272,111 +1070,6 @@ async def send_webhook_alert(alert_data: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Webhook alert failed: {e}")
         return {"success": False, "error": str(e)}
-
-
-# ── Telemetry Settings ────────────────────────────────────────────────────
-
-class TelemetrySettings(BaseModel):
-    catalog: str = ""
-    schema_name: str = ""
-    table_prefix: str = ""
-
-
-def _load_telemetry_settings() -> dict:
-    """Load telemetry settings from Delta table, falling back to local file."""
-    try:
-        from server.db import execute_query
-        table = _config_table("app_telemetry_settings")
-        rows = execute_query(f"SELECT * FROM {table} LIMIT 1", None, no_cache=True)
-        if rows:
-            r = rows[0]
-            return {
-                "catalog": r.get("catalog") or "",
-                "schema_name": r.get("schema_name") or "",
-                "table_prefix": r.get("table_prefix") or "",
-            }
-    except Exception as e:
-        logger.warning(f"Could not load telemetry settings from Delta table: {e}")
-
-    if os.path.exists(TELEMETRY_SETTINGS_FILE):
-        try:
-            with open(TELEMETRY_SETTINGS_FILE) as f:
-                data = json.load(f)
-            if data.get("catalog"):
-                try:
-                    _save_telemetry_to_table(data)
-                    logger.info("Migrated telemetry settings from file to Delta table")
-                except Exception as e:
-                    logger.warning(f"Could not migrate telemetry settings to Delta: {e}")
-            return data
-        except (json.JSONDecodeError, IOError):
-            pass
-    return {}
-
-
-def _save_telemetry_to_table(settings: dict) -> None:
-    from server.db import execute_write
-    _ensure_telemetry_table()
-    table = _config_table("app_telemetry_settings")
-    execute_write(f"DELETE FROM {table}", None)
-    execute_write(
-        f"INSERT INTO {table} (catalog, schema_name, table_prefix, updated_at) "
-        f"VALUES (:catalog, :schema_name, :table_prefix, current_timestamp())",
-        {
-            "catalog": settings.get("catalog") or "",
-            "schema_name": settings.get("schema_name") or "",
-            "table_prefix": settings.get("table_prefix") or "",
-        },
-    )
-
-
-def _save_telemetry_settings(settings: dict) -> None:
-    """Save telemetry settings to Delta table (primary) and file (dev fallback)."""
-    try:
-        _save_telemetry_to_table(settings)
-    except Exception as e:
-        logger.warning(f"Could not save telemetry settings to Delta table: {e}")
-    os.makedirs(SETTINGS_DIR, exist_ok=True)
-    with open(TELEMETRY_SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=2)
-
-
-@router.get("/telemetry")
-async def get_telemetry_settings() -> dict[str, Any]:
-    """Return current app telemetry destination settings.
-
-    Falls back to the app's own catalog/schema (from env) when nothing is saved,
-    so OTel table monitoring works out of the box without requiring manual config.
-    """
-    from server.db import get_catalog_schema
-    stored = _load_telemetry_settings()
-    # Use stored values if present, otherwise fall back to the app's catalog/schema
-    if not stored.get("catalog"):
-        try:
-            default_catalog, default_schema = get_catalog_schema()
-        except Exception:
-            default_catalog, default_schema = "", ""
-    else:
-        default_catalog = stored["catalog"]
-        default_schema = stored.get("schema_name", "")
-    return {
-        "catalog": stored.get("catalog") or default_catalog,
-        "schema_name": stored.get("schema_name") or default_schema,
-        "table_prefix": stored.get("table_prefix", ""),
-        "is_default": not bool(stored.get("catalog")),  # True = using app default, not custom
-    }
-
-
-@router.post("/telemetry")
-async def save_telemetry_settings_endpoint(settings: TelemetrySettings) -> dict[str, Any]:
-    """Save app telemetry destination settings."""
-    _save_telemetry_settings({
-        "catalog": settings.catalog,
-        "schema_name": settings.schema_name,
-        "table_prefix": settings.table_prefix,
-    })
-    logger.info("Telemetry settings updated")
-    return {"status": "ok"}
 
 
 # ── User Permissions ──────────────────────────────────────────────────────────

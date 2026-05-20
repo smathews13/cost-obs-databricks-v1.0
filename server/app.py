@@ -542,19 +542,6 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
 
 def startup_tasks():
     """Run all startup tasks: setup warehouse, setup MVs, warm cache, setup alerts."""
-    # Restore saved warehouse preference (if user previously switched warehouses)
-    current_http_path = os.environ.get("DATABRICKS_HTTP_PATH", "")
-    if current_http_path and current_http_path != "auto":
-        try:
-            from server.routers.settings import _load_warehouse_settings
-            saved = _load_warehouse_settings()
-            saved_http_path = saved.get("http_path")
-            if saved_http_path and saved_http_path != current_http_path:
-                os.environ["DATABRICKS_HTTP_PATH"] = saved_http_path
-                logger.info(f"Restored saved warehouse preference: {saved.get('warehouse_name', saved_http_path)}")
-        except Exception as e:
-            logger.warning(f"Could not restore warehouse preference (non-fatal): {e}")
-
     # Step 0: Set up dedicated warehouse (creates Large serverless warehouse if needed)
     setup_and_check_warehouse()
 

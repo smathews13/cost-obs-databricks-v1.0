@@ -170,12 +170,6 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Storage location step state
-  const [catalogDraft, setCatalogDraft] = useState({ catalog: "", schema: "" });
-  const [catalogSaved, setCatalogSaved] = useState(false);
-  const [catalogSaving, setCatalogSaving] = useState(false);
-  const [catalogStepError, setCatalogStepError] = useState<string | null>(null);
-
   // Workspace filter step state
   const [wsLoading, setWsLoading] = useState(false);
   const [allWorkspaces, setAllWorkspaces] = useState<{ id: string; name: string }[]>([]);
@@ -314,10 +308,6 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     if (idx < STEPS.length - 1) {
       const next = STEPS[idx + 1];
       setStep(next);
-      if (next === "storage-location" && !catalogDraft.catalog) {
-        const loc = config?.storage_location;
-        if (loc) setCatalogDraft({ catalog: loc.catalog, schema: loc.schema });
-      }
       if (next === "permissions") loadPermissions();
       if (next === "create-tables") pollSetupStatus();
       if (next === "workspace-filter") loadWorkspaces();
@@ -391,34 +381,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
           )}
 
           {step === "storage-location" && (
-            <StorageLocationStep
-              draft={catalogDraft}
-              onChange={setCatalogDraft}
-              saved={catalogSaved}
-              saving={catalogSaving}
-              error={catalogStepError}
-              onSave={async () => {
-                setCatalogStepError(null);
-                setCatalogSaving(true);
-                try {
-                  const res = await fetch("/api/settings/catalog", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(catalogDraft),
-                  });
-                  if (!res.ok) {
-                    const d = await res.json().catch(() => ({}));
-                    setCatalogStepError(d.detail || "Failed to save storage location");
-                  } else {
-                    setCatalogSaved(true);
-                  }
-                } catch (e) {
-                  setCatalogStepError(`Network error: ${e}`);
-                } finally {
-                  setCatalogSaving(false);
-                }
-              }}
-            />
+            <StorageLocationStep config={config} />
           )}
 
           {step === "permissions" && (
@@ -508,8 +471,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             ) : step === "storage-location" ? (
               <button
                 onClick={goNext}
-                disabled={!catalogSaved}
-                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors"
               >
                 Next
               </button>
@@ -671,78 +633,44 @@ function WelcomeStep({ config, cloud, loading }: { config: ConfigData | null; cl
   );
 }
 
-function StorageLocationStep({
-  draft,
-  onChange,
-  saved,
-  saving,
-  error,
-  onSave,
-}: {
-  draft: { catalog: string; schema: string };
-  onChange: (d: { catalog: string; schema: string }) => void;
-  saved: boolean;
-  saving: boolean;
-  error: string | null;
-  onSave: () => void;
-}) {
+function StorageLocationStep({ config }: { config: ConfigData | null }) {
+  const catalog = config?.storage_location?.catalog;
+  const schema = config?.storage_location?.schema;
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
-        Choose where the app's materialized views and telemetry tables will be created. This location
-        is permanent — it cannot be changed after setup without re-running the table creation step.
+        Materialized views will be created in the catalog and schema configured in your app's
+        environment variables. This location is set at deployment time and cannot be changed
+        without redeploying the app.
       </p>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <label className="w-16 text-xs font-medium text-gray-700 shrink-0">Catalog</label>
-          <input
-            type="text"
-            value={draft.catalog}
-            onChange={e => onChange({ ...draft, catalog: e.target.value })}
-            disabled={saved}
-            placeholder="e.g. main"
-            className="flex-1 rounded border border-gray-200 px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:bg-gray-50 disabled:text-gray-500"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="w-16 text-xs font-medium text-gray-700 shrink-0">Schema</label>
-          <input
-            type="text"
-            value={draft.schema}
-            onChange={e => onChange({ ...draft, schema: e.target.value })}
-            disabled={saved}
-            placeholder="e.g. cost_obs"
-            className="flex-1 rounded border border-gray-200 px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:bg-gray-50 disabled:text-gray-500"
-          />
-        </div>
-
-        {error && <p className="text-xs text-red-600">{error}</p>}
-
-        {saved ? (
-          <div className="flex items-center gap-1.5 text-sm text-green-700">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            Saved — tables will be created in{" "}
-            <span className="font-mono font-medium">{draft.catalog}.{draft.schema}</span>
+        {catalog && schema ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500">Catalog</span>
+            <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-sm font-mono font-medium text-orange-800">{catalog}</span>
+            <span className="text-gray-300">·</span>
+            <span className="text-xs text-gray-500">Schema</span>
+            <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-sm font-mono font-medium text-orange-800">{schema}</span>
           </div>
         ) : (
-          <button
-            onClick={onSave}
-            disabled={saving || !draft.catalog.trim() || !draft.schema.trim()}
-            className="rounded-lg px-4 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
-            style={{ backgroundColor: '#FF3621' }}
-          >
-            {saving ? "Saving…" : "Save Location"}
-          </button>
+          <div className="space-y-1">
+            <p className="text-sm text-amber-700 font-medium">No storage location detected</p>
+            <p className="text-xs text-amber-600">
+              Set <span className="font-mono">COST_OBS_CATALOG</span> and{" "}
+              <span className="font-mono">COST_OBS_SCHEMA</span> in your app.yaml environment
+              variables, then restart the app before continuing.
+            </p>
+          </div>
         )}
       </div>
 
       <p className="text-xs text-gray-500">
-        The catalog must already exist. The schema will be created if it doesn't exist.
+        To use a different catalog or schema, update <span className="font-mono">COST_OBS_CATALOG</span>{" "}
+        and <span className="font-mono">COST_OBS_SCHEMA</span> in app.yaml and redeploy.
         The service principal needs <span className="font-mono">USE CATALOG</span> and{" "}
-        <span className="font-mono">CREATE SCHEMA</span> privileges on the catalog.
+        <span className="font-mono">CREATE SCHEMA</span> privileges on the target catalog.
       </p>
     </div>
   );

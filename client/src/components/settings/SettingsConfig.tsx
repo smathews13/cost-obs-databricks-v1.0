@@ -8,13 +8,6 @@ interface AppConfigInfo {
   storage_location: { catalog: string; schema: string } | null;
 }
 
-interface TelemetryConfig {
-  catalog: string;
-  schema_name: string;
-  table_prefix: string;
-  is_default?: boolean;
-}
-
 interface SettingsConfigProps {
   configLoading: boolean;
   appConfig: AppConfigInfo | undefined;
@@ -76,15 +69,6 @@ export function SettingsConfig({
     staleTime: 60 * 1000,
   });
 
-  const { data: telemetry = null, isLoading: telemetryLoading, refetch: refetchTelemetry } = useQuery<TelemetryConfig | null>({
-    queryKey: ["settings-telemetry"],
-    queryFn: () => fetch("/api/settings/telemetry").then(r => r.json()).catch(() => null),
-    staleTime: 60 * 1000,
-  });
-  const [telemetryEditing, setTelemetryEditing] = useState(false);
-  const [telemetryDraft, setTelemetryDraft] = useState<TelemetryConfig>({ catalog: "", schema_name: "", table_prefix: "" });
-  const [telemetrySaving, setTelemetrySaving] = useState(false);
-  const [telemetryError, setTelemetryError] = useState<string | null>(null);
   const { data: tablesStatus = null, isLoading: tablesLoading, isFetching: tablesFetching, refetch: refetchTables } = useQuery<{
     catalog: string | null;
     schema: string | null;
@@ -699,136 +683,6 @@ export function SettingsConfig({
             <p className="mt-1.5 text-xs text-gray-500">
               The workspace filter pool is configured during initial setup and cannot be changed here.
             </p>
-          </div>
-
-          {/* App Telemetry */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                <h4 className="text-sm font-semibold text-gray-900">App Telemetry</h4>
-                <span className="inline-flex items-center rounded-full bg-gray-100 border border-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600">OpenTelemetry</span>
-              </div>
-              {!telemetryEditing && !telemetryLoading && (
-                <button
-                  onClick={() => {
-                    setTelemetryDraft({ catalog: telemetry?.catalog ?? "", schema_name: telemetry?.schema_name ?? "", table_prefix: telemetry?.table_prefix ?? "" });
-                    setTelemetryError(null);
-                    setTelemetryEditing(true);
-                  }}
-                  className="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
-                >
-                  Set prefix
-                </button>
-              )}
-            </div>
-
-            {/* What is OTel telemetry */}
-            <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
-              <p className="text-xs font-medium text-gray-900">How Databricks Apps telemetry works</p>
-              <p className="text-[11px] text-gray-600 leading-relaxed">
-                Databricks Apps automatically collects OpenTelemetry (OTel) data from every app and writes it to Delta tables in your Unity Catalog.
-                This is handled entirely by the <strong>Databricks Apps platform</strong> — the app itself does not write these tables.
-              </p>
-              <div className="grid grid-cols-3 gap-2 pt-1">
-                {[
-                  { table: "otel_spans", label: "Traces", desc: "HTTP request spans, latency, endpoints hit, response codes, errors" },
-                  { table: "otel_metrics", label: "Metrics", desc: "CPU/memory usage, request rates, active connections, queue depth" },
-                  { table: "otel_logs", label: "Logs", desc: "Structured log lines from uvicorn and all Python loggers" },
-                ].map(({ table, label, desc }) => (
-                  <div key={table} className="rounded border border-gray-200 bg-white px-2.5 py-2 space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
-                      <code className="text-[10px] font-mono font-semibold text-gray-700">{table}</code>
-                    </div>
-                    <p className="text-[10px] font-medium text-gray-700">{label}</p>
-                    <p className="text-[10px] text-gray-500 leading-snug">{desc}</p>
-                  </div>
-                ))}
-              </div>
-              <p className="text-[11px] text-gray-600 pt-1">
-                <strong>Different from Storage:</strong> The Storage section above shows tables <em>this app creates</em> (materialized views of system.billing data). The OTel tables are created by Databricks and contain telemetry about the app itself — not cost data.
-              </p>
-            </div>
-
-            {/* Location — shared with Storage Location picker */}
-            <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-gray-500">Location</span>
-                <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
-                  {catalogInfo?.catalog ?? appConfig?.storage_location?.catalog ?? "—"}
-                </span>
-                <span className="text-gray-300">·</span>
-                <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
-                  {catalogInfo?.schema ?? appConfig?.storage_location?.schema ?? "—"}
-                </span>
-                <span className="text-[10px] text-gray-400">(shared with app storage)</span>
-              </div>
-              {/* Table prefix — still configurable independently */}
-              {telemetryEditing ? (
-                <div className="space-y-2 pt-1 border-t border-gray-100">
-                  <div className="flex items-center gap-2">
-                    <label className="w-14 text-xs text-gray-500 shrink-0">Prefix</label>
-                    <input
-                      type="text"
-                      value={telemetryDraft.table_prefix}
-                      onChange={e => setTelemetryDraft(d => ({ ...d, table_prefix: e.target.value }))}
-                      className="flex-1 rounded border border-gray-200 px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-                      placeholder="optional, e.g. cost_obs_"
-                    />
-                    <span className="text-[10px] text-gray-500 shrink-0">→ {telemetryDraft.table_prefix || ""}otel_spans</span>
-                  </div>
-                  {telemetryError && <p className="text-xs text-red-500">{telemetryError}</p>}
-                  <div className="flex items-center gap-2">
-                    <button
-                      disabled={telemetrySaving}
-                      onClick={async () => {
-                        setTelemetryError(null);
-                        setTelemetrySaving(true);
-                        try {
-                          const res = await fetch("/api/settings/telemetry", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              catalog: catalogInfo?.catalog ?? "",
-                              schema_name: catalogInfo?.schema ?? "",
-                              table_prefix: telemetryDraft.table_prefix,
-                            }),
-                          });
-                          if (!res.ok) {
-                            const d = await res.json().catch(() => ({}));
-                            setTelemetryError(d.detail || "Save failed");
-                          } else {
-                            setTelemetryEditing(false);
-                            await refetchTelemetry();
-                            await refetchTables();
-                          }
-                        } finally {
-                          setTelemetrySaving(false);
-                        }
-                      }}
-                      className="rounded bg-[#FF3621] px-3 py-1 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-50"
-                    >
-                      {telemetrySaving ? "Saving…" : "Save"}
-                    </button>
-                    <button
-                      onClick={() => { setTelemetryEditing(false); setTelemetryError(null); }}
-                      className="rounded px-3 py-1 text-xs text-gray-500 hover:bg-gray-100"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : telemetry?.table_prefix ? (
-                <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
-                  <span className="text-xs text-gray-500">Prefix</span>
-                  <span className="rounded-md bg-gray-50 border border-gray-200 px-2 py-0.5 text-xs font-mono font-medium text-gray-700">{telemetry.table_prefix}</span>
-                  <span className="text-[10px] text-gray-400">→ {telemetry.table_prefix}otel_spans</span>
-                </div>
-              ) : null}
-            </div>
           </div>
 
         </>

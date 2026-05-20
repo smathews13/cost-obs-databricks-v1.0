@@ -5,10 +5,9 @@ interface SettingsGeneralProps {
   updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
   saveStatus: string | null;
   setSaveStatus: (status: string | null) => void;
-  onRerunWizard?: () => void;
 }
 
-export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setSaveStatus, onRerunWizard }: SettingsGeneralProps) {
+export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setSaveStatus }: SettingsGeneralProps) {
   return (
     <div className="space-y-5">
       {saveStatus && (
@@ -235,18 +234,6 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
               className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
             >
               Re-enable
-            </button>
-          </div>
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <div className="text-sm font-medium text-gray-900">Re-run Setup Wizard</div>
-              <div className="text-xs text-gray-500">Clear the setup completion flag and re-launch the first-run wizard</div>
-            </div>
-            <button
-              onClick={() => onRerunWizard?.()}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Re-run Wizard
             </button>
           </div>
         </div>

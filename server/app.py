@@ -558,13 +558,6 @@ def startup_tasks():
     # Step 0: Set up dedicated warehouse (creates Large serverless warehouse if needed)
     setup_and_check_warehouse()
 
-    # Step 0a: Restore auth mode override from Delta (survives app restarts/redeployments)
-    try:
-        from server.routers.settings import restore_auth_mode_from_delta
-        restore_auth_mode_from_delta()
-    except Exception as e:
-        logger.warning(f"Could not restore auth mode from Delta (non-fatal): {e}")
-
     # Step 0b: Enable system.access schema for workspace name resolution
     setup_system_access_schema()
 

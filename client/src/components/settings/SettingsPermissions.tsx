@@ -281,159 +281,40 @@ export function SettingsPermissions() {
             </svg>
             <h4 className="text-sm font-semibold text-gray-900">Query Authentication Mode</h4>
           </div>
-          {!authLoading && authStatus && (
-            <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-              isOAuth ? "bg-green-50 text-green-700 border border-green-200" : "bg-amber-50 text-amber-700 border border-amber-200"
-            }`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${isOAuth ? "bg-green-500" : "bg-amber-500"}`} />
-              {isOAuth ? "OAuth Active" : "Service Principal"}
-            </div>
-          )}
+          <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Service Principal
+          </div>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-5 space-y-4">
 
-          {/* Architecture diagram */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* OAuth path */}
-            <div className={`rounded-lg border-2 p-4 space-y-2 transition-colors ${
-              isOAuth ? "border-green-300 bg-green-50" : "border-gray-200 bg-gray-50 opacity-70"
-            }`}>
-              <div className="flex items-center gap-2">
-                <div className={`h-2.5 w-2.5 rounded-full ${isOAuth ? "bg-green-500" : "bg-gray-300"}`} />
-                <span className="text-xs font-semibold text-gray-800">OAuth (User Identity)</span>
-                {isOAuth && <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">Active</span>}
-              </div>
-              <div className="space-y-1 text-[11px] text-gray-600">
-                <div className="flex items-start gap-1.5">
-                  <svg className="mt-0.5 h-3 w-3 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                  <span>Queries run as the <strong>logged-in user</strong> — their UC identity and permissions apply</span>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <svg className="mt-0.5 h-3 w-3 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                  <span>No SP grants needed on the app catalog or schema</span>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <svg className="mt-0.5 h-3 w-3 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                  <span>System tables accessible if the user is a workspace or account admin</span>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <svg className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z" /></svg>
-                  <span>Requires <strong>SQL scope</strong> enabled in App user authorization settings</span>
-                </div>
-              </div>
-              <div className="mt-2 rounded bg-white border border-gray-200 px-2 py-1.5 font-mono text-[10px] text-gray-500 leading-relaxed">
-                Browser → <span className="text-blue-600">x-forwarded-access-token</span> → User SQL connection
-              </div>
-            </div>
-
-            {/* SP path */}
-            <div className={`rounded-lg border-2 p-4 space-y-2 transition-colors ${
-              isSP ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-gray-50 opacity-70"
-            }`}>
-              <div className="flex items-center gap-2">
-                <div className={`h-2.5 w-2.5 rounded-full ${isSP ? "bg-amber-500" : "bg-gray-300"}`} />
-                <span className="text-xs font-semibold text-gray-800">Service Principal</span>
-                {isSP && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">{isOverriddenSP ? "Forced" : "Active"}</span>}
-              </div>
-              <div className="space-y-1 text-[11px] text-gray-600">
-                <div className="flex items-start gap-1.5">
-                  <svg className="mt-0.5 h-3 w-3 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                  <span>Consistent identity for all users — all queries run as the app's SP</span>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <svg className="mt-0.5 h-3 w-3 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                  <span>Works without SQL scope — any deployment configuration</span>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <svg className="mt-0.5 h-3 w-3 shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                  <span>SP requires explicit <strong>GRANT</strong> on every system table and app schema</span>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <svg className="mt-0.5 h-3 w-3 shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                  <span>Grants must be re-applied after each git deploy (new SP per deploy)</span>
-                </div>
-              </div>
-              <div className="mt-2 rounded bg-white border border-gray-200 px-2 py-1.5 font-mono text-[10px] text-gray-500 leading-relaxed">
-                Browser → SP credentials → SP SQL connection
-              </div>
+          {/* Locked SP banner */}
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+            <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-amber-800">Service Principal only — OAuth disabled</p>
+              <p className="text-[11px] text-amber-700">
+                All queries run as the app's service principal. OAuth user-identity mode is preserved in the codebase
+                but is not active. Grant the SP access to system tables using the button below.
+              </p>
             </div>
           </div>
 
-          {/* Current status detail */}
+          {/* Current identity */}
           {authLoading ? (
-            <div className="h-16 animate-pulse rounded-lg bg-gray-100" />
+            <div className="h-12 animate-pulse rounded-lg bg-gray-100" />
           ) : authStatus ? (
             <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 space-y-2">
-              <p className="text-xs font-medium text-gray-700">Current status</p>
+              <p className="text-xs font-medium text-gray-700">Running as</p>
               <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
-                <StatusRow label="Auth mode" value={
-                  authStatus.auth_mode === "user" ? "OAuth (locked)" :
-                  authStatus.auth_mode === "sp" ? "Service Principal (locked)" :
-                  "Auto-detecting…"
-                } />
-                <StatusRow label="OAuth token received" value={authStatus.token_present ? "Yes" : "No"} ok={authStatus.token_present} />
-                <StatusRow label="SQL scope granted" value={
-                  authStatus.has_sql_scope === true ? "Yes" :
-                  authStatus.has_sql_scope === false ? "No (token present, scope missing)" :
-                  authStatus.token_present ? "Unknown" : "N/A"
-                } ok={authStatus.has_sql_scope === true} warn={authStatus.has_sql_scope === false} />
-                <StatusRow label="Running as" value={authStatus.user_email ?? (isOAuth ? "OAuth user" : "Service Principal")} />
-                {authStatus.token_scopes.length > 0 && (
-                  <StatusRow label="Token scopes" value={authStatus.token_scopes.join(", ")} />
-                )}
-                {isOverriddenSP && (
-                  <StatusRow label="Override" value="Forced to SP (manual override active)" warn />
-                )}
+                <StatusRow label="Identity" value="Service Principal (permanent)" ok />
+                <StatusRow label="SP email" value={authStatus.user_email ?? "service principal"} />
               </div>
             </div>
           ) : null}
-
-          {/* Mode switch */}
-          {modeError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{modeError}</div>
-          )}
-          {modeSuccess && (
-            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">{modeSuccess}</div>
-          )}
-
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 space-y-3">
-            <p className="text-xs font-medium text-gray-700">Manual override</p>
-            <p className="text-[11px] text-gray-500">
-              Force a specific mode regardless of what the app auto-detects. Use this if you need to
-              troubleshoot permission issues or lock the app to a known-working identity.
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setAuthMode("auto")}
-                disabled={!isOverriddenSP && authStatus?.auth_mode !== "sp"}
-                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  !isOverriddenSP && authStatus?.auth_mode !== "sp"
-                    ? "border-green-300 bg-green-50 text-green-700 cursor-default"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                {!isOverriddenSP && authStatus?.auth_mode !== "sp" ? "Auto-detect (current)" : "Switch to Auto-detect (OAuth)"}
-              </button>
-              <button
-                onClick={() => setAuthMode("sp")}
-                disabled={isOverriddenSP}
-                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  isOverriddenSP
-                    ? "border-amber-300 bg-amber-50 text-amber-700 cursor-default"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                {isOverriddenSP ? "Forced to Service Principal (current)" : "Force Service Principal"}
-              </button>
-            </div>
-            {noToken && !isOverriddenSP && (
-              <p className="text-[11px] text-amber-600">
-                No OAuth token detected. The app is in SP mode by default because the SQL scope is not configured
-                or user authorization is not enabled on this Databricks App.
-              </p>
-            )}
-          </div>
 
           {/* Re-run SP grants button — always visible, needed after every git deploy */}
           <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 space-y-2">

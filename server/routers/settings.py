@@ -781,24 +781,26 @@ async def check_billing_access():
 
 
 class AuthModeRequest(BaseModel):
-    mode: str  # "sp" | "auto"
+    mode: str  # "sp" only — OAuth disabled
 
 
 @router.post("/auth-mode")
 async def set_auth_mode(body: AuthModeRequest):
-    """Override the SQL query auth mode.
+    """Auth mode endpoint — OAuth is currently disabled.
 
-    mode='sp'   — force all queries through the service principal.
-    mode='auto' — clear the override and re-enable OAuth auto-detection.
-
-    The change takes effect immediately for new requests. A page refresh
-    is required for the header badge to update.
+    Only 'sp' is accepted. 'auto' is rejected until OAuth is re-enabled.
     """
-    if body.mode not in ("sp", "auto"):
-        raise HTTPException(status_code=422, detail="mode must be 'sp' or 'auto'")
+    if body.mode == "auto":
+        raise HTTPException(
+            status_code=422,
+            detail="OAuth / auto-detect mode is disabled. The app runs exclusively as the service principal."
+        )
+    if body.mode != "sp":
+        raise HTTPException(status_code=422, detail="mode must be 'sp'")
+    # set_auth_mode_override is a no-op when already SP, but call for log visibility
     from server.db import set_auth_mode_override
     set_auth_mode_override(body.mode)
-    return {"status": "ok", "mode": body.mode}
+    return {"status": "ok", "mode": "sp"}
 
 
 @router.get("/warehouses")

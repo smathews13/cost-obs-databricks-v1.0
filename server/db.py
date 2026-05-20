@@ -33,45 +33,31 @@ def _load_auth_mode_override() -> str:
     return "unknown"
 
 
-# App-level auth mode. Initialized from persisted override (if any), then locked
-# on first successful/failed SQL query. UserAuthMiddleware respects this so every
-# query in every request uses the same identity.
-_auth_mode: str = _load_auth_mode_override()  # "unknown" | "user" | "sp"
+# Auth mode is permanently locked to "sp". OAuth/user-token auth is preserved in
+# the codebase for future use but is not active. The UserAuthMiddleware already
+# gates on this value and will not forward user tokens when mode is "sp".
+_auth_mode: str = "sp"  # always "sp" — OAuth disabled until further notice
 
 
 def _lock_auth_mode(mode: str) -> None:
-    """Lock the auth mode for the lifetime of this process."""
-    global _auth_mode
-    if _auth_mode != mode:
-        _auth_mode = mode
-        if mode == "user":
-            logger.info("SQL auth mode locked to: user (x-forwarded-access-token with sql scope)")
-        else:
-            logger.info("SQL auth mode locked to: service principal (no sql scope or no user token)")
+    """No-op — auth mode is permanently 'sp'. Kept for call-site compatibility."""
+    if mode != "sp":
+        logger.debug("_lock_auth_mode('%s') ignored — OAuth disabled, always SP.", mode)
 
 
 def set_auth_mode_override(mode: str) -> None:
-    """Persist and immediately apply an auth mode override.
+    """No-op stub — OAuth is disabled; auth mode is permanently 'sp'.
 
-    mode='sp'   — force all queries to run as the service principal.
-    mode='auto' — clear the override and let the app auto-detect on the next query.
+    Kept for call-site compatibility. The override file and Delta table writes
+    are skipped. When OAuth is re-enabled in the future, restore the original
+    implementation from git history.
     """
-    global _auth_mode
-    os.makedirs(os.path.dirname(_AUTH_MODE_OVERRIDE_FILE), exist_ok=True)
-    with open(_AUTH_MODE_OVERRIDE_FILE, "w") as f:
-        json.dump({"mode": mode}, f)
-    if mode == "sp":
-        _auth_mode = "sp"
-        logger.info("Auth mode override saved: forced to service principal")
-    else:
-        _auth_mode = "unknown"
-        logger.info("Auth mode override saved: auto-detect (reset)")
-    # Also persist to Delta table so the override survives app restarts/redeployments
-    try:
-        from server.routers.settings import _save_auth_mode_to_table
-        _save_auth_mode_to_table(mode)
-    except Exception as e:
-        logger.warning(f"Could not save auth mode to Delta table (non-fatal): {e}")
+    if mode != "sp":
+        logger.warning(
+            "set_auth_mode_override('%s') ignored — OAuth is disabled. "
+            "Auth mode is permanently locked to 'sp'.", mode
+        )
+    # Always keep _auth_mode as "sp" — no mutation needed
 
 from cachetools import TTLCache
 from databricks import sql

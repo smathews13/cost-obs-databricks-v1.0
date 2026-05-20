@@ -28,8 +28,6 @@ export function SettingsPermissions() {
   const queryClient = useQueryClient();
   const [newAdmin, setNewAdmin] = useState("");
   const [newConsumer, setNewConsumer] = useState("");
-  const [modeError, setModeError] = useState<string | null>(null);
-  const [modeSuccess, setModeSuccess] = useState<string | null>(null);
   const [grantRunning, setGrantRunning] = useState(false);
   const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[] } | null>(null);
 
@@ -67,32 +65,6 @@ export function SettingsPermissions() {
       queryClient.refetchQueries({ queryKey: ["user"] });
     },
   });
-
-  const setAuthMode = async (mode: "sp" | "auto") => {
-    setModeError(null);
-    setModeSuccess(null);
-    try {
-      const res = await fetch("/api/settings/auth-mode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setModeError(body.detail ?? "Failed to update auth mode");
-        return;
-      }
-      await refetchAuth();
-      queryClient.invalidateQueries({ queryKey: ["settings-auth-status"] });
-      setModeSuccess(
-        mode === "sp"
-          ? "Switched to Service Principal mode. All queries now run as the app SP."
-          : "Auto-detect enabled. OAuth will be used on the next request if the SQL scope is active."
-      );
-    } catch (e) {
-      setModeError(`Network error: ${e}`);
-    }
-  };
 
   const runSpGrants = async () => {
     setGrantRunning(true);
@@ -155,9 +127,7 @@ export function SettingsPermissions() {
     });
   };
 
-  const isOAuth = authStatus?.identity === "user_oauth";
   const isSP = authStatus?.identity === "service_principal";
-  const isOverriddenSP = authStatus?.override_mode === "sp";
   const noToken = !authStatus?.token_present;
 
   if (isLoading) {

@@ -1,14 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { useQuery, type UseMutationResult } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { AppSettings } from "../SettingsDialog";
-
-interface WarehouseInfo {
-  id: string;
-  name: string;
-  size: string | null;
-  state: string;
-  is_current: boolean;
-}
 
 interface AppConfigInfo {
   warehouse: { id: string; name: string | null; size: string | null; state: string } | null;
@@ -26,11 +18,6 @@ interface TelemetryConfig {
 interface SettingsConfigProps {
   configLoading: boolean;
   appConfig: AppConfigInfo | undefined;
-  warehouses: WarehouseInfo[];
-  warehousesLoading: boolean;
-  pendingWarehouseSwitch: { id: string; name: string; state: string } | null;
-  setPendingWarehouseSwitch: (v: { id: string; name: string; state: string } | null) => void;
-  switchWarehouseMutation: UseMutationResult<any, Error, string, unknown>;
   saveStatus: string | null;
   setSaveStatus: (status: string | null) => void;
   localSettings: AppSettings;
@@ -54,11 +41,6 @@ function ColWarn({ error, align = "left" }: { error: string; align?: "left" | "r
 export function SettingsConfig({
   configLoading,
   appConfig,
-  warehouses,
-  warehousesLoading,
-  pendingWarehouseSwitch,
-  setPendingWarehouseSwitch,
-  switchWarehouseMutation,
   saveStatus,
   setSaveStatus,
   localSettings,
@@ -74,7 +56,7 @@ export function SettingsConfig({
   }, []);
 
   // Catalog/schema location override
-  const { data: catalogInfo = null, isLoading: catalogLoading, refetch: refetchCatalog } = useQuery<{
+  const { data: catalogInfo = null, isLoading: catalogLoading } = useQuery<{
     catalog: string;
     schema: string;
     source: "env" | "override";
@@ -97,11 +79,6 @@ export function SettingsConfig({
     queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
     staleTime: 60 * 1000,
   });
-
-  const [catalogEditing, setCatalogEditing] = useState(false);
-  const [catalogDraft, setCatalogDraft] = useState({ catalog: "", schema: "" });
-  const [catalogSaving, setCatalogSaving] = useState(false);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const { data: telemetry = null, isLoading: telemetryLoading, refetch: refetchTelemetry } = useQuery<TelemetryConfig | null>({
     queryKey: ["settings-telemetry"],
@@ -283,7 +260,7 @@ export function SettingsConfig({
   return (
     <div className="space-y-5">
       <p className="text-sm text-gray-500">
-        Runtime configuration for this app instance. Change the SQL warehouse to switch compute resources.
+        Runtime configuration for this app instance.
       </p>
 
       {saveStatus && (
@@ -303,103 +280,27 @@ export function SettingsConfig({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
               </svg>
               <h4 className="text-sm font-semibold text-gray-900">SQL Warehouse</h4>
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Fixed at deploy time</span>
             </div>
-            {appConfig?.warehouse && (
-              <div className="mb-3 space-y-2">
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3">
-                  <div className="text-sm text-gray-500">Current Warehouse</div>
+            <div className="rounded-lg border border-gray-200 bg-white p-3">
+              {appConfig?.warehouse ? (
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={`inline-block h-2 w-2 rounded-full ${appConfig.warehouse.state === "RUNNING" ? "bg-green-500" : appConfig.warehouse.state === "STOPPED" ? "bg-gray-400" : "bg-yellow-500"}`} />
                     <span className="text-sm font-medium text-gray-900">{appConfig.warehouse.name || appConfig.warehouse.id}</span>
                     <span className="text-xs text-gray-500">({appConfig.warehouse.size || "—"}) · {appConfig.warehouse.state}</span>
                   </div>
+                  <span className="shrink-0 rounded px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: '#FF362120', color: '#FF3621' }}>
+                    Active
+                  </span>
                 </div>
-              </div>
-            )}
-            <div className="rounded-lg border border-gray-200 bg-white p-3">
-              <div className="mb-2">
-                <div className="text-sm font-medium text-gray-900">Switch Warehouse</div>
-                <div className="text-xs text-gray-500">Select a different SQL warehouse to power the app</div>
-              </div>
-              {warehousesLoading ? (
-                <div className="py-3 text-center text-sm text-gray-500">Loading warehouses...</div>
-              ) : warehouses.length === 0 ? (
-                <div className="py-3 text-center text-sm text-gray-500">No warehouses found</div>
               ) : (
-                <>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {warehouses.map((wh) => (
-                    <button
-                      key={wh.id}
-                      onClick={() => {
-                        if (!wh.is_current) setPendingWarehouseSwitch({ id: wh.id, name: wh.name, state: wh.state });
-                      }}
-                      disabled={wh.is_current || switchWarehouseMutation.isPending}
-                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
-                        wh.is_current
-                          ? "border-orange-200 bg-orange-50"
-                          : pendingWarehouseSwitch?.id === wh.id
-                            ? "border-orange-300 bg-orange-50"
-                            : "border-gray-200 bg-white hover:border-orange-200 hover:bg-orange-50/50"
-                      } ${switchWarehouseMutation.isPending ? "opacity-50 cursor-wait" : ""}`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${wh.state === "RUNNING" ? "bg-green-500" : wh.state === "STOPPED" ? "bg-gray-400" : "bg-yellow-500"}`} />
-                        <div className="min-w-0">
-                          <div className="font-medium text-gray-900 truncate">{wh.name}</div>
-                          <div className="text-xs text-gray-500">{wh.size || "—"} · {wh.state}</div>
-                        </div>
-                      </div>
-                      {wh.is_current ? (
-                        <span className="shrink-0 rounded px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: '#FF362120', color: '#FF3621' }}>
-                          Active
-                        </span>
-                      ) : (
-                        <span className="shrink-0 text-xs text-gray-500">
-                          {wh.state === "STOPPED" ? "Will start" : "Select"}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                {pendingWarehouseSwitch && (
-                  <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
-                    <div className="flex items-start gap-2">
-                      <svg className="h-5 w-5 shrink-0 text-orange-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900">
-                          Switch to {pendingWarehouseSwitch.name}?
-                        </div>
-                        <div className="text-xs text-gray-600 mt-0.5">
-                          {pendingWarehouseSwitch.state === "STOPPED"
-                            ? "This warehouse is stopped and will be started automatically. It may take a few minutes to become available."
-                            : "All queries will be routed to this warehouse immediately."}
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                          <button
-                            onClick={() => setPendingWarehouseSwitch(null)}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => switchWarehouseMutation.mutate(pendingWarehouseSwitch.id)}
-                            disabled={switchWarehouseMutation.isPending}
-                            className="rounded-md px-3 py-1 text-xs font-medium text-white transition-colors disabled:opacity-50"
-                            style={{ backgroundColor: '#FF3621' }}
-                          >
-                            {switchWarehouseMutation.isPending ? "Switching..." : "Confirm Switch"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                </>
+                <p className="text-sm text-gray-500">No warehouse detected. Set <span className="font-mono text-xs">DATABRICKS_WAREHOUSE_ID</span> via app resource binding or <span className="font-mono text-xs">DATABRICKS_HTTP_PATH</span> in app.yaml.</p>
               )}
             </div>
+            <p className="mt-1.5 text-xs text-gray-500">
+              The warehouse is set via the app resource binding in app.yaml and cannot be changed here. Redeploy with a different resource binding to switch warehouses.
+            </p>
           </div>
 
           {/* App Identity */}
@@ -549,130 +450,22 @@ export function SettingsConfig({
               <h4 className="text-sm font-semibold text-gray-900">Storage Location & Tables</h4>
             </div>
 
-            {/* Catalog / Schema location — unified picker above rebuild controls */}
-            <div className="mb-3 rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+            {/* Catalog / Schema location — read-only after setup */}
+            <div className="mb-3 rounded-lg border border-gray-200 bg-white p-3">
               {catalogLoading ? (
                 <div className="text-xs text-gray-500">Loading...</div>
-              ) : catalogEditing ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <label className="w-14 text-xs text-gray-500 shrink-0">Catalog</label>
-                    <input
-                      type="text"
-                      value={catalogDraft.catalog}
-                      onChange={e => setCatalogDraft(d => ({ ...d, catalog: e.target.value }))}
-                      className="flex-1 rounded border border-gray-200 px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-                      placeholder="e.g. main"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="w-14 text-xs text-gray-500 shrink-0">Schema</label>
-                    <input
-                      type="text"
-                      value={catalogDraft.schema}
-                      onChange={e => setCatalogDraft(d => ({ ...d, schema: e.target.value }))}
-                      className="flex-1 rounded border border-gray-200 px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-                      placeholder="e.g. cost_obs"
-                    />
-                  </div>
-                  {catalogError && <p className="text-xs text-red-500">{catalogError}</p>}
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      disabled={catalogSaving}
-                      onClick={async () => {
-                        setCatalogError(null);
-                        setCatalogSaving(true);
-                        try {
-                          const res = await fetch("/api/settings/catalog", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(catalogDraft),
-                          });
-                          if (!res.ok) {
-                            const d = await res.json();
-                            setCatalogError(d.detail || "Save failed");
-                          } else {
-                            // Sync telemetry to same location so both always match
-                            await fetch("/api/settings/telemetry", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                catalog: catalogDraft.catalog,
-                                schema_name: catalogDraft.schema,
-                                table_prefix: telemetry?.table_prefix ?? "",
-                              }),
-                            });
-                            setCatalogEditing(false);
-                            await refetchCatalog();
-                            await refetchTelemetry();
-                            await refetchTables();
-                          }
-                        } finally {
-                          setCatalogSaving(false);
-                        }
-                      }}
-                      className="rounded bg-[#FF3621] px-3 py-1 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-50"
-                    >
-                      {catalogSaving ? "Saving…" : "Save"}
-                    </button>
-                    <button
-                      onClick={() => { setCatalogEditing(false); setCatalogError(null); }}
-                      className="rounded px-3 py-1 text-xs text-gray-500 hover:bg-gray-100"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
               ) : (
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-gray-500">Catalog</span>
-                    <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
-                      {catalogInfo?.catalog ?? appConfig?.storage_location?.catalog ?? "—"}
-                    </span>
-                    <span className="text-gray-300">·</span>
-                    <span className="text-xs text-gray-500">Schema</span>
-                    <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
-                      {catalogInfo?.schema ?? appConfig?.storage_location?.schema ?? "—"}
-                    </span>
-                    {catalogInfo?.source === "override" && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                        Override active
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => {
-                        setCatalogDraft({ catalog: catalogInfo?.catalog ?? "", schema: catalogInfo?.schema ?? "" });
-                        setCatalogError(null);
-                        setCatalogEditing(true);
-                      }}
-                      className="rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                    >
-                      Change
-                    </button>
-                    {catalogInfo?.source === "override" && (
-                      <button
-                        onClick={async () => {
-                          await fetch("/api/settings/catalog", { method: "DELETE" });
-                          await refetchCatalog();
-                          await refetchTables();
-                        }}
-                        className="rounded px-2 py-1 text-xs text-amber-600 hover:bg-amber-50 transition-colors"
-                        title={`Revert to env vars (${catalogInfo.env_catalog}.${catalogInfo.env_schema})`}
-                      >
-                        Reset to default
-                      </button>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-500">Catalog</span>
+                  <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
+                    {catalogInfo?.catalog ?? appConfig?.storage_location?.catalog ?? "—"}
+                  </span>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-xs text-gray-500">Schema</span>
+                  <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
+                    {catalogInfo?.schema ?? appConfig?.storage_location?.schema ?? "—"}
+                  </span>
                 </div>
-              )}
-              {catalogInfo?.source === "override" && !catalogEditing && (
-                <p className="text-[10px] text-amber-600">
-                  This override is stored locally and will be lost if the app is redeployed.
-                  Default from app.yaml: <span className="font-mono">{catalogInfo.env_catalog}.{catalogInfo.env_schema}</span>
-                </p>
               )}
             </div>
 

@@ -395,59 +395,35 @@ def setup_warehouse_connection() -> str:
     """Set up the warehouse connection for the app.
 
     Priority:
-    1. DATABRICKS_HTTP_PATH env var (explicit config in app.yaml)
-    2. Warehouse saved via the in-app settings UI (warehouse_settings.json)
-       — user's explicit choice always beats the platform resource binding
-    3. DATABRICKS_WAREHOUSE_ID env var — injected by Databricks Apps when a
+    1. DATABRICKS_HTTP_PATH env var (explicit path set in app.yaml)
+    2. DATABRICKS_WAREHOUSE_ID env var — injected by Databricks Apps when a
        sql_warehouse resource is declared with valueFrom in app.yaml
-    4. Auto-create/find a dedicated warehouse (last resort)
+
+    The warehouse is fixed at deploy time and cannot be changed via the settings
+    UI. To switch warehouses, update the app resource binding and redeploy.
 
     Returns:
         The HTTP path being used
     """
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
 
-    # User's saved warehouse preference takes priority over the platform resource binding
-    # so that a warehouse chosen in the settings UI is not silently overridden on redeploy.
-    if not http_path or http_path.lower() == "auto":
-        saved = _load_saved_warehouse_http_path()
-        if saved:
-            os.environ["DATABRICKS_HTTP_PATH"] = saved
-            logger.info(f"Restored warehouse from saved settings: {saved}")
-            return saved
-
-    # Databricks Apps sql_warehouse resource via valueFrom: sql-warehouse (fallback only)
-    if not http_path or http_path.lower() == "auto":
-        warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
-        if warehouse_id:
-            http_path = f"/sql/1.0/warehouses/{warehouse_id}"
-            os.environ["DATABRICKS_HTTP_PATH"] = http_path
-            logger.info(f"Using warehouse from DATABRICKS_WAREHOUSE_ID resource: {http_path}")
-            return http_path
-
-    # If no HTTP path or set to 'auto', try to create/use a dedicated warehouse
-    if not http_path or http_path.lower() == "auto":
-        logger.info("DATABRICKS_HTTP_PATH not set or set to 'auto' - attempting dedicated warehouse")
-        try:
-            warehouse_id, http_path = ensure_dedicated_warehouse()
-            os.environ["DATABRICKS_HTTP_PATH"] = http_path
-            logger.info(f"Set DATABRICKS_HTTP_PATH to: {http_path}")
-            return http_path
-        except Exception as e:
-            logger.error(
-                f"Failed to create/find dedicated warehouse: {e}. "
-                "This typically happens when running as a Databricks App service principal "
-                "without warehouse creation permissions. "
-                "Set DATABRICKS_HTTP_PATH to an explicit warehouse path "
-                "(e.g. /sql/1.0/warehouses/<id>) in app.yaml env vars."
-            )
-            raise ValueError(
-                "DATABRICKS_HTTP_PATH is set to 'auto' but warehouse auto-creation failed. "
-                "Set DATABRICKS_HTTP_PATH to an explicit warehouse path in app.yaml."
-            ) from e
-    else:
+    if http_path and http_path.lower() != "auto":
         logger.info(f"Using configured warehouse: {http_path}")
         return http_path
+
+    # Databricks Apps sql_warehouse resource binding
+    warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
+    if warehouse_id:
+        http_path = f"/sql/1.0/warehouses/{warehouse_id}"
+        os.environ["DATABRICKS_HTTP_PATH"] = http_path
+        logger.info(f"Using warehouse from DATABRICKS_WAREHOUSE_ID resource: {http_path}")
+        return http_path
+
+    raise ValueError(
+        "No SQL warehouse configured. Set DATABRICKS_HTTP_PATH to an explicit warehouse path "
+        "(e.g. /sql/1.0/warehouses/<id>) in app.yaml, or add a sql_warehouse resource binding "
+        "so DATABRICKS_WAREHOUSE_ID is injected automatically."
+    )
 
 
 def _get_cache_key(query: str, params: dict[str, Any] | None, *, tag: str | None = None) -> str:

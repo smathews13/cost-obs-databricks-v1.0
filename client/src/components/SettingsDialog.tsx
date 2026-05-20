@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsExperimental, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
 
 export interface TabVisibility {
@@ -135,7 +135,6 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
   const [localSettings, setLocalSettings] = useState<AppSettings>(appSettings);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [generalDirty, setGeneralDirty] = useState(false);
-  const [pendingWarehouseSwitch, setPendingWarehouseSwitch] = useState<{ id: string; name: string; state: string } | null>(null);
   const contentScrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
@@ -152,47 +151,6 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
       return res.json();
     },
     enabled: isOpen,
-  });
-
-  const { data: warehouses = [], isLoading: warehousesLoading } = useQuery<{
-    id: string; name: string; size: string | null; state: string; is_current: boolean;
-  }[]>({
-    queryKey: ["warehouses"],
-    queryFn: async () => {
-      const res = await fetch("/api/settings/warehouses");
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-    enabled: isOpen,
-  });
-
-  // ── Mutations ────────────────────────────────────────────────────────
-  const switchWarehouseMutation = useMutation({
-    mutationFn: async (warehouseId: string) => {
-      const res = await fetch("/api/settings/warehouse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ warehouse_id: warehouseId }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) throw new Error("Failed to switch warehouse");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.setQueryData(["warehouses"], (old: { id: string; name: string; size: string | null; state: string; is_current: boolean }[] | undefined) => {
-        if (!Array.isArray(old)) return old;
-        return old.map((wh) => ({ ...wh, is_current: wh.id === data.warehouse?.id }));
-      });
-      queryClient.invalidateQueries({ queryKey: ["app-config"] });
-      setPendingWarehouseSwitch(null);
-      setSaveStatus(`Switched to warehouse: ${data.warehouse?.name || data.warehouse?.id}${data.warehouse?.state === "STARTING" ? " (starting...)" : ""}`);
-      setTimeout(() => setSaveStatus(null), 5000);
-    },
-    onError: () => {
-      setPendingWarehouseSwitch(null);
-      setSaveStatus("Failed to switch warehouse");
-      setTimeout(() => setSaveStatus(null), 3000);
-    },
   });
 
   // ── Effects ──────────────────────────────────────────────────────────
@@ -355,11 +313,6 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
               <SettingsConfig
                 configLoading={configLoading}
                 appConfig={appConfig}
-                warehouses={warehouses}
-                warehousesLoading={warehousesLoading}
-                pendingWarehouseSwitch={pendingWarehouseSwitch}
-                setPendingWarehouseSwitch={setPendingWarehouseSwitch}
-                switchWarehouseMutation={switchWarehouseMutation}
                 saveStatus={saveStatus}
                 setSaveStatus={setSaveStatus}
                 localSettings={localSettings}

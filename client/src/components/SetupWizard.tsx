@@ -50,12 +50,13 @@ interface SetupStatus {
   task?: { status: string; error: string | null };
 }
 
-type WizardStep = "welcome" | "permissions" | "create-tables" | "workspace-filter" | "complete";
+type WizardStep = "welcome" | "storage-location" | "permissions" | "create-tables" | "workspace-filter" | "complete";
 
-const STEPS: WizardStep[] = ["welcome", "permissions", "create-tables", "workspace-filter", "complete"];
+const STEPS: WizardStep[] = ["welcome", "storage-location", "permissions", "create-tables", "workspace-filter", "complete"];
 
 const STEP_LABELS: Record<WizardStep, string> = {
   welcome: "Environment",
+  "storage-location": "Storage",
   permissions: "Permissions",
   "create-tables": "Create Tables",
   "workspace-filter": "Workspaces",
@@ -168,6 +169,12 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Storage location step state
+  const [catalogDraft, setCatalogDraft] = useState({ catalog: "", schema: "" });
+  const [catalogSaved, setCatalogSaved] = useState(false);
+  const [catalogSaving, setCatalogSaving] = useState(false);
+  const [catalogStepError, setCatalogStepError] = useState<string | null>(null);
 
   // Workspace filter step state
   const [wsLoading, setWsLoading] = useState(false);
@@ -307,6 +314,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     if (idx < STEPS.length - 1) {
       const next = STEPS[idx + 1];
       setStep(next);
+      if (next === "storage-location" && !catalogDraft.catalog) {
+        const loc = config?.storage_location;
+        if (loc) setCatalogDraft({ catalog: loc.catalog, schema: loc.schema });
+      }
       if (next === "permissions") loadPermissions();
       if (next === "create-tables") pollSetupStatus();
       if (next === "workspace-filter") loadWorkspaces();
@@ -376,11 +387,38 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
           })()}
 
           {step === "welcome" && (
-            <WelcomeStep config={config} cloud={cloud} loading={loading} onWarehouseSelected={() => {
-              setConfig(null);
-              setLoading(true);
-              fetch("/api/settings/config").then(r => r.json()).then(d => { setConfig(d); setLoading(false); }).catch(() => setLoading(false));
-            }} />
+            <WelcomeStep config={config} cloud={cloud} loading={loading} />
+          )}
+
+          {step === "storage-location" && (
+            <StorageLocationStep
+              draft={catalogDraft}
+              onChange={setCatalogDraft}
+              saved={catalogSaved}
+              saving={catalogSaving}
+              error={catalogStepError}
+              onSave={async () => {
+                setCatalogStepError(null);
+                setCatalogSaving(true);
+                try {
+                  const res = await fetch("/api/settings/catalog", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(catalogDraft),
+                  });
+                  if (!res.ok) {
+                    const d = await res.json().catch(() => ({}));
+                    setCatalogStepError(d.detail || "Failed to save storage location");
+                  } else {
+                    setCatalogSaved(true);
+                  }
+                } catch (e) {
+                  setCatalogStepError(`Network error: ${e}`);
+                } finally {
+                  setCatalogSaving(false);
+                }
+              }}
+            />
           )}
 
           {step === "permissions" && (
@@ -467,6 +505,14 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                   Create Tables
                 </button>
               )
+            ) : step === "storage-location" ? (
+              <button
+                onClick={goNext}
+                disabled={!catalogSaved}
+                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
             ) : step === "permissions" ? (
               <button
                 onClick={goNext}
@@ -478,7 +524,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             ) : (
               <button
                 onClick={goNext}
-                disabled={loading || (config !== null && !config.warehouse)}
+                disabled={loading}
                 className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
               >
                 Next
@@ -493,60 +539,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   );
 }
 
-function WelcomeStep({ config, cloud, loading, onWarehouseSelected }: { config: ConfigData | null; cloud: CloudData | null; loading: boolean; onWarehouseSelected: () => void }) {
+function WelcomeStep({ config, cloud, loading }: { config: ConfigData | null; cloud: CloudData | null; loading: boolean }) {
   const [devOpen, setDevOpen] = useState(false);
-  const [warehouses, setWarehouses] = useState<{id: string; name: string; size: string | null; state: string}[]>([]);
-  const [warehousesLoading, setWarehousesLoading] = useState(false);
-  const [selectingWarehouse, setSelectingWarehouse] = useState(false);
-  const [creatingWarehouse, setCreatingWarehouse] = useState(false);
-  const [warehouseError, setWarehouseError] = useState<string | null>(null);
-  const [newWarehouseName, setNewWarehouseName] = useState("Cost Observability App");
-  const [warehouseSearch, setWarehouseSearch] = useState("");
-
-  useEffect(() => {
-    if (!config || config.warehouse) return;
-    setWarehousesLoading(true);
-    fetch("/api/settings/warehouses")
-      .then(r => r.ok ? r.json() : Promise.reject(new Error("Failed")))
-      .then(data => { setWarehouses(Array.isArray(data) ? data : []); setWarehousesLoading(false); })
-      .catch(() => setWarehousesLoading(false));
-  }, [config]);
-
-  const handleSelectWarehouse = async (warehouseId: string) => {
-    setSelectingWarehouse(true);
-    setWarehouseError(null);
-    try {
-      const res = await fetch(`/api/setup/select-warehouse?warehouse_id=${warehouseId}`, { method: "POST" });
-      const data = await res.json();
-      if (data.status === "ok") onWarehouseSelected();
-      else setWarehouseError(data.message || "Failed to select warehouse");
-    } finally {
-      setSelectingWarehouse(false);
-    }
-  };
-
-  const handleCreateWarehouse = async () => {
-    setCreatingWarehouse(true);
-    setWarehouseError(null);
-    try {
-      const name = newWarehouseName.trim() || "Cost Observability App";
-      const res = await fetch(`/api/setup/create-warehouse?name=${encodeURIComponent(name)}`, { method: "POST", signal: AbortSignal.timeout(120000) });
-      const data = await res.json();
-      if (data.status === "ok") onWarehouseSelected();
-      else {
-        const msg = data.message || "";
-        if (msg.includes("not authorized") || msg.includes("create SQL Endpoint")) {
-          setWarehouseError("The app's service principal doesn't have permission to create warehouses. Select an existing warehouse above, or ask an admin to grant warehouse creation rights to the service principal.");
-        } else {
-          setWarehouseError(msg || "Failed to create warehouse");
-        }
-      }
-    } catch (e) {
-      setWarehouseError(`Request failed: ${e}`);
-    } finally {
-      setCreatingWarehouse(false);
-    }
-  };
 
   const [generating, setGenerating] = useState(false);
   const [generatedToken, setGeneratedToken] = useState<{ token: string; host: string } | null>(null);
@@ -609,84 +603,16 @@ function WelcomeStep({ config, cloud, loading, onWarehouseSelected }: { config: 
           />
         ) : (
           <div className="rounded-lg bg-amber-50 px-4 py-3">
-            <p className="text-sm font-medium text-amber-800 mb-2">No SQL warehouse configured</p>
-            <p className="text-xs text-amber-700 mb-3">Select an existing warehouse or create a new one to continue.</p>
-            {warehouseError && (
-              <p className="text-xs text-red-600 mb-2">{warehouseError}</p>
-            )}
-            {warehousesLoading ? (
-              <p className="text-xs text-amber-600">Loading warehouses...</p>
-            ) : warehouses.length === 0 ? (
-              <div className="space-y-2">
-                <p className="text-xs text-red-700 font-medium">No warehouses visible to this app.</p>
-                <p className="text-xs text-amber-700">A workspace admin needs to grant the app's service principal <span className="font-mono font-semibold">CAN USE</span> on at least one SQL warehouse.</p>
-                <p className="text-xs text-amber-600">Grant <strong>CAN USE</strong> to the service principal via the Databricks UI: SQL Warehouses → [warehouse name] → Permissions tab. Warehouse access cannot be granted via SQL.</p>
-                <p className="text-xs text-amber-600">After granting access, restart the app and try again. Alternatively, set <span className="font-mono">DATABRICKS_HTTP_PATH</span> directly in app.yaml.</p>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <input
-                  type="text"
-                  value={warehouseSearch}
-                  onChange={e => setWarehouseSearch(e.target.value)}
-                  placeholder="Search warehouses..."
-                  className="w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                />
-                <div className="max-h-[180px] overflow-y-auto space-y-1">
-                  {warehouses
-                    .filter(wh => wh.name.toLowerCase().includes(warehouseSearch.toLowerCase()))
-                    .map(wh => (
-                    <button
-                      key={wh.id}
-                      onClick={() => handleSelectWarehouse(wh.id)}
-                      disabled={selectingWarehouse || creatingWarehouse}
-                      className="flex w-full items-center justify-between rounded-lg border border-amber-200 bg-white px-3 py-2 text-left text-sm hover:bg-amber-50 disabled:opacity-50 transition-colors"
-                    >
-                      <span className="font-medium text-gray-800">{wh.name}</span>
-                      <span className="text-xs text-gray-500">{wh.size} · {wh.state}</span>
-                    </button>
-                  ))}
-                  {warehouses.filter(wh => wh.name.toLowerCase().includes(warehouseSearch.toLowerCase())).length === 0 && (
-                    <p className="text-xs text-gray-500 px-2 py-1">No warehouses match "{warehouseSearch}"</p>
-                  )}
-                </div>
-                <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2 space-y-2">
-                  <p className="text-xs text-amber-700 font-medium">Create a new serverless Pro warehouse</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newWarehouseName}
-                      onChange={e => setNewWarehouseName(e.target.value)}
-                      placeholder="Warehouse name"
-                      disabled={creatingWarehouse}
-                      className="flex-1 rounded border border-amber-200 bg-white px-2 py-1 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-50"
-                    />
-                    <button
-                      onClick={handleCreateWarehouse}
-                      disabled={selectingWarehouse || creatingWarehouse || !newWarehouseName.trim()}
-                      className="inline-flex items-center gap-1.5 rounded px-3 py-1 text-sm font-medium text-amber-900 bg-amber-200 hover:bg-amber-300 disabled:opacity-50 transition-colors"
-                    >
-                      {creatingWarehouse ? (
-                        <><div className="h-3.5 w-3.5 animate-spin rounded-full border border-amber-700 border-t-transparent" /> Creating...</>
-                      ) : "Create"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            <p className="text-sm font-medium text-amber-800 mb-1">No SQL warehouse detected</p>
+            <p className="text-xs text-amber-700">
+              The warehouse is set via the <span className="font-mono">DATABRICKS_WAREHOUSE_ID</span> app resource binding or the <span className="font-mono">DATABRICKS_HTTP_PATH</span> env var in <span className="font-mono">app.yaml</span>.
+              Add a SQL warehouse resource in the Databricks Apps UI and redeploy, then restart setup.
+            </p>
           </div>
         )}
         <InfoRow
           label="Identity"
           value={config?.identity ? `${config.identity.display_name} (${config.identity.user_name})` : "Unknown"}
-        />
-        <InfoRow
-          label="Catalog"
-          value={config?.storage_location?.catalog || "Not configured"}
-        />
-        <InfoRow
-          label="Schema"
-          value={config?.storage_location?.schema || "Not configured"}
         />
       </div>
 
@@ -741,6 +667,83 @@ function WelcomeStep({ config, cloud, loading, onWarehouseSelected }: { config: 
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function StorageLocationStep({
+  draft,
+  onChange,
+  saved,
+  saving,
+  error,
+  onSave,
+}: {
+  draft: { catalog: string; schema: string };
+  onChange: (d: { catalog: string; schema: string }) => void;
+  saved: boolean;
+  saving: boolean;
+  error: string | null;
+  onSave: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        Choose where the app's materialized views and telemetry tables will be created. This location
+        is permanent — it cannot be changed after setup without re-running the table creation step.
+      </p>
+
+      <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <label className="w-16 text-xs font-medium text-gray-700 shrink-0">Catalog</label>
+          <input
+            type="text"
+            value={draft.catalog}
+            onChange={e => onChange({ ...draft, catalog: e.target.value })}
+            disabled={saved}
+            placeholder="e.g. main"
+            className="flex-1 rounded border border-gray-200 px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:bg-gray-50 disabled:text-gray-500"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="w-16 text-xs font-medium text-gray-700 shrink-0">Schema</label>
+          <input
+            type="text"
+            value={draft.schema}
+            onChange={e => onChange({ ...draft, schema: e.target.value })}
+            disabled={saved}
+            placeholder="e.g. cost_obs"
+            className="flex-1 rounded border border-gray-200 px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:bg-gray-50 disabled:text-gray-500"
+          />
+        </div>
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
+        {saved ? (
+          <div className="flex items-center gap-1.5 text-sm text-green-700">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            Saved — tables will be created in{" "}
+            <span className="font-mono font-medium">{draft.catalog}.{draft.schema}</span>
+          </div>
+        ) : (
+          <button
+            onClick={onSave}
+            disabled={saving || !draft.catalog.trim() || !draft.schema.trim()}
+            className="rounded-lg px-4 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
+            style={{ backgroundColor: '#FF3621' }}
+          >
+            {saving ? "Saving…" : "Save Location"}
+          </button>
+        )}
+      </div>
+
+      <p className="text-xs text-gray-500">
+        The catalog must already exist. The schema will be created if it doesn't exist.
+        The service principal needs <span className="font-mono">USE CATALOG</span> and{" "}
+        <span className="font-mono">CREATE SCHEMA</span> privileges on the catalog.
+      </p>
     </div>
   );
 }

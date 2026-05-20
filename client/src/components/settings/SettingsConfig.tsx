@@ -19,7 +19,6 @@ interface SettingsConfigProps {
   configLoading: boolean;
   appConfig: AppConfigInfo | undefined;
   saveStatus: string | null;
-  setSaveStatus: (status: string | null) => void;
   localSettings: AppSettings;
   updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
 }
@@ -41,7 +40,6 @@ export function SettingsConfig({
   configLoading,
   appConfig,
   saveStatus,
-  setSaveStatus,
   localSettings,
   updateSetting,
 }: SettingsConfigProps) {

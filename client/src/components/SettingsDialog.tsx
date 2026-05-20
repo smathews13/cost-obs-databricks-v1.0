@@ -312,7 +312,6 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 configLoading={configLoading}
                 appConfig={appConfig}
                 saveStatus={saveStatus}
-                setSaveStatus={setSaveStatus}
                 localSettings={localSettings}
                 updateSetting={updateSetting}
               />

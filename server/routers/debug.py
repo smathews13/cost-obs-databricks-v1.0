@@ -692,15 +692,15 @@ async def rebuild_mvs(background_tasks: BackgroundTasks, request: Request) -> di
     from server.db import _user_token as _db_user_token, get_catalog_schema
     from server.materialized_views import refresh_materialized_views
 
-    user_token = _db_user_token.get()
     catalog, schema = get_catalog_schema()
 
     def _do_rebuild():
         import contextlib
-        ctx_tok = None
+        # Always run as SP — same reasoning as _run_mv_refresh: the forwarded
+        # OAuth token (sql scope) may not have CAN_USE on the warehouse or
+        # CREATE TABLE on the schema, but the SP does.
+        ctx_tok = _db_user_token.set("")
         try:
-            if user_token:
-                ctx_tok = _db_user_token.set(user_token)
             logger.info("Debugger-triggered MV rebuild starting for %s.%s", catalog, schema)
             results = refresh_materialized_views(catalog, schema)
             failed = [k for k, v in results.items() if isinstance(v, str) and v.startswith("error:")]
@@ -718,8 +718,7 @@ async def rebuild_mvs(background_tasks: BackgroundTasks, request: Request) -> di
         except Exception as exc:
             logger.error("Debugger MV rebuild failed: %s", exc)
         finally:
-            if ctx_tok is not None:
-                _db_user_token.reset(ctx_tok)
+            _db_user_token.reset(ctx_tok)
 
     background_tasks.add_task(_do_rebuild)
     return {"status": "started", "message": "MV rebuild started in background — re-run diagnostics in a few minutes to verify"}

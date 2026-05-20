@@ -13,6 +13,7 @@ interface PlatformKPIsViewProps {
   startDate?: string;
   endDate?: string;
   enableAIFeatures?: boolean;
+  workspaceIds?: string[];
 }
 
 interface KPICardProps {
@@ -78,21 +79,24 @@ const PLATFORM_KPI_KEYS = [
   "active_workspaces", "models_served", "total_users",
 ] as const;
 
-export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoading, startDate, endDate, enableAIFeatures = true }: PlatformKPIsViewProps) {
+export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoading, startDate, endDate, enableAIFeatures = true, workspaceIds }: PlatformKPIsViewProps) {
   const queryClient = useQueryClient();
   const [selectedKPI, setSelectedKPI] = useState<{
     kpi: "total_queries" | "total_rows_read" | "total_bytes_read" | "total_compute_seconds" | "total_jobs" | "total_job_runs" | "successful_runs" | "active_notebooks" | "active_workspaces" | "models_served" | "total_users" | "avg_query_duration" | "unique_warehouses";
     label: string;
   } | null>(null);
 
+  const wsKey = workspaceIds?.join(",") ?? "";
+
   // Pre-warm trend data in the background once dates are available
   useEffect(() => {
     if (!startDate || !endDate) return;
     for (const kpi of PLATFORM_KPI_KEYS) {
       queryClient.prefetchQuery({
-        queryKey: ["platform-kpi-trend", kpi, startDate, endDate, "daily"],
+        queryKey: ["platform-kpi-trend", kpi, startDate, endDate, "daily", wsKey],
         queryFn: async () => {
           const params = new URLSearchParams({ kpi, start_date: startDate, end_date: endDate, granularity: "daily" });
+          if (workspaceIds?.length) params.set("workspace_ids", workspaceIds.join(","));
           const res = await fetch(`/api/billing/platform-kpi-trend?${params}`);
           if (!res.ok) throw new Error("prefetch failed");
           return res.json();
@@ -100,7 +104,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
         staleTime: 5 * 60 * 1000,
       });
     }
-  }, [startDate, endDate, queryClient]);
+  }, [startDate, endDate, wsKey, queryClient]);
 
   // Info box minimize state with localStorage persistence
   const MINIMIZE_KEY = "cost-obs-minimize-kpis-info";
@@ -162,6 +166,12 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
           <p className="text-sm text-gray-500">Platform health, usage metrics, and adoption tracking</p>
         </div>
       </div>
+
+      {data.data_stale && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700">
+          Showing cached data — live query returned no results. Values reflect the last successful load.
+        </div>
+      )}
 
       {/* Info Banner */}
       <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
@@ -385,6 +395,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
           onClose={() => setSelectedKPI(null)}
           startDate={startDate}
           endDate={endDate}
+          workspaceIds={workspaceIds}
         />
       )}
     </div>

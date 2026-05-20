@@ -412,17 +412,17 @@ function Dashboard() {
   // DBU tab sub-queries: pipelines, interactive, SKU are account-wide → always preload.
   // sqlBreakdown supports workspace filter → gate on tab when filter active.
   const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, !hasWsFilter || isDbuTab);
-  const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, true);
-  const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, true);
-  const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, true);
+  const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, _wsIds, true);
+  const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, _wsIds, true);
+  const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, _wsIds, true);
 
   // Infra tab data (account-wide, no workspace filter) — always preload
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, undefined, true);
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, true);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
-  // KPIs + anomalies (account-wide, no workspace filter) — always preload
-  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, undefined, true);
+  // KPIs + anomalies — always preload, workspace filter applied when active
+  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, _wsIds, true);
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;
@@ -1019,6 +1019,7 @@ function Dashboard() {
               isLoading={false}
               startDate={dateRange.startDate}
               endDate={dateRange.endDate}
+              workspaceIds={_wsIds}
             />
 
             <SpendChart data={timeseries} isLoading={false} />
@@ -1057,6 +1058,7 @@ function Dashboard() {
             endDate={dateRange.endDate}
             detectedCloud={accountInfo?.cloud || undefined}
             workspaceNameMap={workspaces?.workspaces?.reduce((m, w) => { m[w.workspace_id] = w.workspace_name || w.workspace_id; return m; }, {} as Record<string, string>)}
+            workspaceIds={_wsIds}
           />
           </TabErrorBoundary>
         ) : activeTab === "kpis" ? (
@@ -1069,6 +1071,7 @@ function Dashboard() {
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
             enableAIFeatures={appSettings.enableAIFeatures}
+            workspaceIds={_wsIds}
           />
           </TabErrorBoundary>
         ) : activeTab === "aiml" ? (
@@ -1079,6 +1082,7 @@ function Dashboard() {
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
             host={accountInfo?.host}
+            workspaceIds={_wsIds}
           />
           </TabErrorBoundary>
         ) : activeTab === "apps" ? (
@@ -1103,6 +1107,7 @@ function Dashboard() {
             host={accountInfo?.host}
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
+            workspaceIds={_wsIds}
           />
           </TabErrorBoundary>
         ) : activeTab === "sql" ? (
@@ -1114,6 +1119,7 @@ function Dashboard() {
             host={accountInfo?.host}
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
+            workspaceIds={_wsIds}
           />
           </TabErrorBoundary>
         ) : activeTab === "use-cases" ? (

@@ -26,6 +26,7 @@ interface SQLWarehousing360Props {
   host?: string | null;
   startDate?: string;
   endDate?: string;
+  workspaceIds?: string[];
 }
 
 // Colors for query source types
@@ -87,7 +88,7 @@ interface SourceQuery {
   source_url: string | null;
 }
 
-export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryData, isLoading, host, startDate, endDate }: SQLWarehousing360Props) {
+export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryData, isLoading, host, startDate, endDate, workspaceIds }: SQLWarehousing360Props) {
   const [sortField, setSortField] = useState<SortField>("cost");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [queriesPage, setQueriesPage] = useState(1);
@@ -603,6 +604,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
               onClose={() => setSelectedKPI(null)}
               startDate={startDate}
               endDate={endDate}
+              workspaceIds={workspaceIds}
             />
           )}
 

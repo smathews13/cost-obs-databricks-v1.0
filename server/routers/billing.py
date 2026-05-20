@@ -26,6 +26,8 @@ from server.queries import (
     INFRA_COST_TIMESERIES,
     INTERACTIVE_BREAKDOWN,
     PIPELINE_OBJECTS,
+    BILLING_KPIS_FAST,
+    LAKEFLOW_JOB_STATS,
     PLATFORM_KPIS,
     PLATFORM_KPIS_FAST,
     SKU_BREAKDOWN,
@@ -51,6 +53,10 @@ from server.materialized_views import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Stale fallback: stores the last successful non-zero kpis_response per date-range key so
+# transient failures (warehouse cold-start, lakeflow replication gap) never show 0s.
+_kpis_stale: dict[str, Any] = {}
 
 
 def _ensure_list(val: Any) -> list:
@@ -469,15 +475,19 @@ async def get_etl_breakdown(
 async def get_pipeline_objects(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
+    workspace_ids: str = Query(default=None, description="Comma-separated workspace IDs to filter"),
 ) -> dict[str, Any]:
     """Get spend breakdown by pipeline objects (Jobs and SDP pipelines)."""
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     try:
-        results = _enrich_pipeline_results(execute_query(PIPELINE_OBJECTS, params))
+        results = _enrich_pipeline_results(execute_query(_inject_ws_filter(PIPELINE_OBJECTS, ws_clause), params))
 
         objects = []
         total_spend = 0
@@ -527,15 +537,19 @@ async def get_pipeline_objects(
 async def get_interactive_breakdown(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
+    workspace_ids: str = Query(default=None, description="Comma-separated workspace IDs to filter"),
 ) -> dict[str, Any]:
     """Get Interactive compute breakdown by notebook, user, and cluster."""
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     try:
-        results = execute_query(INTERACTIVE_BREAKDOWN, params)
+        results = execute_query(_inject_ws_filter(INTERACTIVE_BREAKDOWN, ws_clause), params)
 
         items = []
         total_spend = 0
@@ -753,12 +767,16 @@ async def get_infra_costs_timeseries(
 async def get_infra_bundle(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
+    workspace_ids: str = Query(default=None, description="Comma-separated workspace IDs to filter"),
 ) -> dict[str, Any]:
     """Bundled infra endpoint: runs cluster costs, instance families, and timeseries in parallel."""
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    _ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     # Billing-based summary query — matches KPI trend drill-downs exactly
     BILLING_INFRA_SUMMARY = """
@@ -792,11 +810,14 @@ async def get_infra_bundle(
     FROM daily_stats
     """
 
+    _infra_sql = _inject_ws_filter(BILLING_INFRA_SUMMARY, _ws_clause)
+    _clusters_sql = _inject_ws_filter(INFRA_COST_ESTIMATE, _ws_clause)
+    _ts_sql = _inject_ws_filter(INFRA_COST_TIMESERIES, _ws_clause)
     try:
         query_results = execute_queries_parallel([
-            ("clusters", lambda: execute_query(INFRA_COST_ESTIMATE, params)),
-            ("timeseries", lambda: execute_query(INFRA_COST_TIMESERIES, params)),
-            ("billing_summary", lambda: execute_query(BILLING_INFRA_SUMMARY, params)),
+            ("clusters", lambda: execute_query(_clusters_sql, params)),
+            ("timeseries", lambda: execute_query(_ts_sql, params)),
+            ("billing_summary", lambda: execute_query(_infra_sql, params)),
         ])
 
         cluster_results = query_results.get("clusters") or []
@@ -1156,6 +1177,16 @@ def _inject_ws_filter(sql: str, clause: str) -> str:
     for anchor in ("AND u.usage_quantity > 0", "AND usage_quantity > 0"):
         if anchor in sql:
             return sql.replace(anchor, f"{anchor}\n    {clause}", 1)
+    return sql
+
+
+def _inject_qh_ws_filter(sql: str, clause: str) -> str:
+    """Append a workspace filter clause to a system.query.history query."""
+    if not clause:
+        return sql
+    anchor = "AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)"
+    if anchor in sql:
+        return sql.replace(anchor, f"{anchor}\n    {clause}", 1)
     return sql
 
 
@@ -1649,26 +1680,20 @@ def _format_aws_timeseries(results: list[dict[str, Any]] | None, params: dict[st
 async def get_sku_breakdown(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
-    workspace_id: str = Query(default=None, description="Filter by workspace ID"),
+    workspace_ids: str = Query(default=None, description="Comma-separated workspace IDs to filter"),
 ) -> dict[str, Any]:
     """Get breakdown by SKU/product type.
 
     Returns spend and usage metrics grouped by SKU name.
     """
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
-
-    if workspace_id:
-        params["workspace_id"] = workspace_id
-        query = SKU_BREAKDOWN.replace(
-            "WHERE u.usage_date >= :start_date",
-            "WHERE CAST(u.workspace_id AS STRING) = :workspace_id\n  AND u.usage_date >= :start_date",
-        )
-        results = execute_query(query, params)
-    else:
-        results = execute_query(SKU_BREAKDOWN, params)
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
+    results = execute_query(_inject_ws_filter(SKU_BREAKDOWN, ws_clause), params)
 
     skus = []
     total_spend = 0.0
@@ -1959,16 +1984,19 @@ async def get_platform_kpis(
 async def get_kpis_bundle(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
+    workspace_ids: str = Query(default=None, description="Comma-separated workspace IDs to filter"),
 ) -> dict[str, Any]:
     """Bundled KPIs endpoint: runs platform KPIs and spend anomalies in parallel."""
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     # Determine which KPI query to run
     use_mv = _check_mv_available()
-    kpi_query = PLATFORM_KPIS_FAST  # Always use fast mode for bundle
 
     # Supplemental query for accurate user count (MV uses MAX of daily counts which under-counts)
     catalog, schema = get_catalog_schema()
@@ -1983,10 +2011,14 @@ async def get_kpis_bundle(
 
     anomalies_sql = SPEND_ANOMALIES
 
-    # Build parallel query list
+    billing_kpis_sql = _inject_ws_filter(BILLING_KPIS_FAST, ws_clause)
+
+    # Run billing and lakeflow queries separately so a lakeflow permission failure
+    # doesn't zero out the billing-backed KPIs (jobs, workspaces, clusters).
     parallel_queries: list[tuple[str, Any]] = [
-        ("kpis", lambda: execute_query(kpi_query, params)),
-        ("anomalies", lambda: execute_query(anomalies_sql, params)),
+        ("billing_kpis", lambda: execute_query(billing_kpis_sql, params)),
+        ("lakeflow_kpis", lambda: execute_query(LAKEFLOW_JOB_STATS, params)),
+        ("anomalies", lambda: execute_query(_inject_ws_filter(anomalies_sql, ws_clause), params)),
         ("delta_query_stats", lambda: execute_query(delta_query_stats_sql, params)),
     ]
 
@@ -2030,17 +2062,22 @@ async def get_kpis_bundle(
         if delta_qs and len(delta_qs) > 0:
             _apply_query_stats(delta_qs[0])
 
-    kpi_results = query_results.get("kpis")
-    if kpi_results and len(kpi_results) > 0:
-        row = kpi_results[0]
+    # Billing-backed KPIs: total_jobs, total_job_runs, active_workspaces, clusters, models
+    billing_results = query_results.get("billing_kpis")
+    if billing_results and len(billing_results) > 0:
+        row = billing_results[0]
         kpis_response["total_jobs"] = int(row.get("total_jobs") or 0)
         kpis_response["total_job_runs"] = int(row.get("total_job_runs") or 0)
-        kpis_response["successful_runs"] = int(row.get("successful_runs") or 0)
         kpis_response["unique_job_owners"] = int(row.get("unique_job_owners") or 0)
         kpis_response["active_workspaces"] = int(row.get("active_workspaces") or 0)
-        kpis_response["active_notebooks"] = int(row.get("active_notebooks") or 0)
+        kpis_response["active_notebooks"] = int(row.get("total_clusters") or 0)
         kpis_response["models_served"] = int(row.get("models_served") or 0)
         kpis_response["total_serving_dbus"] = float(row.get("total_serving_dbus") or 0)
+
+    # Lakeflow-backed KPI: successful_runs (may be missing if lakeflow is inaccessible)
+    lakeflow_results = query_results.get("lakeflow_kpis")
+    if lakeflow_results and len(lakeflow_results) > 0:
+        kpis_response["successful_runs"] = int(lakeflow_results[0].get("successful_runs") or 0)
 
     # Override unique_query_users with accurate cross-range distinct count from prpr table
     uc_results = query_results.get("user_count")
@@ -2048,6 +2085,21 @@ async def get_kpis_bundle(
         accurate_users = int(uc_results[0].get("unique_query_users") or 0)
         if accurate_users > 0:
             kpis_response["unique_query_users"] = accurate_users
+
+    # Stale-fallback: if billing-backed KPIs are all zero (query failed or warehouse cold),
+    # serve the last known-good result so the UI never shows 0s for a healthy account.
+    stale_key = f"{params['start_date']}/{params['end_date']}/{workspace_ids or ''}"
+    billing_has_data = (
+        kpis_response.get("total_jobs", 0) > 0
+        or kpis_response.get("active_workspaces", 0) > 0
+        or kpis_response.get("total_job_runs", 0) > 0
+    )
+    if billing_has_data:
+        _kpis_stale[stale_key] = {k: v for k, v in kpis_response.items()}
+    elif stale_key in _kpis_stale:
+        logger.warning("Billing KPIs are all zero; serving stale cached response to prevent zero-flash")
+        kpis_response = dict(_kpis_stale[stale_key])
+        kpis_response["data_stale"] = True
 
     # --- Build anomalies response ---
     anomaly_results = query_results.get("anomalies") or []
@@ -2077,14 +2129,21 @@ async def get_kpi_trend(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
     granularity: str = Query("daily", description="Granularity: daily, weekly, monthly"),
+    workspace_ids: str = Query(default=None, description="Comma-separated workspace IDs to filter"),
 ) -> dict[str, Any]:
     """Get trend data for a specific KPI over time."""
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
 
     use_mv = _check_mv_available()
+    # MV tables are pre-aggregated and cannot be filtered by individual workspace
+    if id_list:
+        use_mv = False
 
     # Build query based on KPI type — use MVs when available for daily-aggregation KPIs
     # mv_fallback_query is set when using an MV so we can fall back to live if MV is empty
@@ -2422,15 +2481,15 @@ async def get_kpi_trend(
         return {"error": f"Unknown KPI: {kpi}"}
 
     try:
-        results = execute_query(query, params)
+        results = execute_query(_inject_ws_filter(query, ws_clause), params)
         if not results and mv_fallback_query:
             logger.info(f"KPI trend MV returned empty for {kpi}, falling back to live query")
-            results = execute_query(mv_fallback_query, params)
+            results = execute_query(_inject_ws_filter(mv_fallback_query, ws_clause), params)
     except Exception as e:
         logger.error(f"KPI trend query failed for {kpi}: {e}")
         if mv_fallback_query:
             try:
-                results = execute_query(mv_fallback_query, params)
+                results = execute_query(_inject_ws_filter(mv_fallback_query, ws_clause), params)
             except Exception:
                 results = []
         if not results:
@@ -2572,12 +2631,20 @@ async def get_platform_kpi_trend(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
     granularity: str = Query("daily", description="Granularity: daily, weekly, monthly"),
+    workspace_ids: str = Query(default=None, description="Comma-separated workspace IDs to filter"),
 ) -> dict[str, Any]:
     """Get trend data for platform KPIs over time."""
+    from server import workspace_filter as wf
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
+    # KPIs sourced from system.query.history (workspace_id filter via _inject_qh_ws_filter)
+    _QH_KPIS = frozenset({"total_queries", "total_rows_read", "total_bytes_read",
+                           "total_compute_seconds", "total_users", "avg_query_duration",
+                           "unique_warehouses"})
 
     # For DISTINCT COUNT KPIs, monthly/weekly rollup must be done in SQL — summing
     # daily distinct counts in Python overcounts (user active 30 days = 30x, not 1x).
@@ -2597,7 +2664,7 @@ async def get_platform_kpi_trend(
             GROUP BY DATE_TRUNC('{trunc}', DATE(start_time))
             ORDER BY date
             """
-            results = execute_query(query, params)
+            results = execute_query(_inject_qh_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
             return _build_platform_kpi_response(kpi, granularity, daily_points)
         elif kpi == "active_workspaces":
@@ -2610,7 +2677,7 @@ async def get_platform_kpi_trend(
             GROUP BY DATE_TRUNC('{trunc}', usage_date)
             ORDER BY date
             """
-            results = execute_query(query, params)
+            results = execute_query(_inject_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
             return _build_platform_kpi_response(kpi, granularity, daily_points)
         elif kpi == "total_jobs":
@@ -2624,7 +2691,7 @@ async def get_platform_kpi_trend(
             GROUP BY DATE_TRUNC('{trunc}', usage_date)
             ORDER BY date
             """
-            results = execute_query(query, params)
+            results = execute_query(_inject_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
             return _build_platform_kpi_response(kpi, granularity, daily_points)
         elif kpi == "models_served":
@@ -2638,7 +2705,7 @@ async def get_platform_kpi_trend(
             GROUP BY DATE_TRUNC('{trunc}', usage_date)
             ORDER BY date
             """
-            results = execute_query(query, params)
+            results = execute_query(_inject_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
             return _build_platform_kpi_response(kpi, granularity, daily_points)
         elif kpi == "unique_warehouses":
@@ -2653,7 +2720,7 @@ async def get_platform_kpi_trend(
             GROUP BY DATE_TRUNC('{trunc}', DATE(start_time))
             ORDER BY date
             """
-            results = execute_query(query, params)
+            results = execute_query(_inject_qh_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
             return _build_platform_kpi_response(kpi, granularity, daily_points)
 
@@ -2817,7 +2884,8 @@ async def get_platform_kpi_trend(
         return {"error": f"Unknown platform KPI: {kpi}"}
 
     try:
-        results = execute_query(query, params)
+        filtered_query = _inject_qh_ws_filter(query, ws_clause) if kpi in _QH_KPIS else _inject_ws_filter(query, ws_clause)
+        results = execute_query(filtered_query, params)
     except Exception as e:
         logger.error(f"Platform KPI trend query failed for {kpi}: {e}")
         return {

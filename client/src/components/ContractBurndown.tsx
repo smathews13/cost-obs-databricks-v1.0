@@ -147,8 +147,11 @@ export function ContractBurndown() {
       <div className="rounded-xl border border-gray-200 bg-white">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Contract Terms</h2>
-            <p className="mt-0.5 text-xs text-gray-500">Enter your Databricks contract commit to enable burn-down tracking.</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-gray-900">Contract Terms</h2>
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Account-wide</span>
+            </div>
+            <p className="mt-0.5 text-xs text-gray-500">Contract tracking reflects total account spend. Workspace filters do not apply.</p>
           </div>
           {!editing && contractSettings?.start_date && (
             <button onClick={handleEdit} className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">

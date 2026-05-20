@@ -31,7 +31,7 @@ export function SettingsPermissions() {
   const [modeError, setModeError] = useState<string | null>(null);
   const [modeSuccess, setModeSuccess] = useState<string | null>(null);
   const [grantRunning, setGrantRunning] = useState(false);
-  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[] } | null>(null);
 
   const { data: permissions, isLoading } = useQuery<UserPermissions>({
     queryKey: ["user-permissions"],
@@ -108,9 +108,11 @@ export function SettingsPermissions() {
         queryClient.invalidateQueries({ queryKey: ["settings-auth-status"] });
         await refetchAuth();
       } else {
-        const err = body.errors?.[0] ?? body.reason ?? body.detail ?? "Grant run completed — check server logs.";
-        const extra = body.failed ? ` (${body.failed} failed, ${body.applied ?? 0} applied)` : "";
-        setGrantResult({ ok: false, message: err + extra });
+        const allErrors: string[] = body.errors ?? [];
+        const summary = body.failed
+          ? `${body.failed} grant(s) failed, ${body.applied ?? 0} applied.`
+          : (body.reason ?? body.detail ?? "Grant run completed — check server logs.");
+        setGrantResult({ ok: false, message: summary, errors: allErrors });
       }
     } catch {
       setGrantResult({ ok: false, message: "Network error running grants." });
@@ -449,9 +451,16 @@ export function SettingsPermissions() {
                   {grantRunning ? "Running grants…" : "Re-run SP grants"}
                 </button>
                 {grantResult && (
-                  <span className={`text-[11px] font-medium ${grantResult.ok ? "text-green-700" : "text-red-600"}`}>
-                    {grantResult.ok ? "✓ " : "✗ "}{grantResult.message}
-                  </span>
+                  <div className={`text-[11px] font-medium ${grantResult.ok ? "text-green-700" : "text-red-600"}`}>
+                    <span>{grantResult.ok ? "✓ " : "✗ "}{grantResult.message}</span>
+                    {!grantResult.ok && grantResult.errors && grantResult.errors.length > 0 && (
+                      <ul className="mt-1 list-disc pl-4 space-y-0.5 font-normal text-red-500">
+                        {grantResult.errors.map((e, i) => (
+                          <li key={i} className="break-all">{e}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

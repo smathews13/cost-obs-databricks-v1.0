@@ -23,6 +23,7 @@ interface TaggingHubProps {
   host?: string | null;
   startDate?: string;
   endDate?: string;
+  workspaceIds?: string[];
 }
 
 import { workspaceUrl } from "@/utils/formatters";
@@ -79,7 +80,7 @@ const formatNumber = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-export function TaggingHub({ data, isLoading, host, startDate, endDate }: TaggingHubProps) {
+export function TaggingHub({ data, isLoading, host, startDate, endDate, workspaceIds }: TaggingHubProps) {
   const [activeUntaggedTab, setActiveUntaggedTab] = useState<UntaggedTab>("clusters");
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -975,6 +976,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate }: Taggin
           onClose={() => setSelectedKPI(null)}
           startDate={startDate}
           endDate={endDate}
+          workspaceIds={workspaceIds}
         />
       )}
 

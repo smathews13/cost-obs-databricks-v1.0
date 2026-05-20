@@ -86,7 +86,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Workspaces</span>
             <div className="flex gap-2">
               <button
-                onClick={() => onChange([])}
+                onClick={() => onChange(validWorkspaces.map(ws => ws.workspace_id!))}
                 className="text-xs text-gray-500 hover:text-gray-800"
               >
                 All

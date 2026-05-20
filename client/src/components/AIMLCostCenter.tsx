@@ -22,6 +22,7 @@ interface AIMLCostCenterProps {
   startDate?: string;
   endDate?: string;
   host?: string | null;
+  workspaceIds?: string[];
 }
 
 // Stable category-to-color mapping for consistent colors across pie + timeseries
@@ -65,7 +66,7 @@ function getClusterUrl(host: string | null | undefined, clusterId: string, works
   return `https://${host}/compute/interactive${wsParam}`;
 }
 
-export function AIMLCostCenter({ data, isLoading, startDate, endDate, host }: AIMLCostCenterProps) {
+export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, workspaceIds }: AIMLCostCenterProps) {
   const [endpointsPage, setEndpointsPage] = useState(1);
   const [modelsPage, setModelsPage] = useState(1);
   const [selectedAgent, setSelectedAgent] = useState<import("@/types/billing").AIMLAgentBrick | null>(null);
@@ -347,6 +348,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host }: AI
           onClose={() => setSelectedKPI(null)}
           startDate={startDate}
           endDate={endDate}
+          workspaceIds={workspaceIds}
         />
       )}
 

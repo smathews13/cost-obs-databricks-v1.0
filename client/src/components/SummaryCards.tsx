@@ -9,6 +9,7 @@ interface SummaryCardsProps {
   isLoading: boolean;
   startDate?: string;
   endDate?: string;
+  workspaceIds?: string[];
 }
 
 interface CardProps {
@@ -54,21 +55,24 @@ type KPIType = "total_spend" | "total_dbus" | "avg_daily_spend" | "workspace_cou
 
 const KPI_TREND_KEYS: KPIType[] = ["total_spend", "total_dbus", "avg_daily_spend", "workspace_count"];
 
-export function SummaryCards({ data, isLoading, startDate, endDate }: SummaryCardsProps) {
+export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds }: SummaryCardsProps) {
   const queryClient = useQueryClient();
   const [selectedKPI, setSelectedKPI] = useState<{
     kpi: KPIType;
     label: string;
   } | null>(null);
 
+  const wsKey = workspaceIds?.join(",") ?? "";
+
   // Pre-warm trend data in the background once dates are available
   useEffect(() => {
     if (!startDate || !endDate) return;
     for (const kpi of KPI_TREND_KEYS) {
       queryClient.prefetchQuery({
-        queryKey: ["kpi-trend", kpi, startDate, endDate, "daily"],
+        queryKey: ["kpi-trend", kpi, startDate, endDate, "daily", wsKey],
         queryFn: async () => {
           const params = new URLSearchParams({ kpi, start_date: startDate, end_date: endDate, granularity: "daily" });
+          if (workspaceIds?.length) params.set("workspace_ids", workspaceIds.join(","));
           const res = await fetch(`/api/billing/kpi-trend?${params}`);
           if (!res.ok) throw new Error("prefetch failed");
           return res.json();
@@ -76,7 +80,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate }: SummaryCar
         staleTime: 5 * 60 * 1000,
       });
     }
-  }, [startDate, endDate, queryClient]);
+  }, [startDate, endDate, wsKey, queryClient]);
 
   const handleCardClick = (kpi: KPIType, label: string) => {
     if (startDate && endDate) {
@@ -145,6 +149,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate }: SummaryCar
           onClose={() => setSelectedKPI(null)}
           startDate={startDate}
           endDate={endDate}
+          workspaceIds={workspaceIds}
         />
       )}
     </>

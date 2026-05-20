@@ -1288,3 +1288,32 @@ SELECT
 FROM billing_agg b
 LEFT JOIN job_run_stats jr ON 1=1
 """
+
+# Billing.usage-only KPI aggregation — no lakeflow dependency so it never
+# fails due to lakeflow permission issues.
+BILLING_KPIS_FAST = """
+SELECT
+  COUNT(DISTINCT workspace_id) as active_workspaces,
+  COUNT(DISTINCT CASE WHEN usage_metadata.job_id IS NOT NULL THEN usage_metadata.job_id END) as total_jobs,
+  SUM(CASE WHEN usage_metadata.job_id IS NOT NULL THEN 1 ELSE 0 END) as total_job_runs,
+  COUNT(DISTINCT CASE WHEN usage_metadata.job_id IS NOT NULL THEN identity_metadata.run_as END) as unique_job_owners,
+  COUNT(DISTINCT usage_metadata.cluster_id) as total_clusters,
+  COUNT(DISTINCT CASE WHEN billing_origin_product = 'SQL' THEN usage_metadata.warehouse_id END) as sql_warehouses,
+  SUM(CASE WHEN billing_origin_product = 'SQL' THEN usage_quantity ELSE 0 END) as sql_dbus,
+  COUNT(DISTINCT CASE WHEN sku_name LIKE '%INFERENCE%' THEN usage_metadata.endpoint_name END) as models_served,
+  SUM(CASE WHEN sku_name LIKE '%INFERENCE%' THEN usage_quantity ELSE 0 END) as total_serving_dbus
+FROM system.billing.usage
+WHERE usage_date >= :start_date
+  AND usage_date <= :end_date
+  AND usage_quantity > 0
+"""
+
+# Lakeflow job run stats — may fail if system.lakeflow is not accessible.
+LAKEFLOW_JOB_STATS = """
+SELECT
+  COUNT(*) as total_runs,
+  COUNT(CASE WHEN result_state = 'SUCCEEDED' THEN 1 END) as successful_runs
+FROM system.lakeflow.job_run_timeline
+WHERE period_start_time >= :start_date
+  AND period_start_time < DATE_ADD(CAST(:end_date AS DATE), 1)
+"""

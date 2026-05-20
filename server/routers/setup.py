@@ -92,21 +92,28 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
     def _uc_grant(securable_type: SecurableType, full_name: str, *privileges: str):
         nonlocal ok, failed
         try:
-            priv_enums = [_PRIV_MAP[p] for p in privileges if p in _PRIV_MAP]
-            w.grants.update(
-                securable_type=securable_type,
-                full_name=full_name,
-                changes=[PermissionsChange(principal=sp_client_id, add=priv_enums)],
+            priv_values = [_PRIV_MAP[p].value for p in privileges if p in _PRIV_MAP]
+            # Use raw REST API instead of w.grants.update() to avoid the Databricks SDK
+            # "unable to parse response" bug — the UC grants PATCH returns a minimal body
+            # that the SDK fails to deserialize even on success.
+            w.api_client.do(
+                "PATCH",
+                f"/api/2.1/unity-catalog/permissions/{securable_type.value}/{full_name}",
+                body={"changes": [{"principal": sp_client_id, "add": priv_values}]},
             )
             ok += 1
-            logger.debug(f"Granted {privileges} on {securable_type} {full_name} to {sp_client_id}")
+            logger.info(f"Granted {privileges} on {securable_type.value}/{full_name} to {sp_client_id}")
         except Exception as e:
             err = str(e).lower()
             if "already" in err or "not found" in err or "does not exist" in err:
                 ok += 1
+                logger.debug(f"Grant already applied for {full_name}: {e}")
             else:
-                logger.warning(f"UC grant failed ({full_name}): {e}")
-                errors.append(f"{full_name}: {str(e)[:120]}")
+                logger.warning(
+                    f"UC grant failed — {type(e).__name__} on {securable_type.value}/{full_name} "
+                    f"for principal {sp_client_id}: {e}"
+                )
+                errors.append(f"{securable_type.value}/{full_name}: {e}")
                 failed += 1
 
     # System catalog + schemas + tables
@@ -805,21 +812,22 @@ async def grant_catalog_access(request: Request) -> dict[str, Any]:
 
             errors = []
             for privilege, securable_type, full_name in [
-                ("USE CATALOG",    SecurableType.CATALOG, catalog),
-                ("CREATE SCHEMA",  SecurableType.CATALOG, catalog),
+                ("USE CATALOG",   SecurableType.CATALOG, catalog),
+                ("CREATE SCHEMA", SecurableType.CATALOG, catalog),
             ]:
                 try:
-                    from databricks.sdk.service.catalog import PermissionsChange, Privilege
-                    w.grants.update(
-                        securable_type=securable_type,
-                        full_name=full_name,
-                        changes=[PermissionsChange(
-                            add=[Privilege(privilege)],
-                            principal=principal,
-                        )],
+                    # Use raw REST API — w.grants.update() raises "unable to parse
+                    # response" on success because the SDK fails to deserialize the
+                    # minimal PATCH response body (same bug as SP grants).
+                    w.api_client.do(
+                        "PATCH",
+                        f"/api/2.1/unity-catalog/permissions/{securable_type.value}/{full_name}",
+                        body={"changes": [{"principal": principal, "add": [privilege]}]},
                     )
                 except Exception as e:
-                    errors.append(f"{privilege}: {e}")
+                    err = str(e).lower()
+                    if "already" not in err:
+                        errors.append(f"{privilege}: {e}")
 
             return principal, errors
 

@@ -22,6 +22,7 @@ interface KPITrendModalProps {
   endDate: string;
   formatValue?: (value: number, kpi: string) => string;
   variant?: "billing" | "platform" | "apps";
+  workspaceIds?: string[];
 }
 
 const SPEND_KPIS = new Set(["total_spend", "avg_daily_spend", "aiml_spend", "apps_spend", "tagged_spend", "untagged_spend", "infra_cost", "avg_cost_per_cluster"]);
@@ -48,11 +49,12 @@ export function KPITrendModal({
   endDate,
   formatValue,
   variant = "billing",
+  workspaceIds,
 }: KPITrendModalProps) {
   const [granularity, setGranularity] = useState<"daily" | "monthly">("daily");
 
-  const billingTrend = useKPITrend(kpi, startDate, endDate, granularity);
-  const platformTrend = usePlatformKPITrend(kpi, startDate, endDate, granularity);
+  const billingTrend = useKPITrend(kpi, startDate, endDate, granularity, workspaceIds);
+  const platformTrend = usePlatformKPITrend(kpi, startDate, endDate, granularity, workspaceIds);
   const appsTrend = useAppsKPITrend(kpi, startDate, endDate, granularity);
   const { data, isLoading } = variant === "platform" ? platformTrend : variant === "apps" ? appsTrend : billingTrend;
 

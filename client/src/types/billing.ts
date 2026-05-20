@@ -252,6 +252,7 @@ export interface PlatformKPIsResponse {
   start_date: string;
   end_date: string;
   error?: string;
+  data_stale?: boolean;
 }
 
 // Bundled responses for faster tab loading

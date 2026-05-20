@@ -29,10 +29,12 @@ function useTrendQuery(
   kpi: string,
   startDate: string,
   endDate: string,
-  granularity: string = "daily"
+  granularity: string = "daily",
+  workspaceIds?: string[]
 ) {
+  const wsKey = workspaceIds?.join(",") ?? "";
   return useQuery<KPITrendResponse>({
-    queryKey: [queryKeyPrefix, kpi, startDate, endDate, granularity],
+    queryKey: [queryKeyPrefix, kpi, startDate, endDate, granularity, wsKey],
     queryFn: async () => {
       const params = new URLSearchParams({
         kpi,
@@ -40,6 +42,7 @@ function useTrendQuery(
         end_date: endDate,
         granularity,
       });
+      if (workspaceIds?.length) params.set("workspace_ids", workspaceIds.join(","));
 
       const response = await fetch(`/api/billing/${endpoint}?${params}`);
 
@@ -58,18 +61,20 @@ export function useKPITrend(
   kpi: string,
   startDate: string,
   endDate: string,
-  granularity: string = "daily"
+  granularity: string = "daily",
+  workspaceIds?: string[]
 ) {
-  return useTrendQuery("kpi-trend", "kpi-trend", kpi, startDate, endDate, granularity);
+  return useTrendQuery("kpi-trend", "kpi-trend", kpi, startDate, endDate, granularity, workspaceIds);
 }
 
 export function usePlatformKPITrend(
   kpi: string,
   startDate: string,
   endDate: string,
-  granularity: string = "daily"
+  granularity: string = "daily",
+  workspaceIds?: string[]
 ) {
-  return useTrendQuery("platform-kpi-trend", "platform-kpi-trend", kpi, startDate, endDate, granularity);
+  return useTrendQuery("platform-kpi-trend", "platform-kpi-trend", kpi, startDate, endDate, granularity, workspaceIds);
 }
 
 function useAppsTrendQuery(

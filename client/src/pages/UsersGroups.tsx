@@ -462,6 +462,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
           onClose={() => setSelectedKPI(null)}
           startDate={startDate}
           endDate={endDate}
+          workspaceIds={workspaceIds}
         />
       )}
 

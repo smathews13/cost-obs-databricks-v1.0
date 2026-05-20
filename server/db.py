@@ -410,9 +410,10 @@ def setup_warehouse_connection() -> str:
 
     Priority:
     1. DATABRICKS_HTTP_PATH env var (explicit config in app.yaml)
-    2. DATABRICKS_WAREHOUSE_ID env var — injected by Databricks Apps when a
+    2. Warehouse saved via the in-app settings UI (warehouse_settings.json)
+       — user's explicit choice always beats the platform resource binding
+    3. DATABRICKS_WAREHOUSE_ID env var — injected by Databricks Apps when a
        sql_warehouse resource is declared with valueFrom in app.yaml
-    3. Warehouse saved via the in-app settings UI (warehouse_settings.json)
     4. Auto-create/find a dedicated warehouse (last resort)
 
     Returns:
@@ -420,7 +421,16 @@ def setup_warehouse_connection() -> str:
     """
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
 
-    # Databricks Apps sql_warehouse resource via valueFrom: sql-warehouse
+    # User's saved warehouse preference takes priority over the platform resource binding
+    # so that a warehouse chosen in the settings UI is not silently overridden on redeploy.
+    if not http_path or http_path.lower() == "auto":
+        saved = _load_saved_warehouse_http_path()
+        if saved:
+            os.environ["DATABRICKS_HTTP_PATH"] = saved
+            logger.info(f"Restored warehouse from saved settings: {saved}")
+            return saved
+
+    # Databricks Apps sql_warehouse resource via valueFrom: sql-warehouse (fallback only)
     if not http_path or http_path.lower() == "auto":
         warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
         if warehouse_id:
@@ -428,14 +438,6 @@ def setup_warehouse_connection() -> str:
             os.environ["DATABRICKS_HTTP_PATH"] = http_path
             logger.info(f"Using warehouse from DATABRICKS_WAREHOUSE_ID resource: {http_path}")
             return http_path
-
-    # Fall back to warehouse saved via the in-app settings UI
-    if not http_path or http_path.lower() == "auto":
-        saved = _load_saved_warehouse_http_path()
-        if saved:
-            os.environ["DATABRICKS_HTTP_PATH"] = saved
-            logger.info(f"Restored warehouse from saved settings: {saved}")
-            return saved
 
     # If no HTTP path or set to 'auto', try to create/use a dedicated warehouse
     if not http_path or http_path.lower() == "auto":

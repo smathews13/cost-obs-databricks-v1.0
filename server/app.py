@@ -477,12 +477,12 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
     from server.materialized_views import refresh_materialized_views
     from server.db import get_catalog_schema, _user_token as _db_user_token
 
-    ctx_tok = None
-    if user_token:
-        ctx_tok = _db_user_token.set(user_token)
-        logger.info("MV refresh triggered with user OAuth token")
-    else:
-        logger.info("MV refresh running as service principal (no user token)")
+    # Always run DDL as the service principal regardless of whether a user token
+    # is present.  The forwarded OAuth token (sql scope) grants SELECT access but
+    # does NOT guarantee CAN_USE on the warehouse or CREATE TABLE on the schema —
+    # both of which are required for a rebuild.  The SP owns both by design.
+    ctx_tok = _db_user_token.set("")
+    logger.info("MV refresh running as service principal (forced for DDL)")
 
     log_dir = os.path.join(os.path.dirname(__file__), "..", ".settings")
     log_path = os.path.join(log_dir, "mv_refresh_log.json")
@@ -528,8 +528,7 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
         }
         raise
     finally:
-        if ctx_tok is not None:
-            _db_user_token.reset(ctx_tok)
+        _db_user_token.reset(ctx_tok)
         try:
             os.makedirs(log_dir, exist_ok=True)
             with open(log_tmp, "w") as f:
@@ -641,13 +640,6 @@ async def lifespan(app: FastAPI):
     # the background and does not block the app from starting.
     try:
         from server.db import setup_warehouse_connection
-        from server.routers.settings import _load_warehouse_settings
-        current = os.environ.get("DATABRICKS_HTTP_PATH", "")
-        if current and current != "auto":
-            saved = _load_warehouse_settings()
-            saved_path = saved.get("http_path")
-            if saved_path and saved_path != current:
-                os.environ["DATABRICKS_HTTP_PATH"] = saved_path
         setup_warehouse_connection()
     except Exception as e:
         logger.warning(f"Warehouse setup during lifespan failed (non-fatal): {e}")

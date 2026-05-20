@@ -128,19 +128,19 @@ export function useEtlBreakdown(dateRange?: DateRange, enabled: boolean = true) 
   });
 }
 
-export function usePipelineObjects(dateRange?: DateRange, enabled: boolean = true) {
+export function usePipelineObjects(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<PipelineObjectsResponse>({
-    queryKey: ["billing", "pipeline-objects", dateRange],
-    queryFn: () => fetchJson(buildUrl("/api/billing/pipeline-objects", dateRange)),
+    queryKey: ["billing", "pipeline-objects", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/billing/pipeline-objects", dateRange, workspaceIds)),
     staleTime: STALE_TIME,
     enabled,
   });
 }
 
-export function useInteractiveBreakdown(dateRange?: DateRange, enabled: boolean = true) {
+export function useInteractiveBreakdown(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<InteractiveBreakdownResponse>({
-    queryKey: ["billing", "interactive-breakdown", dateRange],
-    queryFn: () => fetchJson(buildUrl("/api/billing/interactive-breakdown", dateRange)),
+    queryKey: ["billing", "interactive-breakdown", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/billing/interactive-breakdown", dateRange, workspaceIds)),
     staleTime: STALE_TIME,
     enabled,
   });
@@ -221,10 +221,10 @@ export function useDefaultDateRange(days: number = 30): DateRange {
   };
 }
 
-export function useSKUBreakdown(dateRange?: DateRange, enabled: boolean = true) {
+export function useSKUBreakdown(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   return useQuery<SKUBreakdownResponse>({
-    queryKey: ["billing", "sku-breakdown", dateRange],
-    queryFn: () => fetchJson(buildUrl("/api/billing/sku-breakdown", dateRange)),
+    queryKey: ["billing", "sku-breakdown", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchJson(buildUrlWithWs("/api/billing/sku-breakdown", dateRange, workspaceIds)),
     staleTime: STALE_TIME,
     enabled,
   });

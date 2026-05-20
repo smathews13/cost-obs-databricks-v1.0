@@ -55,6 +55,7 @@ interface CloudCostsViewProps {
   endDate?: string;
   detectedCloud?: string;
   workspaceNameMap?: Record<string, string>;
+  workspaceIds?: string[];
 }
 
 function formatNumber(value: number): string {
@@ -194,6 +195,7 @@ export function CloudCostsView({
   endDate,
   detectedCloud,
   workspaceNameMap,
+  workspaceIds,
 }: CloudCostsViewProps) {
   const [sortField, setSortField] = useState<SortField>("estimated_aws_cost");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -277,13 +279,15 @@ export function CloudCostsView({
 
   // Pre-warm trend queries so modals open instantly
   const queryClient = useQueryClient();
+  const wsKey = workspaceIds?.join(",") ?? "";
   useEffect(() => {
     if (!startDate || !endDate) return;
     for (const kpi of ["infra_cost", "infra_clusters", "infra_dbu_hours", "avg_cost_per_cluster"]) {
       queryClient.prefetchQuery({
-        queryKey: ["kpi-trend", kpi, startDate, endDate, "daily"],
+        queryKey: ["kpi-trend", kpi, startDate, endDate, "daily", wsKey],
         queryFn: async () => {
           const params = new URLSearchParams({ kpi, start_date: startDate, end_date: endDate, granularity: "daily" });
+          if (workspaceIds?.length) params.set("workspace_ids", workspaceIds.join(","));
           const res = await fetch(`/api/billing/kpi-trend?${params}`);
           if (!res.ok) throw new Error("prefetch failed");
           return res.json();
@@ -291,7 +295,7 @@ export function CloudCostsView({
         staleTime: 5 * 60 * 1000,
       });
     }
-  }, [startDate, endDate, queryClient]);
+  }, [startDate, endDate, wsKey, queryClient]);
 
   // Info box minimize state with localStorage persistence
   const MINIMIZE_KEY = "cost-obs-minimize-infra-info";
@@ -431,9 +435,10 @@ export function CloudCostsView({
         <div className="rounded-lg p-6 text-white shadow" style={{ background: 'linear-gradient(to right, #0078D4, #50B4F9)' }}>
           <div className="flex items-center justify-between">
             <div className="flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.85)' }}>Actual Azure Infrastructure Cost</p>
                 <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>From Cost Management Export</span>
+                <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>Account-wide · workspace filter not applied</span>
               </div>
               <p className="mt-1 text-3xl font-bold">{formatCurrency(summary?.total_cost || 0)}</p>
               <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
@@ -591,9 +596,10 @@ export function CloudCostsView({
         <div className="rounded-lg p-6 text-white shadow" style={{ background: 'linear-gradient(to right, #4285F4, #8AB4F8)' }}>
           <div className="flex items-center justify-between">
             <div className="flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.85)' }}>Actual GCP Infrastructure Cost</p>
                 <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>From BigQuery Billing Export</span>
+                <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>Account-wide · workspace filter not applied</span>
               </div>
               <p className="mt-1 text-3xl font-bold">{formatCurrency(summary?.total_cost || 0)} <span className="text-base font-normal opacity-75">{summary?.currency || "USD"}</span></p>
               <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
@@ -757,9 +763,10 @@ export function CloudCostsView({
         <div className="rounded-lg bg-gradient-to-r from-green-600 to-emerald-500 p-6 text-white shadow">
           <div className="flex items-center justify-between">
             <div className="flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm font-medium text-green-100">Actual AWS Infrastructure Cost</p>
                 <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">From CUR 2.0</span>
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">Account-wide · workspace filter not applied</span>
               </div>
               <p className="mt-1 text-3xl font-bold">{formatCurrency(summary?.total_net_unblended || 0)}</p>
               <p className="mt-1 text-sm text-green-100">
@@ -1394,6 +1401,7 @@ export function CloudCostsView({
           onClose={() => setSelectedKPI(null)}
           startDate={startDate}
           endDate={endDate}
+          workspaceIds={workspaceIds}
         />
       )}
 

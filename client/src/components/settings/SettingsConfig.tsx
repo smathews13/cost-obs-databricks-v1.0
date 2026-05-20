@@ -22,7 +22,6 @@ interface SettingsConfigProps {
   setSaveStatus: (status: string | null) => void;
   localSettings: AppSettings;
   updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
-  onWsPoolSaved?: () => void;
 }
 
 function ColWarn({ error, align = "left" }: { error: string; align?: "left" | "right" }) {
@@ -45,7 +44,6 @@ export function SettingsConfig({
   setSaveStatus,
   localSettings,
   updateSetting,
-  onWsPoolSaved,
 }: SettingsConfigProps) {
   const [mvRefreshing, setMvRefreshing] = useState(false);
   const [lookbackDays, setLookbackDays] = useState(180);
@@ -161,70 +159,12 @@ export function SettingsConfig({
     }
   };
 
-  // Workspace pool management
-  const { data: allWorkspacesData } = useQuery<{ workspaces: Array<{ id: string; name: string }>; error?: string } | null>({
-    queryKey: ["setup-list-workspaces"],
-    queryFn: () => fetch("/api/setup/list-workspaces").then(r => r.json()).catch(() => null),
-    staleTime: 5 * 60 * 1000,
-  });
-  const { data: wsFilterData, refetch: refetchWsFilter } = useQuery<{ workspace_ids: string[] } | null>({
+  // Workspace pool — read-only, set during setup
+  const { data: wsFilterData } = useQuery<{ workspace_ids: string[] } | null>({
     queryKey: ["setup-workspace-filter"],
     queryFn: () => fetch("/api/setup/workspace-filter").then(r => r.json()).catch(() => null),
     staleTime: 60 * 1000,
   });
-  const { data: currentUser } = useQuery<{ email: string; name: string; role: string } | null>({
-    queryKey: ["user-me"],
-    queryFn: () => fetch("/api/user/me").then(r => r.json()).catch(() => null),
-    staleTime: 5 * 60 * 1000,
-  });
-  const isAdmin = !currentUser || currentUser.role === "admin";
-
-  const [wsPoolEditing, setWsPoolEditing] = useState(false);
-  const [wsPoolDraft, setWsPoolDraft] = useState<string[]>([]);
-  const [wsPoolSaving, setWsPoolSaving] = useState(false);
-  const [wsPoolSaveStatus, setWsPoolSaveStatus] = useState<string | null>(null);
-  const [wsPoolSearch, setWsPoolSearch] = useState("");
-
-  const saveWsPool = async () => {
-    setWsPoolSaving(true);
-    setWsPoolSaveStatus(null);
-    const t0 = performance.now();
-    try {
-      const res = await fetch("/api/setup/save-workspace-filter", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace_ids: wsPoolDraft }),
-        signal: AbortSignal.timeout(8_000),
-      });
-      const elapsed = Math.round(performance.now() - t0);
-      if (res.ok) {
-        console.info(`[ws-pool] saved ${wsPoolDraft.length} ids in ${elapsed}ms`);
-        setWsPoolSaveStatus("Saved");
-        setWsPoolEditing(false);
-        refetchWsFilter();
-        setSaveStatus("Workspace filter pool updated — dashboard will refresh");
-        setTimeout(() => setSaveStatus(null), 4000);
-        onWsPoolSaved?.();
-      } else {
-        let detail = `HTTP ${res.status}`;
-        try { const d = await res.json(); detail = d.detail || detail; } catch { /* ignore */ }
-        console.error(`[ws-pool] save failed in ${elapsed}ms — ${detail}`);
-        setWsPoolSaveStatus(`Failed: ${detail}`);
-      }
-    } catch (err) {
-      const elapsed = Math.round(performance.now() - t0);
-      if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
-        console.error(`[ws-pool] timed out after ${elapsed}ms — server did not respond within 8s`);
-        setWsPoolSaveStatus("Timed out after 8s — check server logs");
-      } else {
-        console.error(`[ws-pool] network error after ${elapsed}ms —`, err);
-        setWsPoolSaveStatus("Save failed — network error");
-      }
-    } finally {
-      setWsPoolSaving(false);
-      setTimeout(() => setWsPoolSaveStatus(null), 6000);
-    }
-  };
 
   const [genieCreating, setGenieCreating] = useState(false);
   const [genieCreateStatus, setGenieCreateStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -748,127 +688,19 @@ export function SettingsConfig({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
               <h4 className="text-sm font-semibold text-gray-900">Workspace Filter Pool</h4>
-              {!isAdmin && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-4V7a3 3 0 00-6 0v4M5 21h14a2 2 0 002-2v-5a2 2 0 00-2-2H5a2 2 0 00-2 2v5a2 2 0 002 2z" />
-                  </svg>
-                  Admin only
-                </span>
-              )}
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Set during setup</span>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
-              <p className="text-xs text-gray-500">
-                Control which workspaces appear in the dashboard workspace filter dropdown. Non-admins can still use the dropdown — this setting only controls which workspaces are available to choose from.
-              </p>
-              {!wsPoolEditing ? (
-                <div className="flex items-center justify-between">
-                  <div className="text-xs text-gray-700">
-                    {wsFilterData?.workspace_ids?.length
-                      ? <span>{wsFilterData.workspace_ids.length} workspace{wsFilterData.workspace_ids.length !== 1 ? "s" : ""} in filter pool</span>
-                      : <span className="text-gray-400">All workspaces (no filter configured)</span>
-                    }
-                  </div>
-                  {isAdmin ? (
-                    <button
-                      onClick={() => {
-                        setWsPoolDraft(wsFilterData?.workspace_ids ?? []);
-                        setWsPoolEditing(true);
-                      }}
-                      className="text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded px-2 py-0.5"
-                    >
-                      Edit
-                    </button>
-                  ) : (
-                    <span className="text-[10px] text-gray-400 italic">Contact an admin to change</span>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-600 font-medium">Select available workspaces</span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setWsPoolDraft((allWorkspacesData?.workspaces ?? []).map(w => w.id))}
-                        className="text-xs text-gray-500 hover:text-gray-800"
-                      >All</button>
-                      <span className="text-gray-300">·</span>
-                      <button
-                        onClick={() => setWsPoolDraft([])}
-                        className="text-xs text-gray-500 hover:text-gray-800"
-                      >None</button>
-                    </div>
-                  </div>
-                  {(allWorkspacesData?.workspaces ?? []).length > 5 && (
-                    <input
-                      type="text"
-                      value={wsPoolSearch}
-                      onChange={e => setWsPoolSearch(e.target.value)}
-                      placeholder="Search workspaces…"
-                      className="w-full rounded border border-gray-200 px-2 py-1 text-xs placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-                    />
-                  )}
-                  <div className="max-h-48 overflow-y-auto space-y-1 rounded border border-gray-100 p-2">
-                    {(allWorkspacesData?.workspaces ?? [])
-                      .filter(ws => !wsPoolSearch || (ws.name || ws.id).toLowerCase().includes(wsPoolSearch.toLowerCase()))
-                      .map(ws => (
-                      <label key={ws.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 hover:bg-gray-50">
-                        <input
-                          type="checkbox"
-                          checked={wsPoolDraft.includes(ws.id)}
-                          onChange={() => {
-                            if (wsPoolDraft.includes(ws.id)) {
-                              setWsPoolDraft(wsPoolDraft.filter(i => i !== ws.id));
-                            } else {
-                              setWsPoolDraft([...wsPoolDraft, ws.id]);
-                            }
-                          }}
-                          className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
-                        />
-                        <span className="text-xs text-gray-700">{ws.name || ws.id}</span>
-                      </label>
-                    ))}
-                    {(allWorkspacesData?.workspaces ?? []).length === 0 && (
-                      <p className="py-2 text-center text-[11px] text-gray-400">No workspaces found</p>
-                    )}
-                    {(allWorkspacesData?.workspaces ?? []).length > 0 &&
-                      wsPoolSearch &&
-                      (allWorkspacesData?.workspaces ?? []).filter(ws => (ws.name || ws.id).toLowerCase().includes(wsPoolSearch.toLowerCase())).length === 0 && (
-                      <p className="py-2 text-center text-[11px] text-gray-400">No workspaces match "{wsPoolSearch}"</p>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1.5 pt-1">
-                    {wsPoolSaveStatus && (
-                      <span className={`text-[11px] font-medium ${wsPoolSaveStatus === "Saved" ? "text-green-600" : "text-red-600"}`}>
-                        {wsPoolSaveStatus}
-                      </span>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={saveWsPool}
-                        disabled={wsPoolSaving}
-                        className="flex items-center gap-1.5 rounded bg-[#FF3621] px-3 py-1 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-60"
-                      >
-                        {wsPoolSaving && (
-                          <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                          </svg>
-                        )}
-                        {wsPoolSaving ? "Saving…" : "Save"}
-                      </button>
-                      <button
-                        onClick={() => { setWsPoolEditing(false); setWsPoolSaveStatus(null); }}
-                        disabled={wsPoolSaving}
-                        className="rounded px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+            <div className="rounded-lg border border-gray-200 bg-white p-3">
+              <div className="text-sm text-gray-700">
+                {wsFilterData?.workspace_ids?.length
+                  ? <span>{wsFilterData.workspace_ids.length} workspace{wsFilterData.workspace_ids.length !== 1 ? "s" : ""} configured</span>
+                  : <span className="text-gray-500">All workspaces (no filter configured)</span>
+                }
+              </div>
             </div>
+            <p className="mt-1.5 text-xs text-gray-500">
+              The workspace filter pool is configured during initial setup and cannot be changed here.
+            </p>
           </div>
 
           {/* App Telemetry */}

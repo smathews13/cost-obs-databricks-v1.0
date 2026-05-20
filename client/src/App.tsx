@@ -1171,15 +1171,6 @@ function Dashboard() {
         onClose={() => setShowSettings(false)}
         tabVisibility={tabVisibility}
         appSettings={appSettings}
-        onWsPoolSaved={() => {
-          setSelectedWorkspaceIds([]);
-          // Refetch workspace dropdown so it reflects new pool immediately.
-          rqClient.refetchQueries({ queryKey: ["billing", "workspaces"] });
-          // Invalidate only data bundles so tabs re-fetch with updated pool.
-          // Avoid invalidateQueries() with no args — it fires every registered query simultaneously.
-          const bundleKeys = ["billing", "aiml", "apps", "tagging", "dbsql", "users-groups"];
-          bundleKeys.forEach(k => rqClient.invalidateQueries({ queryKey: [k] }));
-        }}
         onTabVisibilityChange={(v) => {
           setTabVisibility(v);
           // If the active tab was hidden, switch to the first visible tab.

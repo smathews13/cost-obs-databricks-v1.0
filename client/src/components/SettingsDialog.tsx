@@ -126,10 +126,9 @@ interface SettingsDialogProps {
   tabVisibility: TabVisibility;
   appSettings: AppSettings;
   onRerunWizard?: () => void;
-  onWsPoolSaved?: () => void;
 }
 
-export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings, onRerunWizard, onWsPoolSaved }: SettingsDialogProps) {
+export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings, onRerunWizard }: SettingsDialogProps) {
   const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "experimental" | "accuracy-checks" | "permissions" | "debugger">("general");
   const [localVisibility, setLocalVisibility] = useState<TabVisibility>(tabVisibility);
   const [localSettings, setLocalSettings] = useState<AppSettings>(appSettings);
@@ -316,7 +315,6 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 setSaveStatus={setSaveStatus}
                 localSettings={localSettings}
                 updateSetting={updateSetting}
-                onWsPoolSaved={onWsPoolSaved}
               />
             )}
             {activeSection === "general" && (

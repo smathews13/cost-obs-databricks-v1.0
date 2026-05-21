@@ -230,7 +230,7 @@ export function ReadinessChecks({
       <div>
         <div className="mb-2 flex items-center gap-2">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Core Tables</h4>
-          <span className="text-[10px] text-gray-400">Required</span>
+          <span className="text-[10px] text-gray-500">Required</span>
           {result.core.some(c => !c.granted) && (
             <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
               {result.core.filter(c => !c.granted).length} missing
@@ -247,7 +247,7 @@ export function ReadinessChecks({
         <div>
           <div className="mb-2 flex items-center gap-2">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Enhanced Tables</h4>
-            <span className="text-[10px] text-gray-400">Optional — enables richer analytics</span>
+            <span className="text-[10px] text-gray-500">Optional — enables richer analytics</span>
             {anyEnhancedFailing && (
               <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                 {result.enhanced.filter(c => !c.granted).length} missing

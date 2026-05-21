@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
@@ -984,6 +985,12 @@ _READINESS_CACHE_TTL = 300
 
 _CORE_TABLES = {"system.billing.usage", "system.billing.list_prices"}
 
+# Persistent single-worker executor for the warehouse CAN_USE SQL check.
+# A persistent executor (not a `with` block) means timing out on an individual
+# future does NOT cause shutdown(wait=True) to block the calling thread — the
+# warehouse thread continues in the background and cleans up on its own.
+_wh_check_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wh_check")
+
 
 def _check_table_as_sp(table: str) -> tuple[bool, str]:
     """Run check_table_access with the user token cleared (forces SP auth)."""
@@ -1010,18 +1017,24 @@ def _check_warehouse_can_use_sp() -> tuple[bool, str]:
 
 
 def _build_fix_sql(table: str, sp_client_id: str) -> str:
-    """Return the exact GRANT statements needed to fix SP access to a system table."""
+    """Return the exact GRANT statements needed to fix SP access to a system table.
+
+    Uses unquoted multi-part identifiers (system.billing.usage) so the SQL is
+    valid Databricks syntax.  Backtick-quoting the dotted path as a single token
+    (`system.billing.usage`) is invalid and would fail at runtime.
+    """
     if not sp_client_id:
         return ""
     parts = table.split(".")
     if len(parts) == 3:
-        catalog, schema_full = parts[0], f"{parts[0]}.{parts[1]}"
+        catalog = parts[0]
+        schema_full = f"{parts[0]}.{parts[1]}"
         return (
-            f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{sp_client_id}`;\n"
-            f"GRANT USE SCHEMA ON SCHEMA `{schema_full}` TO `{sp_client_id}`;\n"
-            f"GRANT SELECT ON TABLE `{table}` TO `{sp_client_id}`;"
+            f"GRANT USE CATALOG ON CATALOG {catalog} TO `{sp_client_id}`;\n"
+            f"GRANT USE SCHEMA ON SCHEMA {schema_full} TO `{sp_client_id}`;\n"
+            f"GRANT SELECT ON TABLE {table} TO `{sp_client_id}`;"
         )
-    return f"GRANT SELECT ON TABLE `{table}` TO `{sp_client_id}`;"
+    return f"GRANT SELECT ON TABLE {table} TO `{sp_client_id}`;"
 
 
 def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
@@ -1031,7 +1044,7 @@ def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
     the result does not vary by user — caching is safe.
     """
     import time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import TimeoutError as _FutureTimeout, as_completed
     from server.routers.permissions import REQUIRED_PERMISSIONS
 
     global _readiness_cache, _readiness_cache_ts
@@ -1057,26 +1070,47 @@ def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
         warehouse_source = "none"
         warehouse_id = ""
 
-    # Run table checks + warehouse check in parallel, all as SP
-    with ThreadPoolExecutor(max_workers=len(REQUIRED_PERMISSIONS) + 1) as pool:
+    # Run table checks in a scoped pool (SDK calls — fast, no warehouse needed).
+    # Warehouse CAN_USE check runs in the persistent _wh_check_executor so that
+    # timing out on a cold warehouse doesn't block pool.shutdown(wait=True).
+    _WH_CHECK_TIMEOUT = 30  # seconds
+
+    # Submit warehouse check first (so it runs concurrently with table checks)
+    if warehouse_source != "none":
+        wh_future = _wh_check_executor.submit(_check_warehouse_can_use_sp)
+    else:
+        wh_future = None
+
+    with ThreadPoolExecutor(max_workers=len(REQUIRED_PERMISSIONS)) as pool:
         table_futures = {
             pool.submit(_check_table_as_sp, perm["table"]): perm
             for perm in REQUIRED_PERMISSIONS
         }
-        if warehouse_source != "none":
-            wh_future = pool.submit(_check_warehouse_can_use_sp)
-        else:
-            wh_future = None
-
         access_results: dict[str, tuple[bool, str]] = {}
         for future in as_completed(table_futures):
             perm = table_futures[future]
-            access_results[perm["table"]] = future.result()
+            try:
+                access_results[perm["table"]] = future.result()
+            except Exception as e:
+                logger.warning(f"Table check future failed for {perm['table']}: {e}")
+                access_results[perm["table"]] = (False, str(e))
 
-        if wh_future is not None:
-            wh_result = wh_future.result()
-        else:
-            wh_result = (False, "No warehouse configured")
+    # Now collect warehouse result (table checks are done, so this is just
+    # waiting for the remaining warehouse check time, if any)
+    if wh_future is not None:
+        try:
+            wh_result = wh_future.result(timeout=_WH_CHECK_TIMEOUT)
+        except _FutureTimeout:
+            wh_result = (
+                False,
+                "Warehouse check timed out — warehouse may be starting up. "
+                "Try re-checking once the warehouse is running.",
+            )
+            logger.warning("Warehouse CAN_USE check timed out after %ds", _WH_CHECK_TIMEOUT)
+        except Exception as e:
+            wh_result = (False, str(e))
+    else:
+        wh_result = (False, "No warehouse configured")
 
     # Warehouse check item
     warehouse_item: dict[str, Any] = {

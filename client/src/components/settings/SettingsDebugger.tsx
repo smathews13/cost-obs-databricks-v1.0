@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 interface InstallReport {
-  version: { commit_sha: string };
-  warehouse: { id: string | null; source: string };
-  auth_mode: string;
-  storage_location: { catalog: string; schema: string };
+  version?: { commit_sha: string };
+  warehouse?: { id: string | null; source?: string };
+  auth_mode?: string;
+  storage_location?: { catalog: string; schema: string };
 }
 
 // Module-level so state survives tab switches (useState resets on unmount)

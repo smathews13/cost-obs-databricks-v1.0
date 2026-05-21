@@ -161,7 +161,7 @@ export function SettingsPermissions() {
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
           <h4 className="text-sm font-semibold text-gray-900">System Readiness</h4>
-          <span className="text-[11px] text-gray-400">SP access to Databricks system tables</span>
+          <span className="text-[11px] text-gray-500">SP access to Databricks system tables</span>
         </div>
         <div className="px-5 py-4">
           <ReadinessChecks

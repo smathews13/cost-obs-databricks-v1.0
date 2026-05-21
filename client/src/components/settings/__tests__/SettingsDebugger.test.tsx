@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SettingsDebugger } from "../SettingsDebugger";
+import { SettingsDebugger, _resetDebuggerState } from "../SettingsDebugger";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,6 +21,9 @@ const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockReset();
+  // Reset module-level persisted state so each test starts with hasRun=false,
+  // preventing the debug query from firing at mount due to a previous test's run.
+  _resetDebuggerState();
 });
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,12 @@ interface AuthStatusSlim {
 let _persistedRunKey = 0;
 let _persistedHasRun = false;
 
+/** Reset persisted run state. Used only in tests to prevent cross-test pollution. */
+export function _resetDebuggerState() {
+  _persistedRunKey = 0;
+  _persistedHasRun = false;
+}
+
 interface DiagCheck {
   id: string;
   category: string;

@@ -159,18 +159,20 @@ describe("SettingsPermissions — grant bundle targets actual SP name", () => {
 
 // ---------------------------------------------------------------------------
 // Cache invalidation after grant run
+// Verifies that /api/setup/readiness is called AGAIN after the grant completes,
+// not just on initial mount. The timer-based approach was removed when the
+// readiness query was unified onto READINESS_QUERY_KEY — invalidateQueries
+// triggers a synchronous re-fetch via the active TanStack Query subscriber.
 // ---------------------------------------------------------------------------
 
 describe("SettingsPermissions — readiness cache invalidated after grant", () => {
-  it("calls /api/setup/readiness after grant SP access", async () => {
-    mockApis(SP_AUTH_STATUS);
-
-    // Mock grant endpoint to succeed
+  it("refetches /api/setup/readiness after grant completes — not just on mount", async () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/setup/grant-sp-system-access") && init?.method === "POST") {
+        // ok: true triggers the success path in runSpGrants
         return Promise.resolve(
-          new Response(JSON.stringify({ applied: 5, sp_client_id: "0000-aaaa-bbbb-1234" }), {
+          new Response(JSON.stringify({ ok: true, applied: 5, sp_client_id: "0000-aaaa-bbbb-1234" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })
@@ -217,15 +219,18 @@ describe("SettingsPermissions — readiness cache invalidated after grant", () =
 
     renderPermissions();
 
-    // After render, query the grant button
-    const grantBtn = await screen.findByRole("button", { name: /run sp grants|apply grants|grant access/i });
-    grantBtn.click();
+    // Wait for mount to settle — readiness already called once by the component
+    const grantBtn = await screen.findByRole("button", { name: /re-run sp grants/i });
+    const readinessCallsBefore = fetchMock.mock.calls.filter(c => String(c[0]).includes("/api/setup/readiness")).length;
+    expect(readinessCallsBefore).toBeGreaterThanOrEqual(1);
 
-    // After grant: /api/setup/readiness must be refetched (cache invalidated)
+    // Trigger grant — success path calls invalidateQueries(READINESS_QUERY_KEY)
+    await userEvent.click(grantBtn);
+
+    // Post-grant: readiness must be fetched again (more calls than before grant)
     await waitFor(() => {
-      const calls = fetchMock.mock.calls.map(c => String(c[0]));
-      const readinessCalls = calls.filter(u => u.includes("/api/setup/readiness"));
-      expect(readinessCalls.length).toBeGreaterThanOrEqual(1);
+      const readinessCallsAfter = fetchMock.mock.calls.filter(c => String(c[0]).includes("/api/setup/readiness")).length;
+      expect(readinessCallsAfter).toBeGreaterThan(readinessCallsBefore);
     });
   });
 });

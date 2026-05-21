@@ -4,8 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 interface InstallReport {
   version?: { commit_sha: string };
   warehouse?: { id: string | null; source?: string };
-  auth_mode?: string;
   storage_location?: { catalog: string; schema: string };
+}
+
+interface AuthStatusSlim {
+  auth_mode?: "unknown" | "user" | "sp";
 }
 
 // Module-level so state survives tab switches (useState resets on unmount)
@@ -158,6 +161,12 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: authStatusSlim } = useQuery<AuthStatusSlim>({
+    queryKey: ["settings-auth-status"],
+    queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
+    staleTime: 10 * 1000,
+  });
+
   const { data: result, isFetching, isError } = useQuery<DiagResult>({
     queryKey: ["debug-run", runKey],
     queryFn: async () => {
@@ -209,7 +218,7 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
               </>
             )}
             <dt className="text-gray-500">Auth mode</dt>
-            <dd className="font-medium text-gray-700">{installReport.auth_mode ?? "service_principal"}</dd>
+            <dd className="font-medium text-gray-700">{authStatusSlim?.auth_mode ?? "—"}</dd>
             <dt className="text-gray-500">Warehouse source</dt>
             <dd className="font-medium text-gray-700">{installReport.warehouse?.source ?? "—"}</dd>
             <dt className="text-gray-500">Storage</dt>

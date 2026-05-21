@@ -1023,7 +1023,7 @@ _wh_check_inflight: _Future | None = None
 _wh_check_cache: TimedWarehouseCheckCache | None = None
 
 # Short TTLs for transient states prevent repeated slow callers from pile-up.
-_WH_TTL_BY_STATUS: dict[str, int] = {
+_WH_TTL_BY_STATUS: dict[CheckStatus, int] = {
     CheckStatus.HEALTHY: 300,
     CheckStatus.PERMISSION_DENIED: 300,
     CheckStatus.NOT_CONFIGURED: 3600,
@@ -1187,7 +1187,7 @@ def _check_table_as_sp(table: str) -> tuple[bool, str]:
         _user_token.reset(tok)
 
 
-def _safe_table_check_result(table_name: str, future: _Future) -> tuple[bool, str, str]:
+def _safe_table_check_result(table_name: str, future: _Future) -> tuple[bool, str, CheckStatus]:
     """Resolve a table check future and return (ok, error_msg, status_str).
 
     Logs full tracebacks for internal errors so they don't disappear silently.
@@ -1250,27 +1250,30 @@ def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
     sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
     _, warehouse_id = _resolve_warehouse_config()
 
+    # Snapshot the table cache reference once — prevents TOCTOU if a concurrent
+    # bypass_cache=True request calls reset_readiness_caches() between the
+    # is-None check and the subsequent ["core"] / ["enhanced"] reads.
+    cached_tables = _table_readiness_cache
     table_cache_valid = (
-        _table_readiness_cache is not None
+        cached_tables is not None
         and (time.monotonic() - _table_readiness_cache_ts) < _TABLE_CACHE_TTL
     )
     wh_cached = _get_cached_warehouse_check()
 
     # Both caches fresh — merge and return immediately without any blocking calls.
     if table_cache_valid and wh_cached is not None:
-        tc = _table_readiness_cache  # type: ignore[assignment]
         wh_item = _build_warehouse_item(wh_cached, warehouse_id, sp_client_id)
         overall = _calc_overall(
-            all(c["granted"] for c in tc["core"]),
+            all(c["granted"] for c in cached_tables["core"]),  # type: ignore[index]
             wh_item["granted"],
-            all(c["granted"] for c in tc["enhanced"]),
-            tc["core"],
+            all(c["granted"] for c in cached_tables["enhanced"]),  # type: ignore[index]
+            cached_tables["core"],  # type: ignore[index]
         )
         return {
             "overall": overall,
             "warehouse": wh_item,
-            "core": tc["core"],
-            "enhanced": tc["enhanced"],
+            "core": cached_tables["core"],  # type: ignore[index]
+            "enhanced": cached_tables["enhanced"],  # type: ignore[index]
             "sp_client_id": sp_client_id,
         }
 
@@ -1320,8 +1323,9 @@ def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
         }
         _table_readiness_cache_ts = time.monotonic()
     else:
-        core_checks = _table_readiness_cache["core"]  # type: ignore[index]
-        enhanced_checks = _table_readiness_cache["enhanced"]  # type: ignore[index]
+        # cached_tables snapshot taken above — safe from concurrent reset
+        core_checks = cached_tables["core"]  # type: ignore[index]
+        enhanced_checks = cached_tables["enhanced"]  # type: ignore[index]
 
     # Collect warehouse result — reuses the in-flight future started above.
     wh_result = check_warehouse_readiness()

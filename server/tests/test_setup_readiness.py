@@ -67,8 +67,6 @@ def test_single_flight_reuses_inflight_future():
     submitted_count = 0
     sentinel_future: Future = Future()  # Stays incomplete (not done)
 
-    original_submit = setup_mod._wh_check_executor.submit
-
     def counting_submit(fn, *args, **kwargs):
         nonlocal submitted_count
         submitted_count += 1

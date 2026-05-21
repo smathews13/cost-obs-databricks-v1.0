@@ -501,7 +501,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             ) : step === "permissions" ? (
               <button
                 onClick={goNext}
-                disabled={loading || (readiness != null && readiness.overall !== "ready" && readiness.overall !== "core_ready")}
+                disabled={loading || readiness == null || (readiness.overall !== "ready" && readiness.overall !== "core_ready")}
                 className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next

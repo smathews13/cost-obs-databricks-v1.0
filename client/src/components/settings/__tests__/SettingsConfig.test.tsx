@@ -52,7 +52,7 @@ const defaultLocalSettings: AppSettings = {
 function renderSettingsConfig(tablesPayload: object) {
   fetchMock.mockImplementation((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes("/api/setup/tables")) {
+    if (url.includes("/api/settings/tables")) {
       return Promise.resolve(
         new Response(JSON.stringify(tablesPayload), {
           status: 200,

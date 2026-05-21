@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 const SP_AUTH_STATUS = {
-  auth_mode: "service_principal",
+  auth_mode: "sp",
   identity: "service_principal",
   token_present: false,
   user_email: "cost-observer-sp@apps.databricks.com",
@@ -35,7 +35,7 @@ const SP_AUTH_STATUS = {
 };
 
 const USER_AUTH_STATUS = {
-  auth_mode: "user",
+  auth_mode: "user" as const,
   identity: "user_oauth",
   token_present: true,
   user_email: "alice@databricks.com",
@@ -168,7 +168,7 @@ describe("SettingsPermissions — readiness cache invalidated after grant", () =
     // Mock grant endpoint to succeed
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/api/setup/grant-sp-access") && init?.method === "POST") {
+      if (url.includes("/api/setup/grant-sp-system-access") && init?.method === "POST") {
         return Promise.resolve(
           new Response(JSON.stringify({ applied: 5, sp_client_id: "0000-aaaa-bbbb-1234" }), {
             status: 200,

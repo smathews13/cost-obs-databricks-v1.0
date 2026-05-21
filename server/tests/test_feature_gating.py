@@ -138,10 +138,10 @@ class TestBuildFixSql:
         # Should grant schema-level access before table-level
         assert "system.billing" in sql
 
-    def test_empty_sp_produces_placeholder_or_empty_target(self):
-        # Should not raise; empty SP client_id should still generate some SQL
+    def test_empty_sp_returns_empty_string(self):
+        # _build_fix_sql returns "" when sp_client_id is empty — can't target a grant without a principal
         sql = _build_fix_sql("system.billing.usage", "")
-        assert "GRANT" in sql  # Should still produce a template
+        assert sql == ""
 
     def test_backtick_quoting_for_sp_name(self):
         sql = _build_fix_sql("system.billing.usage", "sp-with-hyphens")

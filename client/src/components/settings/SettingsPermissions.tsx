@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ReadinessChecks } from "./ReadinessChecks";
+import { ReadinessChecks, normalizeReadinessResult } from "./ReadinessChecks";
 import type { ReadinessResult } from "./ReadinessChecks";
 
 interface UserPermissions {
@@ -54,11 +54,12 @@ export function SettingsPermissions() {
     data: readiness,
     isLoading: readinessLoading,
     error: readinessQueryError,
-  } = useQuery<ReadinessResult>({
+  } = useQuery<ReadinessResult | null>({
     queryKey: ["settings-readiness", readinessRefreshKey],
     queryFn: () =>
       fetch(readinessRefreshKey > 0 ? "/api/setup/readiness?refresh=true" : "/api/setup/readiness")
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(normalizeReadinessResult),
     staleTime: 4 * 60 * 1000,
   });
 

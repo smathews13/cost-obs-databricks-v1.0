@@ -978,18 +978,202 @@ async def create_genie_space() -> dict[str, Any]:
 # Readiness Checks
 # ============================================================================
 
-# Simple in-process readiness cache (5-min TTL, SP-only so no per-user variance)
-_readiness_cache: dict[str, Any] | None = None
-_readiness_cache_ts: float = 0.0
-_READINESS_CACHE_TTL = 300
+import re as _re
+import threading
+import time
+from concurrent.futures import Future as _Future
+from dataclasses import dataclass
+from enum import Enum
+
+
+class CheckStatus(str, Enum):
+    HEALTHY = "healthy"
+    NOT_CONFIGURED = "not_configured"
+    TIMEOUT_STARTING = "timeout_starting"
+    PERMISSION_DENIED = "permission_denied"
+    INTERNAL_ERROR = "internal_error"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class WarehouseCheckResult:
+    status: CheckStatus
+    ok: bool
+    message: str
+    warehouse_id: str | None = None
+    source: str | None = None
+
+
+@dataclass
+class TimedWarehouseCheckCache:
+    result: WarehouseCheckResult
+    expires_at: float
+
+    def is_valid(self) -> bool:
+        return time.monotonic() < self.expires_at
+
 
 _CORE_TABLES = {"system.billing.usage", "system.billing.list_prices"}
 
-# Persistent single-worker executor for the warehouse CAN_USE SQL check.
-# A persistent executor (not a `with` block) means timing out on an individual
-# future does NOT cause shutdown(wait=True) to block the calling thread — the
-# warehouse thread continues in the background and cleans up on its own.
+# Persistent single-worker executor — prevents shutdown(wait=True) from blocking
+# the request thread when a cold-warehouse future is abandoned on timeout.
 _wh_check_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wh_check")
+_wh_check_lock = threading.Lock()
+_wh_check_inflight: _Future | None = None
+_wh_check_cache: TimedWarehouseCheckCache | None = None
+
+# Short TTLs for transient states prevent repeated slow callers from pile-up.
+_WH_TTL_BY_STATUS: dict[str, int] = {
+    CheckStatus.HEALTHY: 300,
+    CheckStatus.PERMISSION_DENIED: 300,
+    CheckStatus.NOT_CONFIGURED: 3600,
+    CheckStatus.TIMEOUT_STARTING: 15,
+    CheckStatus.INTERNAL_ERROR: 5,
+    CheckStatus.UNAVAILABLE: 15,
+}
+_WH_CHECK_TIMEOUT = 30  # seconds the caller blocks waiting for a warehouse response
+
+# Table checks run as SP — result doesn't vary by user, 5-min cache is safe.
+_table_readiness_cache: dict[str, Any] | None = None
+_table_readiness_cache_ts: float = 0.0
+_TABLE_CACHE_TTL = 300
+
+
+def _resolve_warehouse_config() -> tuple[str, str]:
+    """Return (source, warehouse_id). Source is 'app_resource', 'http_path', or 'none'."""
+    wh_env_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
+    http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
+    if wh_env_id:
+        return "app_resource", wh_env_id
+    if http_path and http_path.lower() != "auto":
+        parts = http_path.strip("/").split("/")
+        wh_id = parts[-1] if parts and parts[-1] != "warehouses" else ""
+        return "http_path", wh_id
+    return "none", ""
+
+
+def _run_blocking_warehouse_check() -> WarehouseCheckResult:
+    """Execute a test query as the SP. Runs inside _wh_check_executor.
+
+    Classifies exceptions into typed CheckStatus so callers can apply the
+    right cache TTL and surface a useful error message.
+    """
+    from server.db import execute_query, _user_token
+    source, warehouse_id = _resolve_warehouse_config()
+    tok = _user_token.set("")
+    try:
+        execute_query("SELECT current_user()", no_cache=True)
+        return WarehouseCheckResult(
+            status=CheckStatus.HEALTHY,
+            ok=True,
+            message="",
+            warehouse_id=warehouse_id,
+            source=source,
+        )
+    except Exception as exc:
+        msg = str(exc)
+        logger.error("Warehouse readiness check failed: %s", msg, exc_info=True)
+        lower = msg.lower()
+        if any(kw in lower for kw in ("permission", "denied", "unauthorized", "forbidden", "privilege")):
+            status = CheckStatus.PERMISSION_DENIED
+        elif any(kw in lower for kw in ("timeout", "timed out", "starting", "unavailable", "connection")):
+            status = CheckStatus.TIMEOUT_STARTING
+        else:
+            status = CheckStatus.INTERNAL_ERROR
+        return WarehouseCheckResult(status=status, ok=False, message=msg, warehouse_id=warehouse_id, source=source)
+    finally:
+        _user_token.reset(tok)
+
+
+def _cache_ttl_for_warehouse(result: WarehouseCheckResult) -> int:
+    return _WH_TTL_BY_STATUS.get(result.status, 15)
+
+
+def _get_cached_warehouse_check() -> WarehouseCheckResult | None:
+    with _wh_check_lock:
+        if _wh_check_cache is not None and _wh_check_cache.is_valid():
+            return _wh_check_cache.result
+        return None
+
+
+def _set_cached_warehouse_check(result: WarehouseCheckResult) -> None:
+    global _wh_check_cache
+    ttl = _cache_ttl_for_warehouse(result)
+    with _wh_check_lock:
+        _wh_check_cache = TimedWarehouseCheckCache(
+            result=result,
+            expires_at=time.monotonic() + ttl,
+        )
+
+
+def _get_or_start_warehouse_check_future() -> _Future:
+    """Single-flight: reuse in-flight future if one is already running."""
+    global _wh_check_inflight
+    with _wh_check_lock:
+        if _wh_check_inflight is not None and not _wh_check_inflight.done():
+            return _wh_check_inflight
+        future = _wh_check_executor.submit(_run_blocking_warehouse_check)
+        _wh_check_inflight = future
+        return future
+
+
+def check_warehouse_readiness() -> WarehouseCheckResult:
+    """Return a WarehouseCheckResult via cache → single-flight → timeout."""
+    from concurrent.futures import TimeoutError as _FutureTimeout
+    source, _ = _resolve_warehouse_config()
+    if source == "none":
+        return WarehouseCheckResult(
+            status=CheckStatus.NOT_CONFIGURED,
+            ok=False,
+            message="No warehouse configured",
+            source="none",
+        )
+    cached = _get_cached_warehouse_check()
+    if cached is not None:
+        return cached
+    future = _get_or_start_warehouse_check_future()
+    try:
+        result = future.result(timeout=_WH_CHECK_TIMEOUT)
+    except _FutureTimeout:
+        logger.warning("Warehouse readiness timed out after %ds (may be starting up)", _WH_CHECK_TIMEOUT)
+        result = WarehouseCheckResult(
+            status=CheckStatus.TIMEOUT_STARTING,
+            ok=False,
+            message="Warehouse check timed out — warehouse may be starting up. Try re-checking once running.",
+        )
+    except Exception as exc:
+        logger.error("Warehouse check future raised: %s", exc, exc_info=True)
+        result = WarehouseCheckResult(
+            status=CheckStatus.INTERNAL_ERROR,
+            ok=False,
+            message=str(exc),
+        )
+    _set_cached_warehouse_check(result)
+    return result
+
+
+def _uc_identifier(part: str) -> str:
+    """Quote a single UC identifier part only when it requires backtick quoting."""
+    if _re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", part):
+        return part
+    escaped = part.replace("`", "``")
+    return f"`{escaped}`"
+
+
+def _build_fix_sql(table: str, sp_client_id: str) -> str:
+    """Return GRANT statements to fix SP access. Uses per-part identifier quoting."""
+    if not sp_client_id:
+        return ""
+    parts = table.split(".")
+    if len(parts) == 3:
+        q0, q1, q2 = _uc_identifier(parts[0]), _uc_identifier(parts[1]), _uc_identifier(parts[2])
+        return (
+            f"GRANT USE CATALOG ON CATALOG {q0} TO `{sp_client_id}`;\n"
+            f"GRANT USE SCHEMA ON SCHEMA {q0}.{q1} TO `{sp_client_id}`;\n"
+            f"GRANT SELECT ON TABLE {q0}.{q1}.{q2} TO `{sp_client_id}`;"
+        )
+    q_table = ".".join(_uc_identifier(p) for p in parts)
+    return f"GRANT SELECT ON TABLE {q_table} TO `{sp_client_id}`;"
 
 
 def _check_table_as_sp(table: str) -> tuple[bool, str]:
@@ -1003,187 +1187,186 @@ def _check_table_as_sp(table: str) -> tuple[bool, str]:
         _user_token.reset(tok)
 
 
-def _check_warehouse_can_use_sp() -> tuple[bool, str]:
-    """Check if the SP can execute queries on the configured warehouse."""
-    from server.db import execute_query, _user_token
-    tok = _user_token.set("")
+def _safe_table_check_result(table_name: str, future: _Future) -> tuple[bool, str, str]:
+    """Resolve a table check future and return (ok, error_msg, status_str).
+
+    Logs full tracebacks for internal errors so they don't disappear silently.
+    """
     try:
-        execute_query("SELECT current_user()", no_cache=True)
-        return True, ""
-    except Exception as e:
-        return False, str(e)
-    finally:
-        _user_token.reset(tok)
+        ok, msg = future.result()
+        if ok:
+            return True, "", CheckStatus.HEALTHY
+        lower = msg.lower()
+        if any(kw in lower for kw in ("permission", "denied", "privilege", "unauthorized", "forbidden")):
+            return False, msg, CheckStatus.PERMISSION_DENIED
+        return False, msg, CheckStatus.INTERNAL_ERROR
+    except Exception as exc:
+        logger.error("Table check future for %s raised: %s", table_name, exc, exc_info=True)
+        return False, str(exc), CheckStatus.INTERNAL_ERROR
 
 
-def _build_fix_sql(table: str, sp_client_id: str) -> str:
-    """Return the exact GRANT statements needed to fix SP access to a system table.
-
-    Uses unquoted multi-part identifiers (system.billing.usage) so the SQL is
-    valid Databricks syntax.  Backtick-quoting the dotted path as a single token
-    (`system.billing.usage`) is invalid and would fail at runtime.
-    """
-    if not sp_client_id:
-        return ""
-    parts = table.split(".")
-    if len(parts) == 3:
-        catalog = parts[0]
-        schema_full = f"{parts[0]}.{parts[1]}"
-        return (
-            f"GRANT USE CATALOG ON CATALOG {catalog} TO `{sp_client_id}`;\n"
-            f"GRANT USE SCHEMA ON SCHEMA {schema_full} TO `{sp_client_id}`;\n"
-            f"GRANT SELECT ON TABLE {table} TO `{sp_client_id}`;"
-        )
-    return f"GRANT SELECT ON TABLE {table} TO `{sp_client_id}`;"
-
-
-def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
-    """Run all readiness checks as the SP and return a categorized result.
-
-    Caches for _READINESS_CACHE_TTL seconds. Since all checks run as SP,
-    the result does not vary by user — caching is safe.
-    """
-    import time
-    from concurrent.futures import TimeoutError as _FutureTimeout, as_completed
-    from server.routers.permissions import REQUIRED_PERMISSIONS
-
-    global _readiness_cache, _readiness_cache_ts
-
-    if not bypass_cache and _readiness_cache is not None:
-        age = time.monotonic() - _readiness_cache_ts
-        if age < _READINESS_CACHE_TTL:
-            return _readiness_cache
-
-    sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
-
-    # Determine warehouse source and ID
-    warehouse_env_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
-    http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
-    if warehouse_env_id:
-        warehouse_source = "app_resource"
-        warehouse_id = warehouse_env_id
-    elif http_path and http_path.lower() != "auto":
-        warehouse_source = "http_path"
-        _parts = http_path.strip("/").split("/")
-        warehouse_id = _parts[-1] if _parts and _parts[-1] != "warehouses" else ""
-    else:
-        warehouse_source = "none"
-        warehouse_id = ""
-
-    # Run table checks in a scoped pool (SDK calls — fast, no warehouse needed).
-    # Warehouse CAN_USE check runs in the persistent _wh_check_executor so that
-    # timing out on a cold warehouse doesn't block pool.shutdown(wait=True).
-    _WH_CHECK_TIMEOUT = 30  # seconds
-
-    # Submit warehouse check first (so it runs concurrently with table checks)
-    if warehouse_source != "none":
-        wh_future = _wh_check_executor.submit(_check_warehouse_can_use_sp)
-    else:
-        wh_future = None
-
-    with ThreadPoolExecutor(max_workers=len(REQUIRED_PERMISSIONS)) as pool:
-        table_futures = {
-            pool.submit(_check_table_as_sp, perm["table"]): perm
-            for perm in REQUIRED_PERMISSIONS
-        }
-        access_results: dict[str, tuple[bool, str]] = {}
-        for future in as_completed(table_futures):
-            perm = table_futures[future]
-            try:
-                access_results[perm["table"]] = future.result()
-            except Exception as e:
-                logger.warning(f"Table check future failed for {perm['table']}: {e}")
-                access_results[perm["table"]] = (False, str(e))
-
-    # Now collect warehouse result (table checks are done, so this is just
-    # waiting for the remaining warehouse check time, if any)
-    if wh_future is not None:
-        try:
-            wh_result = wh_future.result(timeout=_WH_CHECK_TIMEOUT)
-        except _FutureTimeout:
-            wh_result = (
-                False,
-                "Warehouse check timed out — warehouse may be starting up. "
-                "Try re-checking once the warehouse is running.",
-            )
-            logger.warning("Warehouse CAN_USE check timed out after %ds", _WH_CHECK_TIMEOUT)
-        except Exception as e:
-            wh_result = (False, str(e))
-    else:
-        wh_result = (False, "No warehouse configured")
-
-    # Warehouse check item
-    warehouse_item: dict[str, Any] = {
+def _build_warehouse_item(
+    wh_result: WarehouseCheckResult, warehouse_id: str, sp_client_id: str
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
         "name": "SQL Warehouse",
         "description": "Service principal can execute queries on the configured warehouse",
         "category": "core",
-        "source": warehouse_source,
-        "granted": wh_result[0],
+        "source": wh_result.source or "none",
+        "granted": wh_result.ok,
     }
-    if not wh_result[0]:
-        warehouse_item["error"] = wh_result[1]
+    if not wh_result.ok:
+        item["error"] = wh_result.message
         if sp_client_id and warehouse_id:
-            warehouse_item["fix_sql"] = (
-                f"GRANT CAN_USE ON WAREHOUSE `{warehouse_id}` TO `{sp_client_id}`;"
-            )
+            item["fix_sql"] = f"GRANT CAN_USE ON WAREHOUSE `{warehouse_id}` TO `{sp_client_id}`;"
+    return item
 
-    # Build categorized table checks
-    core_checks: list[dict] = []
-    enhanced_checks: list[dict] = []
 
-    for perm in REQUIRED_PERMISSIONS:
-        has_access, error_msg = access_results[perm["table"]]
-        is_core = perm["table"] in _CORE_TABLES
-        check: dict[str, Any] = {
-            "table": perm["table"],
-            "name": perm["name"],
-            "description": perm["description"],
-            "required": perm["required"],
-            "granted": has_access,
-            "category": "core" if is_core else "enhanced",
-        }
-        if not has_access:
-            check["fix_sql"] = _build_fix_sql(perm["table"], sp_client_id)
-            if error_msg:
-                check["error"] = error_msg
-        if is_core:
-            core_checks.append(check)
-        else:
-            enhanced_checks.append(check)
-
-    # Overall status
-    core_tables_pass = all(c["granted"] for c in core_checks)
-    warehouse_pass = warehouse_item["granted"]
-    enhanced_all_pass = all(c["granted"] for c in enhanced_checks)
-
+def _calc_overall(
+    core_tables_pass: bool,
+    warehouse_pass: bool,
+    enhanced_all_pass: bool,
+    core_checks: list[dict],
+) -> str:
     if core_tables_pass and warehouse_pass and enhanced_all_pass:
-        overall = "ready"
-    elif core_tables_pass and warehouse_pass:
-        overall = "core_ready"
-    elif core_tables_pass or any(c["granted"] for c in core_checks):
-        overall = "needs_action"
-    else:
-        overall = "not_ready"
+        return "ready"
+    if core_tables_pass and warehouse_pass:
+        return "core_ready"
+    if core_tables_pass or any(c["granted"] for c in core_checks):
+        return "needs_action"
+    return "not_ready"
 
-    result: dict[str, Any] = {
+
+def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
+    """Run all readiness checks as the SP and return a categorized result."""
+    from concurrent.futures import as_completed
+    from server.routers.permissions import REQUIRED_PERMISSIONS
+
+    global _table_readiness_cache, _table_readiness_cache_ts
+
+    if bypass_cache:
+        reset_readiness_caches()
+
+    sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
+    _, warehouse_id = _resolve_warehouse_config()
+
+    table_cache_valid = (
+        _table_readiness_cache is not None
+        and (time.monotonic() - _table_readiness_cache_ts) < _TABLE_CACHE_TTL
+    )
+    wh_cached = _get_cached_warehouse_check()
+
+    # Both caches fresh — merge and return immediately without any blocking calls.
+    if table_cache_valid and wh_cached is not None:
+        tc = _table_readiness_cache  # type: ignore[assignment]
+        wh_item = _build_warehouse_item(wh_cached, warehouse_id, sp_client_id)
+        overall = _calc_overall(
+            all(c["granted"] for c in tc["core"]),
+            wh_item["granted"],
+            all(c["granted"] for c in tc["enhanced"]),
+            tc["core"],
+        )
+        return {
+            "overall": overall,
+            "warehouse": wh_item,
+            "core": tc["core"],
+            "enhanced": tc["enhanced"],
+            "sp_client_id": sp_client_id,
+        }
+
+    # Kick off the warehouse future before table checks so both run concurrently.
+    source, _ = _resolve_warehouse_config()
+    if source != "none" and wh_cached is None:
+        _get_or_start_warehouse_check_future()
+
+    if not table_cache_valid:
+        with ThreadPoolExecutor(max_workers=len(REQUIRED_PERMISSIONS)) as pool:
+            table_futures: dict = {
+                pool.submit(_check_table_as_sp, perm["table"]): perm
+                for perm in REQUIRED_PERMISSIONS
+            }
+            access_results: dict[str, tuple[bool, str, str]] = {}
+            for future in as_completed(table_futures):
+                perm = table_futures[future]
+                ok, msg, status = _safe_table_check_result(perm["table"], future)
+                access_results[perm["table"]] = (ok, msg, status)
+
+        core_checks: list[dict] = []
+        enhanced_checks: list[dict] = []
+        for perm in REQUIRED_PERMISSIONS:
+            ok, msg, _ = access_results[perm["table"]]
+            is_core = perm["table"] in _CORE_TABLES
+            check: dict[str, Any] = {
+                "table": perm["table"],
+                "name": perm["name"],
+                "description": perm["description"],
+                "required": perm["required"],
+                "granted": ok,
+                "category": "core" if is_core else "enhanced",
+            }
+            if not ok:
+                check["fix_sql"] = _build_fix_sql(perm["table"], sp_client_id)
+                if msg:
+                    check["error"] = msg
+            if is_core:
+                core_checks.append(check)
+            else:
+                enhanced_checks.append(check)
+
+        _table_readiness_cache = {
+            "core": core_checks,
+            "enhanced": enhanced_checks,
+            "sp_client_id": sp_client_id,
+        }
+        _table_readiness_cache_ts = time.monotonic()
+    else:
+        core_checks = _table_readiness_cache["core"]  # type: ignore[index]
+        enhanced_checks = _table_readiness_cache["enhanced"]  # type: ignore[index]
+
+    # Collect warehouse result — reuses the in-flight future started above.
+    wh_result = check_warehouse_readiness()
+    wh_item = _build_warehouse_item(wh_result, warehouse_id, sp_client_id)
+    overall = _calc_overall(
+        all(c["granted"] for c in core_checks),
+        wh_item["granted"],
+        all(c["granted"] for c in enhanced_checks),
+        core_checks,
+    )
+    return {
         "overall": overall,
-        "warehouse": warehouse_item,
+        "warehouse": wh_item,
         "core": core_checks,
         "enhanced": enhanced_checks,
         "sp_client_id": sp_client_id,
     }
-    _readiness_cache = result
-    _readiness_cache_ts = time.monotonic()
-    return result
+
+
+def shutdown_readiness_executor() -> None:
+    """Shut down the warehouse check executor on app shutdown."""
+    global _wh_check_inflight
+    with _wh_check_lock:
+        _wh_check_inflight = None
+    _wh_check_executor.shutdown(wait=False)
+    logger.info("Readiness executor shut down")
+
+
+def reset_readiness_caches() -> None:
+    """Clear all readiness caches. Used in tests and forced re-check."""
+    global _table_readiness_cache, _table_readiness_cache_ts, _wh_check_cache, _wh_check_inflight
+    with _wh_check_lock:
+        _table_readiness_cache = None
+        _table_readiness_cache_ts = 0.0
+        _wh_check_cache = None
+        _wh_check_inflight = None
 
 
 @router.get("/readiness")
 async def get_readiness(refresh: bool = False) -> dict[str, Any]:
     """Structured readiness report for the setup wizard and Settings → Permissions.
 
-    All system-table checks run as the service principal regardless of auth_mode
-    or request headers — the report reflects SP access, not the requesting user.
-    Cached for 5 minutes. Pass ?refresh=true to force a live re-check.
+    All checks run as the service principal regardless of auth_mode or request
+    headers.  Cached with status-appropriate TTLs.  Pass ?refresh=true to force
+    a live re-check.
     """
     import asyncio as _asyncio
     loop = _asyncio.get_running_loop()

@@ -681,6 +681,11 @@ async def lifespan(app: FastAPI):
     scheduler_task = asyncio.create_task(_daily_mv_refresh_loop())
     yield
     scheduler_task.cancel()
+    try:
+        from server.routers.setup import shutdown_readiness_executor
+        shutdown_readiness_executor()
+    except Exception as _e:
+        logger.warning("Readiness executor shutdown failed (non-fatal): %s", _e)
 
 
 app = FastAPI(

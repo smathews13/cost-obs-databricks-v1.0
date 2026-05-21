@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { ReadinessChecks } from "./settings/ReadinessChecks";
+import { ReadinessChecks, normalizeReadinessResult } from "./settings/ReadinessChecks";
 import type { ReadinessResult } from "./settings/ReadinessChecks";
 
 interface SetupWizardProps {
@@ -189,7 +189,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
       const url = forceRefresh ? "/api/setup/readiness?refresh=true" : "/api/setup/readiness";
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setReadiness(await res.json());
+      setReadiness(normalizeReadinessResult(await res.json()));
     } catch (e) {
       setReadinessError(`Failed to check system readiness: ${e}`);
     } finally {

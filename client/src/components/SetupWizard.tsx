@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import { ReadinessChecks } from "./settings/ReadinessChecks";
+import type { ReadinessResult } from "./settings/ReadinessChecks";
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -17,28 +19,6 @@ interface CloudData {
   host: string;
 }
 
-interface PermissionEntry {
-  table: string;
-  name: string;
-  description: string;
-  required: boolean;
-  granted: boolean;
-}
-
-interface PermissionsData {
-  permissions: PermissionEntry[];
-  summary: {
-    total: number;
-    granted: number;
-    required_count: number;
-    required_granted: number;
-    all_required_granted: boolean;
-    ready_to_use: boolean;
-  };
-  user: { email: string; name: string };
-  sp: { client_id: string; display_name: string };
-  help_url: string;
-}
 
 interface SetupStatus {
   catalog: string;
@@ -164,7 +144,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [step, setStep] = useState<WizardStep>("welcome");
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [cloud, setCloud] = useState<CloudData | null>(null);
-  const [permissions, setPermissions] = useState<PermissionsData | null>(null);
+  const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [grantRunning, setGrantRunning] = useState(false);
+  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[] } | null>(null);
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -199,20 +182,39 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     loadData();
   }, []);
 
-  const loadPermissions = useCallback(async (forceRefresh = false) => {
+  const loadReadiness = useCallback(async (forceRefresh = false) => {
     setLoading(true);
-    setError(null);
+    setReadinessError(null);
     try {
-      const url = forceRefresh ? "/api/permissions/check?refresh=true" : "/api/permissions/check";
+      const url = forceRefresh ? "/api/setup/readiness?refresh=true" : "/api/setup/readiness";
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setPermissions(await res.json());
+      setReadiness(await res.json());
     } catch (e) {
-      setError(`Failed to check permissions: ${e}`);
+      setReadinessError(`Failed to check system readiness: ${e}`);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleAutoGrant = useCallback(async () => {
+    setGrantRunning(true);
+    setGrantResult(null);
+    try {
+      const res = await fetch("/api/setup/grant-sp-system-access", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      const ok = body.ok ?? res.ok;
+      const message = ok
+        ? `${body.applied ?? 0} grant(s) applied for ${body.sp_client_id ?? "SP"}.`
+        : (body.errors?.[0] ?? body.detail ?? "Grant run completed with errors — check server logs.");
+      setGrantResult({ ok, message, errors: body.errors });
+      if (ok) setTimeout(() => loadReadiness(true), 800);
+    } catch {
+      setGrantResult({ ok: false, message: "Network error running grants." });
+    } finally {
+      setGrantRunning(false);
+    }
+  }, [loadReadiness]);
 
   const pollSetupStatus = useCallback(async () => {
     try {
@@ -318,7 +320,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     if (idx < STEPS.length - 1) {
       const next = STEPS[idx + 1];
       setStep(next);
-      if (next === "permissions") loadPermissions();
+      if (next === "permissions") loadReadiness();
       if (next === "create-tables") pollSetupStatus();
       if (next === "workspace-filter") loadWorkspaces();
     }
@@ -395,7 +397,15 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
           )}
 
           {step === "permissions" && (
-            <PermissionsStep permissions={permissions} loading={loading} onRetry={() => loadPermissions(true)} />
+            <WizardPermissionsStep
+              readiness={readiness}
+              loading={loading}
+              fetchError={readinessError}
+              onRecheck={loadReadiness}
+              onAutoGrant={handleAutoGrant}
+              autoGrantRunning={grantRunning}
+              autoGrantResult={grantResult}
+            />
           )}
 
           {step === "create-tables" && (
@@ -491,7 +501,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             ) : step === "permissions" ? (
               <button
                 onClick={goNext}
-                disabled={loading || (permissions != null && !permissions.summary.all_required_granted)}
+                disabled={loading || (readiness != null && readiness.overall !== "ready" && readiness.overall !== "core_ready")}
                 className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
@@ -689,144 +699,48 @@ function StorageLocationStep({ config }: { config: ConfigData | null }) {
   );
 }
 
-function PermissionsStep({ permissions, loading, onRetry }: { permissions: PermissionsData | null; loading: boolean; onRetry: () => void }) {
-  const [grantRunning, setGrantRunning] = useState(false);
-  const [grantResult, setGrantResult] = useState<{ ok: boolean; applied: number; failed: number; errors: string[] } | null>(null);
+interface WizardPermissionsStepProps {
+  readiness: ReadinessResult | null;
+  loading: boolean;
+  fetchError: string | null;
+  onRecheck: (forceRefresh?: boolean) => void;
+  onAutoGrant: () => Promise<void>;
+  autoGrantRunning: boolean;
+  autoGrantResult: { ok: boolean; message: string; errors?: string[] } | null;
+}
 
-  const applyGrants = async () => {
-    setGrantRunning(true);
-    setGrantResult(null);
-    try {
-      const res = await fetch("/api/setup/grant-sp-system-access", { method: "POST" });
-      const body = await res.json().catch(() => ({}));
-      setGrantResult({
-        ok: body.ok ?? res.ok,
-        applied: body.applied ?? 0,
-        failed: body.failed ?? 0,
-        errors: body.errors ?? [],
-      });
-      if (body.ok || res.ok) {
-        setTimeout(() => onRetry(), 800);
-      }
-    } catch {
-      setGrantResult({ ok: false, applied: 0, failed: 1, errors: ["Network error — check server logs"] });
-    } finally {
-      setGrantRunning(false);
-    }
-  };
-
-  if (loading) return <LoadingSpinner text="Checking permissions and setting up — this could take a minute" />;
-
-  if (!permissions) return <div className="text-sm text-gray-500">Failed to load permissions.</div>;
-
-  const { summary } = permissions;
-  const missingRequired = permissions.permissions.filter((p) => !p.granted && p.required);
+function WizardPermissionsStep({
+  readiness,
+  loading,
+  fetchError,
+  onRecheck,
+  onAutoGrant,
+  autoGrantRunning,
+  autoGrantResult,
+}: WizardPermissionsStepProps) {
+  const coreReady = readiness != null &&
+    (readiness.overall === "ready" || readiness.overall === "core_ready");
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600">
-          System table access required for cost analytics. Results shown as your current user identity.
-        </p>
-        <button onClick={onRetry} className="text-xs text-blue-600 hover:underline">Recheck</button>
-      </div>
-
-      {summary.all_required_granted ? (
-        <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">
-          All required permissions granted ({summary.granted}/{summary.total} total).
-        </div>
-      ) : (
-        <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
-          Missing {summary.required_count - summary.required_granted} required permission(s) for the app's service principal.
-          {missingRequired.some(p => p.table.startsWith("system.billing")) && (
-            <span className="block mt-1 text-xs">Billing tables require metastore admin access to grant — your own account may already have access, but the SP needs explicit grants for nightly data refresh.</span>
-          )}
+      <p className="text-sm text-gray-600">
+        Verifying the app's service principal has access to required Databricks system tables.
+        Core tables (billing) must pass before you can continue.
+      </p>
+      {!loading && coreReady && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">
+          Core access confirmed — you can proceed to Create Tables.
         </div>
       )}
-
-      <div className="max-h-48 space-y-1 overflow-y-auto">
-        {permissions.permissions.map((p) => (
-          <div key={p.table} className="flex items-center justify-between rounded px-3 py-1.5 text-sm">
-            <div className="flex items-center gap-2">
-              {p.granted ? (
-                <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-              ) : (
-                <svg className="h-4 w-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              )}
-              <span className="font-mono text-xs">{p.table}</span>
-              {p.required && <span className="text-xs text-red-500">*</span>}
-            </div>
-            <span className={`text-xs ${p.granted ? "text-green-600" : "text-red-500"}`}>
-              {p.granted ? "Granted" : "Missing"}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {!summary.all_required_granted && (
-        <div className="space-y-3">
-          {/* Auto-apply */}
-          <div className="rounded-lg border border-[#FF3621]/20 bg-orange-50 p-3 space-y-2">
-            <p className="text-xs font-medium text-gray-800">Apply SP grants automatically</p>
-            <p className="text-[11px] text-gray-600">
-              Grants the app's service principal access to all required system tables using your current identity.
-              You must be a <strong>metastore admin</strong> for this to succeed.
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={applyGrants}
-                disabled={grantRunning}
-                className="rounded-md bg-[#FF3621] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#e02e1a] disabled:opacity-50 transition-colors"
-              >
-                {grantRunning ? "Applying grants…" : "Apply SP Grants"}
-              </button>
-              {grantResult && (
-                <span className={`text-[11px] font-medium ${grantResult.ok ? "text-green-700" : "text-red-600"}`}>
-                  {grantResult.ok
-                    ? `✓ ${grantResult.applied} grant(s) applied — rechecking…`
-                    : `${grantResult.failed} failed. ${grantResult.errors[0] ?? "Check server logs."}`}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* SQL fallback */}
-          <details className="rounded-lg border border-gray-200 bg-gray-50 text-xs">
-            <summary className="cursor-pointer px-3 py-2 font-medium text-gray-600 hover:text-gray-800">
-              Manual SQL (if you prefer to run grants yourself)
-            </summary>
-            <div className="border-t border-gray-200 px-3 py-2">
-              <pre className="overflow-x-auto text-xs text-gray-800">
-                {(() => {
-                  const userEmail = permissions.user.email;
-                  const spName = permissions.sp?.display_name || permissions.sp?.client_id || "app-service-principal";
-                  const principals = userEmail && spName && userEmail !== spName
-                    ? `\`${userEmail}\`, \`${spName}\``
-                    : `\`${spName || userEmail}\``;
-                  const lines: string[] = [];
-                  const seenCatalogs = new Set<string>();
-                  const seenSchemas = new Set<string>();
-                  for (const p of missingRequired) {
-                    const parts = p.table.split(".");
-                    const catalog = parts[0];
-                    const schema = parts.slice(0, 2).join(".");
-                    if (!seenCatalogs.has(catalog)) {
-                      lines.push(`GRANT USE CATALOG ON CATALOG ${catalog} TO ${principals};`);
-                      seenCatalogs.add(catalog);
-                    }
-                    if (!seenSchemas.has(schema)) {
-                      lines.push(`GRANT USE SCHEMA ON SCHEMA ${schema} TO ${principals};`);
-                      seenSchemas.add(schema);
-                    }
-                    lines.push(`GRANT SELECT ON TABLE ${p.table} TO ${principals};`);
-                  }
-                  return lines.join("\n");
-                })()}
-              </pre>
-            </div>
-          </details>
-        </div>
-      )}
+      <ReadinessChecks
+        result={readiness}
+        loading={loading}
+        fetchError={fetchError}
+        onRecheck={onRecheck}
+        onAutoGrant={onAutoGrant}
+        autoGrantRunning={autoGrantRunning}
+        autoGrantResult={autoGrantResult}
+      />
     </div>
   );
 }

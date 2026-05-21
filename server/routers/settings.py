@@ -274,20 +274,49 @@ def _mask_connection(conn: dict) -> dict:
     return masked
 
 
+def _get_git_sha() -> str:
+    """Return the current git commit SHA (short form). Empty string if unavailable."""
+    try:
+        import subprocess as _sp
+        sha = _sp.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=_sp.DEVNULL,
+            cwd=os.path.dirname(__file__),
+        ).decode().strip()
+        return sha
+    except Exception:
+        return os.getenv("COMMIT_SHA", "")
+
+
 @router.get("/config")
 async def get_app_config():
-    """Return current app configuration: warehouse, identity, and storage location."""
+    """Return current app configuration: warehouse, identity, storage location, and version."""
     from server.db import get_catalog_schema, get_workspace_client
 
     result: dict[str, Any] = {
         "warehouse": None,
         "identity": None,
         "storage_location": None,
+        "version": {"commit_sha": _get_git_sha()},
     }
 
-    # SQL Warehouse info
+    # Determine warehouse source — Apps resource binding preferred over manual env var
+    warehouse_id_resource = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
-    warehouse_id = http_path.split("/")[-1] if http_path else None
+
+    if warehouse_id_resource:
+        warehouse_source = "app_resource"
+        warehouse_id = warehouse_id_resource
+    elif http_path and "/" in http_path:
+        warehouse_source = "http_path"
+        warehouse_id = http_path.rstrip("/").split("/")[-1]
+    elif http_path:
+        warehouse_source = "http_path"
+        warehouse_id = http_path
+    else:
+        warehouse_source = "none"
+        warehouse_id = ""
+
     if warehouse_id:
         try:
             w = get_workspace_client()
@@ -297,10 +326,13 @@ async def get_app_config():
                 "name": wh.name,
                 "size": wh.cluster_size,
                 "state": str(wh.state.value) if wh.state else "UNKNOWN",
+                "source": warehouse_source,
             }
         except Exception as e:
             logger.warning(f"Could not fetch warehouse details: {e}")
-            result["warehouse"] = {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN"}
+            result["warehouse"] = {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN", "source": warehouse_source}
+    else:
+        result["warehouse"] = {"id": None, "name": None, "size": None, "state": "NOT_CONFIGURED", "source": "none"}
 
     # Service principal / current identity
     try:
@@ -313,10 +345,15 @@ async def get_app_config():
     except Exception as e:
         logger.warning(f"Could not fetch current identity: {e}")
 
-    # Storage location (catalog.schema)
+    # Storage location (catalog.schema) with source labels
     try:
         catalog, schema = get_catalog_schema()
-        result["storage_location"] = {"catalog": catalog, "schema": schema}
+        result["storage_location"] = {
+            "catalog": catalog,
+            "schema": schema,
+            "catalog_source": "env_var" if os.getenv("COST_OBS_CATALOG") else "default",
+            "schema_source": "env_var" if os.getenv("COST_OBS_SCHEMA") else "default",
+        }
     except Exception as e:
         logger.warning(f"Could not fetch catalog/schema: {e}")
 

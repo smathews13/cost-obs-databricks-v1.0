@@ -83,6 +83,12 @@ REQUIRED_PERMISSIONS = [
         "description": "Workspace audit events (optional)",
         "required": False,
     },
+    {
+        "table": "system.access.workspaces_latest",
+        "name": "Workspace Names",
+        "description": "Human-readable workspace names in billing views",
+        "required": False,
+    },
 ]
 
 

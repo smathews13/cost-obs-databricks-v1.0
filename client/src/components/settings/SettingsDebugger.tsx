@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+interface InstallReport {
+  version: { commit_sha: string };
+  warehouse: { id: string | null; source: string };
+  auth_mode: string;
+  storage_location: { catalog: string; schema: string };
+}
+
 // Module-level so state survives tab switches (useState resets on unmount)
 let _persistedRunKey = 0;
 let _persistedHasRun = false;
@@ -145,6 +152,12 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
   const [runKey, setRunKey] = useState(_persistedRunKey);
   const [hasRun, setHasRun] = useState(_persistedHasRun);
 
+  const { data: installReport } = useQuery<InstallReport>({
+    queryKey: ["settings-install-report"],
+    queryFn: () => fetch("/api/settings/config").then(r => r.json()).catch(() => null),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data: result, isFetching, isError } = useQuery<DiagResult>({
     queryKey: ["debug-run", runKey],
     queryFn: async () => {
@@ -183,6 +196,31 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
           Run a full check to identify issues and get step-by-step remediation instructions.
         </p>
       </div>
+
+      {/* Install report — static deployment snapshot */}
+      {installReport && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Deployment Info</p>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
+            {installReport.version?.commit_sha && (
+              <>
+                <dt className="text-gray-500">Git SHA</dt>
+                <dd><code className="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-700">{installReport.version.commit_sha}</code></dd>
+              </>
+            )}
+            <dt className="text-gray-500">Auth mode</dt>
+            <dd className="font-medium text-gray-700">{installReport.auth_mode ?? "service_principal"}</dd>
+            <dt className="text-gray-500">Warehouse source</dt>
+            <dd className="font-medium text-gray-700">{installReport.warehouse?.source ?? "—"}</dd>
+            <dt className="text-gray-500">Storage</dt>
+            <dd className="font-mono text-gray-700">
+              {installReport.storage_location
+                ? `${installReport.storage_location.catalog}.${installReport.storage_location.schema}`
+                : "—"}
+            </dd>
+          </dl>
+        </div>
+      )}
 
       {/* Run button + summary */}
       <div className="flex items-center gap-3 flex-wrap">

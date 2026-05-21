@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ReadinessChecks } from "./ReadinessChecks";
+import type { ReadinessResult } from "./ReadinessChecks";
 
 interface UserPermissions {
   admins: string[];
@@ -30,6 +32,7 @@ export function SettingsPermissions() {
   const [newConsumer, setNewConsumer] = useState("");
   const [grantRunning, setGrantRunning] = useState(false);
   const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[] } | null>(null);
+  const [readinessRefreshKey, setReadinessRefreshKey] = useState(0);
 
   const { data: permissions, isLoading } = useQuery<UserPermissions>({
     queryKey: ["user-permissions"],
@@ -46,6 +49,22 @@ export function SettingsPermissions() {
     staleTime: 10 * 1000,
     refetchInterval: 30 * 1000,
   });
+
+  const {
+    data: readiness,
+    isLoading: readinessLoading,
+    error: readinessQueryError,
+  } = useQuery<ReadinessResult>({
+    queryKey: ["settings-readiness", readinessRefreshKey],
+    queryFn: () =>
+      fetch(readinessRefreshKey > 0 ? "/api/setup/readiness?refresh=true" : "/api/setup/readiness")
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
+    staleTime: 4 * 60 * 1000,
+  });
+
+  const handleReadinessRecheck = (_forceRefresh?: boolean) => {
+    setReadinessRefreshKey(k => k + 1);
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: UserPermissions) => {
@@ -79,6 +98,7 @@ export function SettingsPermissions() {
         setGrantResult({ ok: true, message: detail });
         queryClient.invalidateQueries({ queryKey: ["settings-auth-status"] });
         await refetchAuth();
+        setTimeout(() => setReadinessRefreshKey(k => k + 1), 800);
       } else {
         const allErrors: string[] = body.errors ?? [];
         const summary = body.failed
@@ -136,6 +156,25 @@ export function SettingsPermissions() {
 
   return (
     <div className="space-y-6">
+
+      {/* ── System Readiness ── */}
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+          <h4 className="text-sm font-semibold text-gray-900">System Readiness</h4>
+          <span className="text-[11px] text-gray-400">SP access to Databricks system tables</span>
+        </div>
+        <div className="px-5 py-4">
+          <ReadinessChecks
+            result={readiness ?? null}
+            loading={readinessLoading}
+            fetchError={readinessQueryError ? String(readinessQueryError) : null}
+            onRecheck={handleReadinessRecheck}
+            onAutoGrant={runSpGrants}
+            autoGrantRunning={grantRunning}
+            autoGrantResult={grantResult}
+          />
+        </div>
+      </div>
 
       {/* ── App-level user/role permissions ── */}
       {saveMutation.isError && (

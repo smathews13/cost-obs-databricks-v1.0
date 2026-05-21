@@ -973,6 +973,192 @@ async def create_genie_space() -> dict[str, Any]:
 
 
 
+# ============================================================================
+# Readiness Checks
+# ============================================================================
+
+# Simple in-process readiness cache (5-min TTL, SP-only so no per-user variance)
+_readiness_cache: dict[str, Any] | None = None
+_readiness_cache_ts: float = 0.0
+_READINESS_CACHE_TTL = 300
+
+_CORE_TABLES = {"system.billing.usage", "system.billing.list_prices"}
+
+
+def _check_table_as_sp(table: str) -> tuple[bool, str]:
+    """Run check_table_access with the user token cleared (forces SP auth)."""
+    from server.routers.permissions import check_table_access
+    from server.db import _user_token
+    tok = _user_token.set("")
+    try:
+        return check_table_access(table)
+    finally:
+        _user_token.reset(tok)
+
+
+def _check_warehouse_can_use_sp() -> tuple[bool, str]:
+    """Check if the SP can execute queries on the configured warehouse."""
+    from server.db import execute_query, _user_token
+    tok = _user_token.set("")
+    try:
+        execute_query("SELECT current_user()", no_cache=True)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+    finally:
+        _user_token.reset(tok)
+
+
+def _build_fix_sql(table: str, sp_client_id: str) -> str:
+    """Return the exact GRANT statements needed to fix SP access to a system table."""
+    if not sp_client_id:
+        return ""
+    parts = table.split(".")
+    if len(parts) == 3:
+        catalog, schema_full = parts[0], f"{parts[0]}.{parts[1]}"
+        return (
+            f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{sp_client_id}`;\n"
+            f"GRANT USE SCHEMA ON SCHEMA `{schema_full}` TO `{sp_client_id}`;\n"
+            f"GRANT SELECT ON TABLE `{table}` TO `{sp_client_id}`;"
+        )
+    return f"GRANT SELECT ON TABLE `{table}` TO `{sp_client_id}`;"
+
+
+def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
+    """Run all readiness checks as the SP and return a categorized result.
+
+    Caches for _READINESS_CACHE_TTL seconds. Since all checks run as SP,
+    the result does not vary by user — caching is safe.
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from server.routers.permissions import REQUIRED_PERMISSIONS
+
+    global _readiness_cache, _readiness_cache_ts
+
+    if not bypass_cache and _readiness_cache is not None:
+        age = time.monotonic() - _readiness_cache_ts
+        if age < _READINESS_CACHE_TTL:
+            return _readiness_cache
+
+    sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
+
+    # Determine warehouse source and ID
+    warehouse_env_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
+    http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
+    if warehouse_env_id:
+        warehouse_source = "app_resource"
+        warehouse_id = warehouse_env_id
+    elif http_path and http_path.lower() != "auto":
+        warehouse_source = "http_path"
+        _parts = http_path.strip("/").split("/")
+        warehouse_id = _parts[-1] if _parts and _parts[-1] != "warehouses" else ""
+    else:
+        warehouse_source = "none"
+        warehouse_id = ""
+
+    # Run table checks + warehouse check in parallel, all as SP
+    with ThreadPoolExecutor(max_workers=len(REQUIRED_PERMISSIONS) + 1) as pool:
+        table_futures = {
+            pool.submit(_check_table_as_sp, perm["table"]): perm
+            for perm in REQUIRED_PERMISSIONS
+        }
+        if warehouse_source != "none":
+            wh_future = pool.submit(_check_warehouse_can_use_sp)
+        else:
+            wh_future = None
+
+        access_results: dict[str, tuple[bool, str]] = {}
+        for future in as_completed(table_futures):
+            perm = table_futures[future]
+            access_results[perm["table"]] = future.result()
+
+        if wh_future is not None:
+            wh_result = wh_future.result()
+        else:
+            wh_result = (False, "No warehouse configured")
+
+    # Warehouse check item
+    warehouse_item: dict[str, Any] = {
+        "name": "SQL Warehouse",
+        "description": "Service principal can execute queries on the configured warehouse",
+        "category": "core",
+        "source": warehouse_source,
+        "granted": wh_result[0],
+    }
+    if not wh_result[0]:
+        warehouse_item["error"] = wh_result[1]
+        if sp_client_id and warehouse_id:
+            warehouse_item["fix_sql"] = (
+                f"GRANT CAN_USE ON WAREHOUSE `{warehouse_id}` TO `{sp_client_id}`;"
+            )
+
+    # Build categorized table checks
+    core_checks: list[dict] = []
+    enhanced_checks: list[dict] = []
+
+    for perm in REQUIRED_PERMISSIONS:
+        has_access, error_msg = access_results[perm["table"]]
+        is_core = perm["table"] in _CORE_TABLES
+        check: dict[str, Any] = {
+            "table": perm["table"],
+            "name": perm["name"],
+            "description": perm["description"],
+            "required": perm["required"],
+            "granted": has_access,
+            "category": "core" if is_core else "enhanced",
+        }
+        if not has_access:
+            check["fix_sql"] = _build_fix_sql(perm["table"], sp_client_id)
+            if error_msg:
+                check["error"] = error_msg
+        if is_core:
+            core_checks.append(check)
+        else:
+            enhanced_checks.append(check)
+
+    # Overall status
+    core_tables_pass = all(c["granted"] for c in core_checks)
+    warehouse_pass = warehouse_item["granted"]
+    enhanced_all_pass = all(c["granted"] for c in enhanced_checks)
+
+    if core_tables_pass and warehouse_pass and enhanced_all_pass:
+        overall = "ready"
+    elif core_tables_pass and warehouse_pass:
+        overall = "core_ready"
+    elif core_tables_pass or any(c["granted"] for c in core_checks):
+        overall = "needs_action"
+    else:
+        overall = "not_ready"
+
+    result: dict[str, Any] = {
+        "overall": overall,
+        "warehouse": warehouse_item,
+        "core": core_checks,
+        "enhanced": enhanced_checks,
+        "sp_client_id": sp_client_id,
+    }
+    _readiness_cache = result
+    _readiness_cache_ts = time.monotonic()
+    return result
+
+
+@router.get("/readiness")
+async def get_readiness(refresh: bool = False) -> dict[str, Any]:
+    """Structured readiness report for the setup wizard and Settings → Permissions.
+
+    All system-table checks run as the service principal regardless of auth_mode
+    or request headers — the report reflects SP access, not the requesting user.
+    Cached for 5 minutes. Pass ?refresh=true to force a live re-check.
+    """
+    import asyncio as _asyncio
+    loop = _asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: _check_readiness_sync(bypass_cache=refresh),
+    )
+
+
 @router.get("/list-workspaces")
 async def list_workspaces() -> dict:
     """Return all workspaces with billing activity for the setup wizard workspace picker."""

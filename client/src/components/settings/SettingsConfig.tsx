@@ -3,9 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { AppSettings } from "../SettingsDialog";
 
 interface AppConfigInfo {
-  warehouse: { id: string; name: string | null; size: string | null; state: string } | null;
+  warehouse: { id: string; name: string | null; size: string | null; state: string; source?: "app_resource" | "http_path" | "none" } | null;
   identity: { display_name: string | null; user_name: string | null } | null;
-  storage_location: { catalog: string; schema: string } | null;
+  storage_location: { catalog: string; schema: string; catalog_source?: "env_var" | "default"; schema_source?: "env_var" | "default" } | null;
+  version?: { commit_sha: string };
 }
 
 interface SettingsConfigProps {
@@ -197,12 +198,20 @@ export function SettingsConfig({
         <>
           {/* SQL Warehouse */}
           <div>
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
               </svg>
               <h4 className="text-sm font-semibold text-gray-900">SQL Warehouse</h4>
-              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Fixed at deploy time</span>
+              {appConfig?.warehouse?.source === "app_resource" && (
+                <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-medium text-blue-700" title="Set via DATABRICKS_WAREHOUSE_ID app resource binding in app.yaml">App resource binding</span>
+              )}
+              {appConfig?.warehouse?.source === "http_path" && (
+                <span className="inline-flex items-center rounded-full bg-gray-100 border border-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600" title="Set via DATABRICKS_HTTP_PATH env var">DATABRICKS_HTTP_PATH</span>
+              )}
+              {(!appConfig?.warehouse?.source || appConfig.warehouse.source === "none") && (
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Fixed at deploy time</span>
+              )}
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-3">
               {appConfig?.warehouse ? (
@@ -377,16 +386,38 @@ export function SettingsConfig({
               {catalogLoading ? (
                 <div className="text-xs text-gray-500">Loading...</div>
               ) : (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-gray-500">Catalog</span>
-                  <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
-                    {catalogInfo?.catalog ?? appConfig?.storage_location?.catalog ?? "—"}
-                  </span>
-                  <span className="text-gray-300">·</span>
-                  <span className="text-xs text-gray-500">Schema</span>
-                  <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
-                    {catalogInfo?.schema ?? appConfig?.storage_location?.schema ?? "—"}
-                  </span>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-gray-500 w-10 shrink-0">Catalog</span>
+                    <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
+                      {catalogInfo?.catalog ?? appConfig?.storage_location?.catalog ?? "—"}
+                    </span>
+                    {appConfig?.storage_location?.catalog_source === "env_var" && (
+                      <span className="text-[10px] text-gray-400" title="Set via DATABRICKS_UC_CATALOG environment variable">env var</span>
+                    )}
+                    {appConfig?.storage_location?.catalog_source === "default" && (
+                      <span className="text-[10px] text-gray-400">default (main)</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-gray-500 w-10 shrink-0">Schema</span>
+                    <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
+                      {catalogInfo?.schema ?? appConfig?.storage_location?.schema ?? "—"}
+                    </span>
+                    {appConfig?.storage_location?.schema_source === "env_var" && (
+                      <span className="text-[10px] text-gray-400" title="Set via DATABRICKS_UC_SCHEMA environment variable">env var</span>
+                    )}
+                    {appConfig?.storage_location?.schema_source === "default" && (
+                      <span className="text-[10px] text-gray-400">default (cost_observability)</span>
+                    )}
+                  </div>
+                  {appConfig?.version?.commit_sha && (
+                    <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                      <span className="text-xs text-gray-500 w-10 shrink-0">Deploy</span>
+                      <code className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-mono text-gray-600">{appConfig.version.commit_sha}</code>
+                      <span className="text-[10px] text-gray-400">git SHA</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

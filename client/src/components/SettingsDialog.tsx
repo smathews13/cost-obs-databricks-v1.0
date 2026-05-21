@@ -137,9 +137,10 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
 
   // ── Queries ──────────────────────────────────────────────────────────
   const { data: appConfig, isLoading: configLoading } = useQuery<{
-    warehouse: { id: string; name: string | null; size: string | null; state: string } | null;
+    warehouse: { id: string; name: string | null; size: string | null; state: string; source?: "app_resource" | "http_path" | "none" } | null;
     identity: { display_name: string | null; user_name: string | null } | null;
-    storage_location: { catalog: string; schema: string } | null;
+    storage_location: { catalog: string; schema: string; catalog_source?: "env_var" | "default"; schema_source?: "env_var" | "default" } | null;
+    version?: { commit_sha: string };
   }>({
     queryKey: ["app-config"],
     queryFn: async () => {

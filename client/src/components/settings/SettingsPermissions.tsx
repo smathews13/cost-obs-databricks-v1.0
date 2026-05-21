@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReadinessChecks, normalizeReadinessResult } from "./ReadinessChecks";
 import type { ReadinessResult } from "./ReadinessChecks";
+import { READINESS_QUERY_KEY } from "@/hooks/useFeatureAvailability";
 
 interface UserPermissions {
   admins: string[];
@@ -64,6 +65,7 @@ export function SettingsPermissions() {
   });
 
   const handleReadinessRecheck = (_forceRefresh?: boolean) => {
+    queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
     setReadinessRefreshKey(k => k + 1);
   };
 
@@ -98,6 +100,7 @@ export function SettingsPermissions() {
           : `Grants applied for ${body.sp_client_id}.`;
         setGrantResult({ ok: true, message: detail });
         queryClient.invalidateQueries({ queryKey: ["settings-auth-status"] });
+        queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
         await refetchAuth();
         setTimeout(() => setReadinessRefreshKey(k => k + 1), 800);
       } else {

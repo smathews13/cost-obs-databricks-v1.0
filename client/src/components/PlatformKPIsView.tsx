@@ -1,10 +1,10 @@
 import { useState, useEffect, memo } from "react";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import type { PlatformKPIsResponse, SpendAnomaliesResponse } from "@/types/billing";
 import { SpendAnomalies } from "@/components/SpendAnomalies";
 import { KPITrendModal } from "@/components/KPITrendModal";
 import { formatNumber, formatBytes, formatDurationSeconds } from "@/utils/formatters";
-import { normalizeReadinessResult } from "@/components/settings/ReadinessChecks";
+import { useFeatureAvailability } from "@/hooks/useFeatureAvailability";
 
 interface PlatformKPIsViewProps {
   data: PlatformKPIsResponse | undefined;
@@ -106,29 +106,12 @@ const PLATFORM_KPI_KEYS = [
 export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoading, startDate, endDate, enableAIFeatures = true, workspaceIds }: PlatformKPIsViewProps) {
   const queryClient = useQueryClient();
 
-  // Fetch readiness once to gate feature cards that depend on specific system tables.
-  // Long staleTime avoids repeated calls; retry=false avoids noise if the endpoint is slow.
-  const { data: readiness } = useQuery({
-    queryKey: ["setup-readiness"],
-    queryFn: () =>
-      fetch("/api/setup/readiness")
-        .then(r => r.ok ? r.json() : null)
-        .then(normalizeReadinessResult)
-        .catch(() => null),
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
+  // Per-feature availability from the shared hook (caches under READINESS_QUERY_KEY).
+  const { tableGranted } = useFeatureAvailability();
 
-  // Derive per-feature availability from readiness. undefined = unknown (don't block rendering).
-  // false = explicitly denied → show unavailable state instead of a potentially-fake 0.
-  const allReadinessChecks = [...(readiness?.core ?? []), ...(readiness?.enhanced ?? [])];
-  const tableGranted = (table: string): boolean | undefined =>
-    allReadinessChecks.find(c => c.table === table)?.granted;
-
-  const lakeflowGranted    = tableGranted("system.lakeflow.pipelines");
-  const computeGranted     = tableGranted("system.compute.clusters");
-  const servingGranted     = tableGranted("system.serving.served_entities");
+  const lakeflowGranted     = tableGranted("system.lakeflow.pipelines");
+  const computeGranted      = tableGranted("system.compute.clusters");
+  const servingGranted      = tableGranted("system.serving.served_entities");
   const queryHistoryGranted = tableGranted("system.query.history");
 
   // Only suppress a card when the dependency is **explicitly** denied, not when unknown.

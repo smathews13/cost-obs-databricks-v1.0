@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { formatIdentity } from "@/utils/identity";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { useFeatureAvailability } from "@/hooks/useFeatureAvailability";
 import {
   AreaChart,
   Area,
@@ -94,6 +95,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const [queriesPage, setQueriesPage] = useState(1);
   const [showHistoricalQueries, setShowHistoricalQueries] = useState(false);
   const [setupStatus, setSetupStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const { tableGranted } = useFeatureAvailability();
+  const queryHistoryGranted = tableGranted("system.query.history");
   const [setupMessage, setSetupMessage] = useState<string>("");
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
@@ -516,6 +519,23 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
           )}
 
           {/* Summary Cards */}
+          {(() => {
+            // Show unavailable state instead of fake 0 when query.history is explicitly denied
+            // or when summary data is null (no data returned despite query succeeding).
+            const summaryUnavailable = queryHistoryGranted === false
+              ? "query.history grant required — run SP grants to fix"
+              : (summary == null && hasQueryData ? "No summary data returned" : undefined);
+
+            if (summaryUnavailable) {
+              return (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                  <span className="font-medium text-gray-700">Query summary unavailable</span>
+                  <span className="ml-2">— {summaryUnavailable}</span>
+                </div>
+              );
+            }
+
+            return (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_queries", label: "Total Query Spend"})}>
               <div className="flex items-center">
@@ -527,10 +547,10 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 <div className="ml-4">
                   <div className="text-sm font-medium text-gray-500">Total Query Spend</div>
                   <div className="text-2xl font-semibold text-gray-900">
-                    {formatCurrency(summary?.total_spend || 0)}
+                    {summary != null ? formatCurrency(summary.total_spend ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    {formatNumber(summary?.total_dbus || 0)} DBUs
+                    {summary != null ? `${formatNumber(summary.total_dbus ?? 0)} DBUs` : "—"}
                   </div>
                   <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>
@@ -546,10 +566,10 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 <div className="ml-4">
                   <div className="text-sm font-medium text-gray-500">Total Queries</div>
                   <div className="text-2xl font-semibold text-gray-900">
-                    {formatNumber(summary?.total_queries || 0)}
+                    {summary != null ? formatNumber(summary.total_queries ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    Avg: {formatCurrency(summary?.avg_cost_per_query || 0)}/query
+                    {summary != null ? `Avg: ${formatCurrency(summary.avg_cost_per_query ?? 0)}/query` : "—"}
                   </div>
                   <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>
@@ -565,10 +585,10 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 <div className="ml-4">
                   <div className="text-sm font-medium text-gray-500">Unique Users</div>
                   <div className="text-2xl font-semibold text-gray-900">
-                    {formatNumber(summary?.unique_users || 0)}
+                    {summary != null ? formatNumber(summary.unique_users ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    Across {formatNumber(summary?.unique_warehouses || 0)} warehouses
+                    {summary != null ? `Across ${formatNumber(summary.unique_warehouses ?? 0)} warehouses` : "—"}
                   </div>
                   <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>
@@ -584,7 +604,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 <div className="ml-4">
                   <div className="text-sm font-medium text-gray-500">Avg Query Duration</div>
                   <div className="text-2xl font-semibold text-gray-900">
-                    {formatDuration(summary?.avg_duration_seconds || 0)}
+                    {summary != null ? formatDuration(summary.avg_duration_seconds ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
                     Per query execution
@@ -594,6 +614,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
               </div>
             </div>
           </div>
+            );
+          })()}
 
           {selectedKPI && startDate && endDate && (
             <KPITrendModal

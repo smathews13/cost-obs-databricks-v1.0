@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppSettings } from "../SettingsDialog";
+import { READINESS_QUERY_KEY } from "@/hooks/useFeatureAvailability";
 
 interface AppConfigInfo {
   warehouse: { id: string; name: string | null; size: string | null; state: string; source?: "app_resource" | "http_path" | "none" } | null;
@@ -37,6 +38,7 @@ export function SettingsConfig({
   localSettings,
   updateSetting,
 }: SettingsConfigProps) {
+  const queryClient = useQueryClient();
   const [mvRefreshing, setMvRefreshing] = useState(false);
   const [lookbackDays, setLookbackDays] = useState(180);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -118,6 +120,8 @@ export function SettingsConfig({
         clearInterval(pollIntervalRef.current!);
         pollIntervalRef.current = null;
         setMvRefreshing(false);
+        // Rebuild complete — readiness state may have changed (tables now exist).
+        queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
       }
     }, 30_000);
   }
@@ -141,6 +145,7 @@ export function SettingsConfig({
       setWipePending(false);
       setWipeConfirmText("");
       refetchTables();
+      queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
     }
   };
 

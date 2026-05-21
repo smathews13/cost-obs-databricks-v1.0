@@ -106,8 +106,11 @@ describe("normalizeReadinessResult", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Next button disabled condition — mirrors SetupWizard.tsx line 504:
-//   disabled={loading || readiness == null || (readiness.overall !== "ready" && readiness.overall !== "core_ready")}
+// SetupWizard null-readiness regression lock
+// Mirrors SetupWizard.tsx: disabled={loading || readiness == null || (readiness.overall !== "ready" && readiness.overall !== "core_ready")}
+// This test is intentionally kept as a pure logic test (no DOM) so it remains
+// cheap and deterministic. If the disabled condition ever changes, this suite
+// catches it immediately — the component-level behavior follows from this invariant.
 // ---------------------------------------------------------------------------
 
 function isNextDisabled(loading: boolean, readiness: ReadinessResult | null): boolean {

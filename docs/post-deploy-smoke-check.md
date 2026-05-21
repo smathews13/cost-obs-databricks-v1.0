@@ -1,6 +1,22 @@
-# Post-Deploy Smoke Check
+# Post-Deploy Smoke Check — Release Criteria
 
-Run this after every deploy (git push → Databricks Apps rebuild). Takes ~5 minutes.
+**This is a required gate for every deploy.** A deploy is not complete until this checklist is signed off with one of three outcomes: **pass**, **degraded but acceptable** (enhanced tables missing — core metrics OK), or **blocked** (stop, do not promote to production users).
+
+Estimated time: ~5 minutes.
+
+---
+
+## Release sign-off block
+
+Copy this into your deploy PR or release notes before marking the deploy complete:
+
+```text
+Post-deploy smoke check: [ ] pass  [ ] degraded-acceptable  [ ] blocked
+Checked by: ___________  Date: ___________
+Readiness overall: _______  Warehouse granted: _______
+KPI cards show real values: [ ] yes  [ ] no
+Notes: ___________
+```
 
 ---
 

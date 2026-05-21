@@ -175,7 +175,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [allWorkspaces, setAllWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [selectedWsIds, setSelectedWsIds] = useState<Set<string>>(new Set());
   const [wsSaved, setWsSaved] = useState(false);
-  const [savedEnvVar, setSavedEnvVar] = useState<string | null>(null);
+  const [wsLocked, setWsLocked] = useState(false);
+  const [lockedWsIds, setLockedWsIds] = useState<string[]>([]);
 
   // Load initial data
   useEffect(() => {
@@ -271,9 +272,21 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const loadWorkspaces = useCallback(async () => {
     setWsLoading(true);
     try {
-      const res = await fetch("/api/setup/list-workspaces");
-      if (res.ok) {
-        const data = await res.json();
+      const [filterRes, listRes] = await Promise.all([
+        fetch("/api/setup/workspace-filter"),
+        fetch("/api/setup/list-workspaces"),
+      ]);
+      if (filterRes.ok) {
+        const filterData = await filterRes.json();
+        if (filterData.locked) {
+          setWsLocked(true);
+          setLockedWsIds(filterData.workspace_ids ?? []);
+          setWsSaved(true);
+          return;
+        }
+      }
+      if (listRes.ok) {
+        const data = await listRes.json();
         setAllWorkspaces(data.workspaces ?? []);
         // Pre-select all by default
         setSelectedWsIds(new Set((data.workspaces ?? []).map((w: { id: string }) => w.id)));
@@ -286,6 +299,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   }, []);
 
   const saveWorkspaceFilter = async () => {
+    if (wsLocked) return;
     const ids = Array.from(selectedWsIds);
     try {
       const res = await fetch("/api/setup/save-workspace-filter", {
@@ -293,11 +307,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspace_ids: ids }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setSavedEnvVar(ids.length === 0 ? null : `COST_OBS_WORKSPACES=${data.env_var_value}`);
-        setWsSaved(true);
-      }
+      if (res.ok) setWsSaved(true);
     } catch {
       // ignore — not fatal
     }
@@ -408,7 +418,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               onSelectAll={() => setSelectedWsIds(new Set(allWorkspaces.map((w) => w.id)))}
               onClearAll={() => setSelectedWsIds(new Set())}
               saved={wsSaved}
-              savedEnvVar={savedEnvVar}
+              locked={wsLocked}
+              lockedIds={lockedWsIds}
             />
           )}
 
@@ -437,14 +448,16 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               </button>
             ) : step === "workspace-filter" ? (
               <div className="flex items-center gap-2">
+                {!wsLocked && (
+                  <button
+                    onClick={goNext}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    Skip
+                  </button>
+                )}
                 <button
-                  onClick={goNext}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  Skip
-                </button>
-                <button
-                  onClick={async () => { await saveWorkspaceFilter(); goNext(); }}
+                  onClick={async () => { if (!wsLocked) await saveWorkspaceFilter(); goNext(); }}
                   disabled={wsLoading}
                   className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
                 >
@@ -894,7 +907,8 @@ function WorkspaceFilterStep({
   onSelectAll,
   onClearAll,
   saved,
-  savedEnvVar,
+  locked,
+  lockedIds,
 }: {
   loading: boolean;
   workspaces: { id: string; name: string }[];
@@ -903,14 +917,45 @@ function WorkspaceFilterStep({
   onSelectAll: () => void;
   onClearAll: () => void;
   saved: boolean;
-  savedEnvVar: string | null;
+  locked: boolean;
+  lockedIds: string[];
 }) {
   if (loading) return <LoadingSpinner text="Loading workspaces..." />;
+
+  if (locked) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-center gap-2 mb-1">
+            <svg className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            <span className="text-sm font-semibold text-amber-800">Workspace filter already configured</span>
+          </div>
+          <p className="text-xs text-amber-700">
+            This setting was locked during initial setup and cannot be changed. To modify the workspace filter, delete this app deployment and run setup again.
+          </p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+          <div className="text-xs font-medium text-gray-500 mb-2">Currently scoped to:</div>
+          {lockedIds.length === 0 ? (
+            <span className="text-sm text-gray-700">All workspaces</span>
+          ) : (
+            <div className="space-y-1">
+              {lockedIds.map((id) => (
+                <div key={id} className="text-xs font-mono text-gray-700 bg-white rounded border border-gray-200 px-2 py-1">{id}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
-        Choose which workspaces this app should display data for. You can filter to a subset of your account's workspaces, or show all.
+        Choose which workspaces this app should display data for. This is a one-time choice — it cannot be changed after setup.
       </p>
 
       {workspaces.length === 0 ? (
@@ -957,10 +1002,9 @@ function WorkspaceFilterStep({
         </>
       )}
 
-      {saved && savedEnvVar && (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3 space-y-1">
-          <p className="text-xs font-medium text-green-800">Saved! To make this permanent across redeploys, set this environment variable:</p>
-          <code className="block text-xs font-mono text-green-700 bg-green-100 rounded px-2 py-1 break-all">{savedEnvVar}</code>
+      {saved && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2.5">
+          <p className="text-xs font-medium text-green-800">Workspace filter saved and locked. This setting persists across redeploys.</p>
         </div>
       )}
     </div>

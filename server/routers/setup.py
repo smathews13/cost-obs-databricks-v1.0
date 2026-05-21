@@ -1006,16 +1006,37 @@ async def list_workspaces() -> dict:
 
 @router.get("/workspace-filter")
 async def get_workspace_filter() -> dict:
-    """Return the current workspace filter configuration from settings file (Delta fallback on startup only)."""
+    """Return the current workspace filter and whether it is locked (already configured during setup)."""
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
     import re as _re
+    workspace_ids: list[str] = []
     try:
         with open(settings_path) as f:
             data = json.load(f)
         workspace_ids = [str(i) for i in data.get("workspace_ids", []) if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
     except (FileNotFoundError, json.JSONDecodeError):
-        workspace_ids = []
-    return {"workspace_ids": workspace_ids}
+        pass
+
+    # Locked = Delta table has a row (written on first save, survives redeploys)
+    locked = False
+    try:
+        from server.db import execute_query, get_catalog_schema
+        catalog, schema = get_catalog_schema()
+        rows = execute_query(
+            f"SELECT workspace_ids FROM `{catalog}`.`{schema}`.app_workspace_filter LIMIT 1",
+            no_cache=True,
+        )
+        if rows:
+            locked = True
+            if not workspace_ids and rows[0].get("workspace_ids"):
+                workspace_ids = [
+                    i.strip() for i in str(rows[0]["workspace_ids"]).split(",")
+                    if i.strip() and _re.match(r'^[a-zA-Z0-9_\-\.]+$', i.strip())
+                ]
+    except Exception:
+        pass
+
+    return {"workspace_ids": workspace_ids, "locked": locked}
 
 
 def restore_workspace_filter_from_delta() -> None:
@@ -1068,6 +1089,24 @@ async def save_workspace_filter(request: Request) -> dict:
     raw_ids: list = body.get("workspace_ids", [])
     valid_ids = [str(i) for i in raw_ids if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
     logger.info("save-workspace-filter: validated %d/%d ids (%.1fms)", len(valid_ids), len(raw_ids), (_time.monotonic() - t0) * 1000)
+
+    # Lock check — workspace filter is one-time, set during initial setup only
+    try:
+        from server.db import execute_query, get_catalog_schema
+        _catalog, _schema = get_catalog_schema()
+        _rows = execute_query(
+            f"SELECT COUNT(*) as cnt FROM `{_catalog}`.`{_schema}`.app_workspace_filter",
+            no_cache=True,
+        )
+        if _rows and int(_rows[0].get("cnt", 0)) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Workspace filter is already configured and cannot be changed after initial setup.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Table doesn't exist yet — first save, proceed normally
 
     # Write to file (fast path for running workers)
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")

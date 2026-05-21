@@ -29,7 +29,7 @@ beforeEach(() => {
 describe("SettingsDebugger — auth mode sourcing", () => {
   it("shows the auth_mode from /api/settings/auth-status, not a hardcoded default", async () => {
     // /api/settings/config returns a payload WITHOUT auth_mode
-    fetchMock.mockImplementation((input) => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/settings/config")) {
         return Promise.resolve(new Response(JSON.stringify({
@@ -62,7 +62,7 @@ describe("SettingsDebugger — auth mode sourcing", () => {
   });
 
   it("shows '—' when /api/settings/auth-status is unavailable", async () => {
-    fetchMock.mockImplementation((input) => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/settings/config")) {
         return Promise.resolve(new Response(JSON.stringify({

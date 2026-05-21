@@ -125,6 +125,7 @@ export function SettingsConfig({
   const [wipePending, setWipePending] = useState(false);
   const [wiping, setWiping] = useState(false);
   const [wipeResult, setWipeResult] = useState<{ ok: boolean; results: Record<string, string> } | null>(null);
+  const [wipeConfirmText, setWipeConfirmText] = useState("");
 
   const handleWipeMVs = async () => {
     setWiping(true);
@@ -138,6 +139,7 @@ export function SettingsConfig({
     } finally {
       setWiping(false);
       setWipePending(false);
+      setWipeConfirmText("");
       refetchTables();
     }
   };
@@ -650,48 +652,78 @@ export function SettingsConfig({
             )}
 
             {/* Drop all materialized views */}
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium text-red-800">Drop all materialized views</p>
-                  <p className="text-[11px] text-red-600 mt-0.5">
-                    Permanently deletes all {6} app-managed tables from your catalog. The dashboard will stop loading until you rebuild.
-                  </p>
-                </div>
-                {!wipePending ? (
-                  <button
-                    onClick={() => { setWipePending(true); setWipeResult(null); }}
-                    className="shrink-0 rounded border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
-                  >
-                    Drop Tables
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] text-red-700 font-medium">Are you sure?</span>
-                    <button
-                      onClick={handleWipeMVs}
-                      disabled={wiping}
-                      className="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-                    >
-                      {wiping ? "Dropping…" : "Confirm Drop"}
-                    </button>
-                    <button
-                      onClick={() => setWipePending(false)}
-                      className="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
+            {(() => {
+              const missingTables = tablesStatus?.tables?.filter(t => t.exists === false && !t.optional) ?? [];
+              const isDegraded = missingTables.length > 0;
+              const dropBlocked = isDegraded && !wipePending;
+              return (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium text-red-800">Drop all materialized views</p>
+                      <p className="text-[11px] text-red-600 mt-0.5">
+                        Permanently deletes all app-managed tables from your catalog. The dashboard will stop loading until you rebuild.
+                      </p>
+                      {isDegraded && (
+                        <p className="mt-1 text-[11px] text-red-700 font-medium">
+                          ⚠ {missingTables.length} table{missingTables.length !== 1 ? "s are" : " is"} already missing — dropping in this state will deepen the outage. Fix readiness issues first, or proceed with caution.
+                        </p>
+                      )}
+                    </div>
+                    {!wipePending ? (
+                      <button
+                        onClick={() => { setWipePending(true); setWipeResult(null); setWipeConfirmText(""); }}
+                        disabled={dropBlocked}
+                        title={dropBlocked ? "System is degraded — fix missing tables before dropping" : undefined}
+                        className="shrink-0 rounded border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Drop Tables
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => { setWipePending(false); setWipeConfirmText(""); }}
+                        className="shrink-0 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
-              {wipeResult && (
-                <div className={`mt-2 rounded px-2 py-1.5 text-[11px] ${wipeResult.ok ? "bg-green-50 text-green-700" : "bg-red-100 text-red-700"}`}>
-                  {wipeResult.ok
-                    ? "All tables dropped. Use Rebuild to recreate them."
-                    : `Some tables failed to drop: ${Object.entries(wipeResult.results).filter(([,v]) => v !== "dropped").map(([k]) => k).join(", ")}`}
+
+                  {wipePending && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-[11px] font-medium text-red-800">
+                        This will permanently delete all app-managed materialized views. Type <code className="rounded bg-red-100 px-1 font-mono">CONFIRM</code> to enable the drop button:
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={wipeConfirmText}
+                          onChange={e => setWipeConfirmText(e.target.value)}
+                          placeholder="Type CONFIRM"
+                          className="w-40 rounded border border-red-300 bg-white px-2 py-1 text-xs font-mono text-red-700 placeholder-red-300 focus:outline-none focus:ring-1 focus:ring-red-400"
+                          autoFocus
+                        />
+                        <button
+                          onClick={handleWipeMVs}
+                          disabled={wiping || wipeConfirmText !== "CONFIRM"}
+                          className="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {wiping ? "Dropping…" : "Confirm Drop"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {wipeResult && (
+                    <div className={`mt-2 rounded px-2 py-1.5 text-[11px] ${wipeResult.ok ? "bg-green-50 text-green-700" : "bg-red-100 text-red-700"}`}>
+                      {wipeResult.ok
+                        ? "All tables dropped. Use Rebuild to recreate them."
+                        : `Some tables failed to drop: ${Object.entries(wipeResult.results).filter(([,v]) => v !== "dropped").map(([k]) => k).join(", ")}`}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
 
           {/* Workspace Pool */}

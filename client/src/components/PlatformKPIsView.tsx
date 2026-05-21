@@ -1,9 +1,10 @@
 import { useState, useEffect, memo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import type { PlatformKPIsResponse, SpendAnomaliesResponse } from "@/types/billing";
 import { SpendAnomalies } from "@/components/SpendAnomalies";
 import { KPITrendModal } from "@/components/KPITrendModal";
 import { formatNumber, formatBytes, formatDurationSeconds } from "@/utils/formatters";
+import { normalizeReadinessResult } from "@/components/settings/ReadinessChecks";
 
 interface PlatformKPIsViewProps {
   data: PlatformKPIsResponse | undefined;
@@ -24,10 +25,33 @@ interface KPICardProps {
   icon: React.ReactNode;
   color: string;
   onClick?: () => void;
+  /** When set, renders an unavailable state with this reason instead of the value. */
+  unavailableReason?: string;
 }
 
 // Memoize KPICard to prevent unnecessary re-renders when parent state changes
-const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, icon, color, onClick }: KPICardProps) {
+const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, icon, color, onClick, unavailableReason }: KPICardProps) {
+  if (unavailableReason) {
+    return (
+      <div
+        className="rounded-lg bg-white p-6 border"
+        style={{ borderColor: '#E5E5E5' }}
+        title={unavailableReason}
+      >
+        <div className="flex items-center">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100">
+            <div className="opacity-30">{icon}</div>
+          </div>
+          <div className="ml-4 flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-400">{title}</p>
+            <p className="mt-1 text-2xl font-semibold text-gray-300">—</p>
+            <p className="mt-0.5 text-xs text-gray-400">Unavailable — {unavailableReason}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`rounded-lg bg-white p-6 border shadow-sm transition-all ${
@@ -81,6 +105,38 @@ const PLATFORM_KPI_KEYS = [
 
 export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoading, startDate, endDate, enableAIFeatures = true, workspaceIds }: PlatformKPIsViewProps) {
   const queryClient = useQueryClient();
+
+  // Fetch readiness once to gate feature cards that depend on specific system tables.
+  // Long staleTime avoids repeated calls; retry=false avoids noise if the endpoint is slow.
+  const { data: readiness } = useQuery({
+    queryKey: ["setup-readiness"],
+    queryFn: () =>
+      fetch("/api/setup/readiness")
+        .then(r => r.ok ? r.json() : null)
+        .then(normalizeReadinessResult)
+        .catch(() => null),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  // Derive per-feature availability from readiness. undefined = unknown (don't block rendering).
+  // false = explicitly denied → show unavailable state instead of a potentially-fake 0.
+  const allReadinessChecks = [...(readiness?.core ?? []), ...(readiness?.enhanced ?? [])];
+  const tableGranted = (table: string): boolean | undefined =>
+    allReadinessChecks.find(c => c.table === table)?.granted;
+
+  const lakeflowGranted    = tableGranted("system.lakeflow.pipelines");
+  const computeGranted     = tableGranted("system.compute.clusters");
+  const servingGranted     = tableGranted("system.serving.served_entities");
+  const queryHistoryGranted = tableGranted("system.query.history");
+
+  // Only suppress a card when the dependency is **explicitly** denied, not when unknown.
+  const jobsUnavailable       = lakeflowGranted === false    ? "lakeflow grants required — run SP grants to fix" : undefined;
+  const clustersUnavailable   = computeGranted === false     ? "compute.clusters grant required" : undefined;
+  const servingUnavailable    = servingGranted === false     ? "serving.served_entities grant required" : undefined;
+  const queryHistUnavailable  = queryHistoryGranted === false ? "query.history grant required" : undefined;
+
   const [selectedKPI, setSelectedKPI] = useState<{
     kpi: "total_queries" | "total_rows_read" | "total_bytes_read" | "total_compute_seconds" | "total_jobs" | "total_job_runs" | "successful_runs" | "active_notebooks" | "active_workspaces" | "models_served" | "total_users" | "avg_query_duration" | "unique_warehouses";
     label: string;
@@ -227,7 +283,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
             value={formatNumber(data.total_queries)}
             subtitle={`${data.unique_query_users} unique users`}
             color="bg-orange-100"
-            onClick={startDate && endDate ? () => handleKPIClick("total_queries", "Total Queries Executed") : undefined}
+            unavailableReason={queryHistUnavailable}
+            onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_queries", "Total Queries Executed") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -240,7 +297,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
             value={formatNumber(data.total_rows_read)}
             subtitle="Total data scanned"
             color="bg-orange-100"
-            onClick={startDate && endDate ? () => handleKPIClick("total_rows_read", "Rows Processed") : undefined}
+            unavailableReason={queryHistUnavailable}
+            onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_rows_read", "Rows Processed") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
@@ -253,7 +311,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
             value={formatBytes(data.total_bytes_read)}
             subtitle="Total throughput"
             color="bg-orange-100"
-            onClick={startDate && endDate ? () => handleKPIClick("total_bytes_read", "Data Processed") : undefined}
+            unavailableReason={queryHistUnavailable}
+            onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_bytes_read", "Data Processed") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -266,7 +325,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
             value={formatDurationSeconds(data.total_compute_seconds)}
             subtitle="Total processing time"
             color="bg-orange-100"
-            onClick={startDate && endDate ? () => handleKPIClick("total_compute_seconds", "Compute Time") : undefined}
+            unavailableReason={queryHistUnavailable}
+            onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_compute_seconds", "Compute Time") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -285,7 +345,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
             value={formatNumber(data.total_jobs)}
             subtitle={`${data.unique_job_owners} unique owners`}
             color="bg-orange-100"
-            onClick={startDate && endDate ? () => handleKPIClick("total_jobs", "Total Jobs") : undefined}
+            unavailableReason={jobsUnavailable}
+            onClick={!jobsUnavailable && startDate && endDate ? () => handleKPIClick("total_jobs", "Total Jobs") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -298,7 +359,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
             value={formatNumber(data.total_job_runs)}
             subtitle="Total executions"
             color="bg-orange-100"
-            onClick={startDate && endDate ? () => handleKPIClick("total_job_runs", "Job Runs") : undefined}
+            unavailableReason={jobsUnavailable}
+            onClick={!jobsUnavailable && startDate && endDate ? () => handleKPIClick("total_job_runs", "Job Runs") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -324,7 +386,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
             value={formatNumber(data.active_notebooks)}
             subtitle="Unique clusters with usage"
             color="bg-orange-100"
-            onClick={startDate && endDate ? () => handleKPIClick("active_notebooks", "Active Clusters") : undefined}
+            unavailableReason={clustersUnavailable}
+            onClick={!clustersUnavailable && startDate && endDate ? () => handleKPIClick("active_notebooks", "Active Clusters") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
@@ -351,13 +414,14 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
             }
           />
 
-          {data.models_served > 0 && (
+          {(data.models_served > 0 || servingUnavailable) && (
             <KPICard
               title="Models Served"
               value={formatNumber(data.models_served)}
               subtitle={`${formatNumber(data.total_serving_dbus)} DBUs`}
               color="bg-orange-100"
-              onClick={startDate && endDate ? () => handleKPIClick("models_served", "Models Served") : undefined}
+              unavailableReason={servingUnavailable}
+              onClick={!servingUnavailable && startDate && endDate ? () => handleKPIClick("models_served", "Models Served") : undefined}
               icon={
                 <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />

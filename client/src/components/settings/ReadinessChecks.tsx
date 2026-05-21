@@ -292,6 +292,121 @@ export function ReadinessChecks({
           </div>
         </div>
       )}
+
+      {/* Feature-plane readiness — what's actually usable given the control-plane state above */}
+      <FeaturePlaneReadiness result={result} />
+    </div>
+  );
+}
+
+// ── Feature-plane readiness ─────────────────────────────────────────────────
+
+interface FeatureArea {
+  label: string;
+  requiredTables: string[];
+  requiresWarehouse?: boolean;
+}
+
+const FEATURE_AREAS: FeatureArea[] = [
+  { label: "Cost Overview & Spend",       requiredTables: ["system.billing.usage"],                requiresWarehouse: true },
+  { label: "Platform KPIs — Queries",     requiredTables: ["system.query.history"],                requiresWarehouse: true },
+  { label: "Platform KPIs — Jobs",        requiredTables: ["system.lakeflow.pipelines"],           requiresWarehouse: true },
+  { label: "Platform KPIs — Clusters",    requiredTables: ["system.compute.clusters"],             requiresWarehouse: true },
+  { label: "Platform KPIs — Serving",     requiredTables: ["system.serving.served_entities"],      requiresWarehouse: true },
+  { label: "SQL Warehousing 360",         requiredTables: ["system.billing.usage", "system.query.history"], requiresWarehouse: true },
+  { label: "Interactive Compute",         requiredTables: ["system.billing.usage", "system.compute.clusters"], requiresWarehouse: true },
+  { label: "Pipeline Objects",            requiredTables: ["system.billing.usage", "system.lakeflow.pipelines"], requiresWarehouse: true },
+];
+
+function FeaturePlaneReadiness({ result }: { result: ReadinessResult }) {
+  const [open, setOpen] = useState(false);
+
+  const allChecks: ReadinessCheck[] = [...result.core, ...result.enhanced];
+  const tableGrantedMap = new Map<string, boolean>(
+    allChecks.filter(c => c.table).map(c => [c.table!, c.granted])
+  );
+
+  type FeatureState = "ready" | "degraded" | "unavailable";
+  const featureStates = FEATURE_AREAS.map(area => {
+    const warehouseOk = !area.requiresWarehouse || result.warehouse.granted;
+    const missingGrants = area.requiredTables.filter(t => tableGrantedMap.get(t) === false);
+
+    let state: FeatureState = "ready";
+    if (!warehouseOk || missingGrants.length > 0) state = "unavailable";
+    // "degraded" = warehouse ok but some tables are unknown (not yet checked)
+    else if (area.requiredTables.some(t => !tableGrantedMap.has(t))) state = "degraded";
+
+    return { ...area, state, missingGrants, warehouseOk };
+  });
+
+  const unavailableCount = featureStates.filter(f => f.state === "unavailable").length;
+  const allReady = unavailableCount === 0;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center gap-2 mb-2"
+      >
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Feature Readiness</h4>
+        <span className="text-[10px] text-gray-500">Which dashboards are available</span>
+        {unavailableCount > 0 && (
+          <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+            {unavailableCount} unavailable
+          </span>
+        )}
+        {allReady && (
+          <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
+            All ready
+          </span>
+        )}
+        <svg className={`ml-auto h-3.5 w-3.5 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="space-y-1">
+          {featureStates.map(f => (
+            <div
+              key={f.label}
+              className={`flex items-start gap-2 rounded border px-3 py-2 text-[11px] ${
+                f.state === "unavailable" ? "border-red-100 bg-red-50" :
+                f.state === "degraded"    ? "border-amber-100 bg-amber-50" :
+                "border-gray-100 bg-white"
+              }`}
+            >
+              {f.state === "ready" ? (
+                <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                </svg>
+              ) : f.state === "unavailable" ? (
+                <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                </svg>
+              )}
+              <div className="flex-1 min-w-0">
+                <span className="font-medium text-gray-800">{f.label}</span>
+                {f.state === "unavailable" && !f.warehouseOk && (
+                  <p className="text-red-500 mt-0.5">Blocked — warehouse access denied</p>
+                )}
+                {f.state === "unavailable" && f.warehouseOk && f.missingGrants.length > 0 && (
+                  <p className="text-red-500 mt-0.5">
+                    Missing grants: {f.missingGrants.join(", ")}
+                  </p>
+                )}
+                {f.state === "degraded" && (
+                  <p className="text-amber-600 mt-0.5">Some table grants not yet verified</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

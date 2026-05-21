@@ -24,6 +24,47 @@ interface DiagCheck {
   fix: string;
   root_cause?: string;
   missing_tables?: string[];
+  /** Optional backend-supplied failure class. When absent, inferred from category. */
+  failure_class?: "warehouse_permission" | "system_table_grant" | "missing_mv" | "schema_mismatch" | "stale_data" | "internal_error" | "not_configured";
+}
+
+/** Infer the failure class when the backend doesn't supply one. */
+function inferFailureClass(check: DiagCheck): DiagCheck["failure_class"] {
+  if (check.failure_class) return check.failure_class;
+  if (check.category === "permissions") {
+    if (check.label.toLowerCase().includes("warehouse")) return "warehouse_permission";
+    return "system_table_grant";
+  }
+  if (check.category === "materialized_views") return "missing_mv";
+  if (check.category === "configuration") return "not_configured";
+  if (check.category === "data" && check.label.toLowerCase().includes("stale")) return "stale_data";
+  return "internal_error";
+}
+
+const FAILURE_CLASS_LABELS: Record<NonNullable<DiagCheck["failure_class"]>, { label: string; color: string }> = {
+  warehouse_permission: { label: "Warehouse permission", color: "bg-red-100 text-red-700" },
+  system_table_grant:  { label: "System table grant",   color: "bg-red-100 text-red-700" },
+  missing_mv:          { label: "Missing MV",            color: "bg-orange-100 text-orange-700" },
+  schema_mismatch:     { label: "Schema mismatch",       color: "bg-orange-100 text-orange-700" },
+  stale_data:          { label: "Stale data",            color: "bg-amber-100 text-amber-700" },
+  internal_error:      { label: "Internal error",        color: "bg-gray-100 text-gray-600" },
+  not_configured:      { label: "Not configured",        color: "bg-gray-100 text-gray-600" },
+};
+
+/** Returns a more specific action label for the Fix button based on failure class. */
+function fixActionLabel(check: DiagCheck): string {
+  const fc = inferFailureClass(check);
+  if (fc === "warehouse_permission") return "Grant SQL";
+  if (fc === "system_table_grant")   return "Grant SQL";
+  if (fc === "missing_mv")           return "Rebuild";
+  if (fc === "schema_mismatch")      return "Rebuild";
+  if (fc === "not_configured")       return "Configure";
+  return "Show Fix";
+}
+
+/** Returns true when the fix text looks like SQL that should be rendered as a code block. */
+function fixIsSql(fix: string): boolean {
+  return /^\s*(GRANT|CREATE|DROP|ALTER|INSERT|USE |SHOW )/i.test(fix.trim());
 }
 
 interface DiagResult {
@@ -69,13 +110,31 @@ function StatusIcon({ status }: { status: DiagCheck["status"] }) {
   );
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }}
+      className="shrink-0 rounded px-2 py-0.5 text-[10px] font-medium text-gray-500 border border-gray-200 hover:border-gray-400 hover:text-gray-700 transition-colors"
+    >
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 function CheckRow({ check }: { check: DiagCheck }) {
   const [expanded, setExpanded] = useState(false);
-  const hasFix = check.fix && check.status !== "pass";
+  const [detailExpanded, setDetailExpanded] = useState(false);
+  const hasFix = !!(check.fix && check.status !== "pass");
   const isAlert = check.status === "fail" || check.status === "warn";
-  const truncatedDetail = check.detail && check.detail.length > 175
-    ? check.detail.slice(0, 175) + "…"
+  const DETAIL_TRUNCATE = 180;
+  const detailTruncated = check.detail && check.detail.length > DETAIL_TRUNCATE;
+  const displayDetail = detailTruncated && !detailExpanded
+    ? check.detail.slice(0, DETAIL_TRUNCATE) + "…"
     : check.detail;
+
+  const fc = isAlert ? inferFailureClass(check) : undefined;
+  const fcMeta = fc ? FAILURE_CLASS_LABELS[fc] : undefined;
 
   const fixBtnClass = check.status === "fail"
     ? "shrink-0 rounded px-2.5 py-1 text-[11px] font-medium text-white bg-red-500 hover:bg-red-600"
@@ -87,31 +146,58 @@ function CheckRow({ check }: { check: DiagCheck }) {
       check.status === "warn" ? "border-amber-100 bg-amber-50" :
       "border-gray-100 bg-white"
     }`}>
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <StatusIcon status={check.status} />
         <div className="min-w-0 flex-1">
-          <span className="text-xs font-medium text-gray-800">{check.label}</span>
-          {isAlert ? (
-            <>
-              {check.detail && (
-                <p className="mt-0.5 text-[11px] text-red-400">{truncatedDetail}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs font-medium text-gray-800">{check.label}</span>
+            {fcMeta && (
+              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${fcMeta.color}`}>
+                {fcMeta.label}
+              </span>
+            )}
+          </div>
+          {check.root_cause && (
+            <p className="mt-0.5 text-[11px] font-semibold text-gray-900">{check.root_cause}</p>
+          )}
+          {isAlert && check.detail ? (
+            <div>
+              <p className="mt-0.5 text-[11px] text-red-500 break-all">{displayDetail}</p>
+              {detailTruncated && (
+                <button
+                  onClick={() => setDetailExpanded(e => !e)}
+                  className="mt-0.5 text-[10px] text-gray-400 underline hover:text-gray-600"
+                >
+                  {detailExpanded ? "show less" : "show more"}
+                </button>
               )}
-              {check.root_cause && (
-                <p className="mt-0.5 text-[11px] font-bold text-gray-900">{check.root_cause}</p>
-              )}
-            </>
+            </div>
           ) : check.detail ? (
-            <p className="mt-0.5 text-[11px] text-gray-600">{check.detail}</p>
+            <p className="mt-0.5 text-[11px] text-gray-600">{displayDetail}</p>
           ) : null}
           {expanded && hasFix && (
-            <pre className="mt-2 whitespace-pre-wrap rounded border border-gray-200 bg-white px-2.5 py-2 text-[10px] leading-relaxed text-gray-700">
-              {check.fix}
-            </pre>
+            <div className="mt-2 space-y-1">
+              {fixIsSql(check.fix) ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-gray-500">Run as metastore admin</span>
+                    <CopyButton text={check.fix} />
+                  </div>
+                  <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-gray-900 px-3 py-2 text-[11px] leading-relaxed text-green-400">
+                    {check.fix}
+                  </pre>
+                </>
+              ) : (
+                <p className="whitespace-pre-wrap rounded border border-gray-200 bg-white px-2.5 py-2 text-[10px] leading-relaxed text-gray-700">
+                  {check.fix}
+                </p>
+              )}
+            </div>
           )}
         </div>
         {hasFix && (
           <button onClick={() => setExpanded(e => !e)} className={fixBtnClass}>
-            {expanded ? "Hide" : "Fix"}
+            {expanded ? "Hide" : fixActionLabel(check)}
           </button>
         )}
       </div>

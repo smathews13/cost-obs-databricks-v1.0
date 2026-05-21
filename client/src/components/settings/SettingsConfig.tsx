@@ -660,7 +660,8 @@ export function SettingsConfig({
             {(() => {
               const missingTables = tablesStatus?.tables?.filter(t => t.exists === false && !t.optional) ?? [];
               const isDegraded = missingTables.length > 0;
-              const dropBlocked = isDegraded && !wipePending;
+              // Hard block: degraded state prevents drop entirely, no break-glass path.
+              const dropBlocked = isDegraded;
               return (
                 <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
                   <div className="flex items-start justify-between gap-3">

@@ -33,7 +33,6 @@ export function SettingsPermissions() {
   const [newConsumer, setNewConsumer] = useState("");
   const [grantRunning, setGrantRunning] = useState(false);
   const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[] } | null>(null);
-  const [readinessRefreshKey, setReadinessRefreshKey] = useState(0);
 
   const { data: permissions, isLoading } = useQuery<UserPermissions>({
     queryKey: ["user-permissions"],
@@ -51,22 +50,26 @@ export function SettingsPermissions() {
     refetchInterval: 30 * 1000,
   });
 
+  // Shared readiness query — same key as useFeatureAvailability so all
+  // components (KPI cards, ReadinessChecks panel here) read from one cache entry.
   const {
     data: readiness,
     isLoading: readinessLoading,
     error: readinessQueryError,
   } = useQuery<ReadinessResult | null>({
-    queryKey: ["settings-readiness", readinessRefreshKey],
+    queryKey: READINESS_QUERY_KEY,
     queryFn: () =>
-      fetch(readinessRefreshKey > 0 ? "/api/setup/readiness?refresh=true" : "/api/setup/readiness")
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-        .then(normalizeReadinessResult),
-    staleTime: 4 * 60 * 1000,
+      fetch("/api/setup/readiness")
+        .then(r => r.ok ? r.json() : null)
+        .then(normalizeReadinessResult)
+        .catch(() => null),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const handleReadinessRecheck = (_forceRefresh?: boolean) => {
     queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
-    setReadinessRefreshKey(k => k + 1);
   };
 
   const saveMutation = useMutation({
@@ -99,10 +102,8 @@ export function SettingsPermissions() {
           ? `${body.applied} grant(s) applied for ${body.sp_client_id}.`
           : `Grants applied for ${body.sp_client_id}.`;
         setGrantResult({ ok: true, message: detail });
-        queryClient.invalidateQueries({ queryKey: ["settings-auth-status"] });
         queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
         await refetchAuth();
-        setTimeout(() => setReadinessRefreshKey(k => k + 1), 800);
       } else {
         const allErrors: string[] = body.errors ?? [];
         const summary = body.failed

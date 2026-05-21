@@ -1,0 +1,145 @@
+import { describe, it, expect } from "vitest";
+import { normalizeReadinessResult } from "../ReadinessChecks";
+import type { ReadinessResult } from "../ReadinessChecks";
+
+// ---------------------------------------------------------------------------
+// normalizeReadinessResult — pure function, no DOM needed
+// ---------------------------------------------------------------------------
+
+const validPayload = {
+  overall: "ready",
+  warehouse: {
+    name: "SQL Warehouse",
+    description: "desc",
+    category: "core",
+    source: "app_resource",
+    granted: true,
+  },
+  core: [
+    { table: "system.billing.usage", name: "Usage", description: "", required: true, granted: true, category: "core" },
+  ],
+  enhanced: [],
+  sp_client_id: "sp-abc",
+};
+
+describe("normalizeReadinessResult", () => {
+  it("returns null for null input", () => {
+    expect(normalizeReadinessResult(null)).toBeNull();
+  });
+
+  it("returns null for non-object input", () => {
+    expect(normalizeReadinessResult("string")).toBeNull();
+    expect(normalizeReadinessResult(42)).toBeNull();
+    expect(normalizeReadinessResult(undefined)).toBeNull();
+  });
+
+  it("returns null when warehouse field is missing", () => {
+    const { warehouse: _omit, ...noWarehouse } = validPayload;
+    expect(normalizeReadinessResult(noWarehouse)).toBeNull();
+  });
+
+  it("returns null when warehouse is explicitly null", () => {
+    expect(normalizeReadinessResult({ ...validPayload, warehouse: null })).toBeNull();
+  });
+
+  it("parses a well-formed payload correctly", () => {
+    const result = normalizeReadinessResult(validPayload) as ReadinessResult;
+    expect(result).not.toBeNull();
+    expect(result.overall).toBe("ready");
+    expect(result.warehouse.granted).toBe(true);
+    expect(result.warehouse.source).toBe("app_resource");
+    expect(result.core).toHaveLength(1);
+    expect(result.sp_client_id).toBe("sp-abc");
+  });
+
+  it("defaults overall to 'not_ready' when field is missing", () => {
+    const { overall: _omit, ...noOverall } = validPayload;
+    const result = normalizeReadinessResult(noOverall) as ReadinessResult;
+    expect(result).not.toBeNull();
+    expect(result.overall).toBe("not_ready");
+  });
+
+  it("defaults core and enhanced to empty arrays when missing", () => {
+    const { core: _c, enhanced: _e, ...noCoreEnhanced } = validPayload;
+    const result = normalizeReadinessResult(noCoreEnhanced) as ReadinessResult;
+    expect(result).not.toBeNull();
+    expect(result.core).toEqual([]);
+    expect(result.enhanced).toEqual([]);
+  });
+
+  it("defaults warehouse source to 'none' when missing", () => {
+    const { source: _omit, ...noSource } = validPayload.warehouse;
+    const result = normalizeReadinessResult({ ...validPayload, warehouse: noSource }) as ReadinessResult;
+    expect(result).not.toBeNull();
+    expect(result.warehouse.source).toBe("none");
+  });
+
+  it("coerces warehouse.granted to boolean", () => {
+    const result = normalizeReadinessResult({
+      ...validPayload,
+      warehouse: { ...validPayload.warehouse, granted: 0 },
+    }) as ReadinessResult;
+    expect(result).not.toBeNull();
+    expect(result.warehouse.granted).toBe(false);
+  });
+
+  it("preserves warehouse error and fix_sql when present", () => {
+    const payload = {
+      ...validPayload,
+      warehouse: {
+        ...validPayload.warehouse,
+        granted: false,
+        error: "Permission denied",
+        fix_sql: "GRANT CAN_USE ON WAREHOUSE ...",
+      },
+    };
+    const result = normalizeReadinessResult(payload) as ReadinessResult;
+    expect(result.warehouse.error).toBe("Permission denied");
+    expect(result.warehouse.fix_sql).toBe("GRANT CAN_USE ON WAREHOUSE ...");
+  });
+
+  it("omits error and fix_sql fields when they are null", () => {
+    const result = normalizeReadinessResult(validPayload) as ReadinessResult;
+    expect(result.warehouse.error).toBeUndefined();
+    expect(result.warehouse.fix_sql).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Next button disabled condition — mirrors SetupWizard.tsx line 504:
+//   disabled={loading || readiness == null || (readiness.overall !== "ready" && readiness.overall !== "core_ready")}
+// ---------------------------------------------------------------------------
+
+function isNextDisabled(loading: boolean, readiness: ReadinessResult | null): boolean {
+  return loading || readiness == null || (readiness.overall !== "ready" && readiness.overall !== "core_ready");
+}
+
+describe("SetupWizard Next button disabled condition", () => {
+  it("is disabled while loading", () => {
+    expect(isNextDisabled(true, null)).toBe(true);
+  });
+
+  it("is disabled when readiness is null (malformed or missing API response)", () => {
+    expect(isNextDisabled(false, null)).toBe(true);
+  });
+
+  it("is disabled when overall is 'not_ready'", () => {
+    const r = normalizeReadinessResult({ ...validPayload, overall: "not_ready" }) as ReadinessResult;
+    expect(isNextDisabled(false, r)).toBe(true);
+  });
+
+  it("is disabled when overall is 'needs_action'", () => {
+    const r = normalizeReadinessResult({ ...validPayload, overall: "needs_action" }) as ReadinessResult;
+    expect(isNextDisabled(false, r)).toBe(true);
+  });
+
+  it("is enabled when overall is 'ready'", () => {
+    const r = normalizeReadinessResult({ ...validPayload, overall: "ready" }) as ReadinessResult;
+    expect(isNextDisabled(false, r)).toBe(false);
+  });
+
+  it("is enabled when overall is 'core_ready'", () => {
+    const r = normalizeReadinessResult({ ...validPayload, overall: "core_ready" }) as ReadinessResult;
+    expect(isNextDisabled(false, r)).toBe(false);
+  });
+});

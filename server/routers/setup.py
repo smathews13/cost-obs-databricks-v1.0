@@ -1057,9 +1057,19 @@ def _run_blocking_warehouse_check() -> WarehouseCheckResult:
 
     Classifies exceptions into typed CheckStatus so callers can apply the
     right cache TTL and surface a useful error message.
+    Guards against misconfigured callers: returns NOT_CONFIGURED immediately
+    if no warehouse is resolvable, instead of letting execute_query fail
+    with an unhelpful connection error.
     """
     from server.db import execute_query, _user_token
     source, warehouse_id = _resolve_warehouse_config()
+    if source == "none":
+        return WarehouseCheckResult(
+            status=CheckStatus.NOT_CONFIGURED,
+            ok=False,
+            message="No warehouse configured",
+            source="none",
+        )
     tok = _user_token.set("")
     try:
         execute_query("SELECT current_user()", no_cache=True)
@@ -1118,16 +1128,12 @@ def _get_or_start_warehouse_check_future() -> _Future:
 
 
 def check_warehouse_readiness() -> WarehouseCheckResult:
-    """Return a WarehouseCheckResult via cache → single-flight → timeout."""
+    """Return a WarehouseCheckResult via cache → single-flight → timeout.
+
+    NOT_CONFIGURED flows through the same cache path as other statuses so that
+    the 3600s TTL is respected instead of re-reading env vars on every request.
+    """
     from concurrent.futures import TimeoutError as _FutureTimeout
-    source, _ = _resolve_warehouse_config()
-    if source == "none":
-        return WarehouseCheckResult(
-            status=CheckStatus.NOT_CONFIGURED,
-            ok=False,
-            message="No warehouse configured",
-            source="none",
-        )
     cached = _get_cached_warehouse_check()
     if cached is not None:
         return cached

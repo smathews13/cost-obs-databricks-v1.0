@@ -114,6 +114,88 @@ def test_safe_table_check_result_handles_exception():
 
 
 # ---------------------------------------------------------------------------
+# Fix B: _run_blocking_warehouse_check guard
+# ---------------------------------------------------------------------------
+
+def test_blocking_warehouse_check_returns_not_configured_when_no_warehouse():
+    """_run_blocking_warehouse_check must return NOT_CONFIGURED immediately when no
+    warehouse is resolvable, not fall through to execute_query and produce a
+    misleading connection error.
+    """
+    with patch.object(setup_mod, "_resolve_warehouse_config", return_value=("none", "")):
+        result = setup_mod._run_blocking_warehouse_check()
+
+    assert result.status == CheckStatus.NOT_CONFIGURED
+    assert not result.ok
+    assert result.source == "none"
+
+
+# ---------------------------------------------------------------------------
+# Fix C: NOT_CONFIGURED flows through the cache path
+# ---------------------------------------------------------------------------
+
+def test_not_configured_result_is_cached_with_long_ttl():
+    """check_warehouse_readiness() must cache a NOT_CONFIGURED result so that the
+    env var isn't re-read on every request.  TTL should be close to 3600 s.
+    """
+    with patch.object(setup_mod, "_resolve_warehouse_config", return_value=("none", "")):
+        result1 = check_warehouse_readiness()
+
+    assert result1.status == CheckStatus.NOT_CONFIGURED
+    cached = setup_mod._wh_check_cache
+    assert cached is not None, "NOT_CONFIGURED result was not written to cache"
+    assert cached.is_valid()
+    remaining_ttl = cached.expires_at - time.monotonic()
+    assert remaining_ttl > 3500, f"Expected ~3600 s TTL, got {remaining_ttl:.0f} s"
+
+    # Second call must hit cache — same object reference, no new future submitted
+    with patch.object(setup_mod._wh_check_executor, "submit",
+                      side_effect=AssertionError("executor must not be called on cache hit")):
+        result2 = check_warehouse_readiness()
+
+    assert result2 is result1
+
+
+# ---------------------------------------------------------------------------
+# TOCTOU: table cache snapshot survives concurrent reset
+# ---------------------------------------------------------------------------
+
+def test_toctou_table_cache_snapshot_survives_concurrent_reset():
+    """The cache fast-path must hold a snapshot of _table_readiness_cache so that a
+    concurrent reset_readiness_caches() between the is-None check and the data access
+    does not raise TypeError: 'NoneType' object is not subscriptable.
+    """
+    core_data = [
+        {"table": "system.billing.usage", "name": "Usage", "granted": True,
+         "description": "", "required": True, "category": "core"},
+    ]
+    wh_result = WarehouseCheckResult(
+        status=CheckStatus.HEALTHY, ok=True, message="",
+        warehouse_id="wh-1", source="app_resource",
+    )
+    setup_mod._table_readiness_cache = {"core": core_data, "enhanced": [], "sp_client_id": "sp-1"}
+    setup_mod._table_readiness_cache_ts = time.monotonic()
+    setup_mod._wh_check_cache = TimedWarehouseCheckCache(
+        result=wh_result, expires_at=time.monotonic() + 300,
+    )
+
+    def reset_during_wh_check():
+        """Simulates another thread calling reset_readiness_caches() at this exact
+        moment — after the table cache snapshot is taken but before ["core"] is accessed."""
+        setup_mod._table_readiness_cache = None  # nuclear reset mid-flight
+        return wh_result
+
+    with (
+        patch.object(setup_mod, "_get_cached_warehouse_check", side_effect=reset_during_wh_check),
+        patch.object(setup_mod, "_resolve_warehouse_config", return_value=("app_resource", "wh-1")),
+    ):
+        # Without the snapshot fix this raises TypeError: 'NoneType' is not subscriptable
+        result = setup_mod._check_readiness_sync()
+
+    assert result["core"] == core_data, "Snapshot was not used — global was read after reset"
+
+
+# ---------------------------------------------------------------------------
 # Cache management
 # ---------------------------------------------------------------------------
 

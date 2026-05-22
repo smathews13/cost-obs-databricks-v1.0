@@ -894,7 +894,19 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
         tok = _db_user_token.set(user_token)
         try:
             execute_query(f"CREATE CATALOG IF NOT EXISTS `{catalog}`", no_cache=True)
-            logger.info(f"Catalog `{catalog}` ensured (created or already existed)")
+            # Verify — CREATE CATALOG IF NOT EXISTS silently succeeds on permission
+            # errors without actually creating the catalog. Confirm it exists.
+            rows = execute_query(f"SHOW CATALOGS LIKE '{catalog}'", no_cache=True)
+            if not rows:
+                return {
+                    "ok": False, "catalog": catalog,
+                    "message": (
+                        f"Could not create catalog `{catalog}`. "
+                        "Your account may lack the CREATE CATALOG privilege. "
+                        "Ask a metastore admin to create it, then retry."
+                    ),
+                }
+            logger.info(f"Catalog `{catalog}` verified after creation")
             return {"ok": True, "catalog": catalog, "message": f"Catalog `{catalog}` is ready."}
         except Exception as e:
             msg = _clean_sdk_error(str(e))
@@ -927,7 +939,17 @@ async def ensure_schema(request: Request) -> dict[str, Any]:
         tok = _db_user_token.set(user_token)
         try:
             execute_query(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`", no_cache=True)
-            logger.info(f"Schema `{catalog}`.`{schema}` ensured (created or already existed)")
+            # Verify — same silent-success risk as CREATE CATALOG.
+            rows = execute_query(f"SHOW SCHEMAS IN `{catalog}` LIKE '{schema}'", no_cache=True)
+            if not rows:
+                return {
+                    "ok": False, "schema": f"{catalog}.{schema}",
+                    "message": (
+                        f"Could not create schema `{catalog}.{schema}`. "
+                        "Check that the service principal has CREATE SCHEMA on the catalog."
+                    ),
+                }
+            logger.info(f"Schema `{catalog}`.`{schema}` verified after creation")
             return {"ok": True, "schema": f"{catalog}.{schema}",
                     "message": f"Schema `{catalog}.{schema}` is ready."}
         except Exception as e:

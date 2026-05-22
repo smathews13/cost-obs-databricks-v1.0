@@ -100,6 +100,37 @@ _CATALOG_OVERRIDE_FILE = os.path.join(
     os.path.dirname(__file__), "..", ".settings", "catalog_override.json"
 )
 
+# Locations that are forbidden as app storage targets. main.cost_obs is the old
+# hardcoded default that shipped in app.yaml — it must never be auto-created.
+_FORBIDDEN_STORAGE_LOCATIONS: frozenset[tuple[str, str]] = frozenset({
+    ("main", "cost_obs"),
+})
+
+
+class StorageConfigurationError(ValueError):
+    """Catalog/schema config is invalid or resolves to a forbidden location."""
+    pass
+
+
+def validate_app_storage_target(catalog: str, schema: str) -> None:
+    """Raise StorageConfigurationError if catalog/schema is unfit for app writes.
+
+    Called by every code path that executes DDL or app-table writes so that a
+    misconfigured deploy surfaces a clean error rather than silently touching
+    forbidden locations.
+    """
+    if not catalog or not schema:
+        raise StorageConfigurationError(
+            "App storage location is not configured. "
+            "Set COST_OBS_CATALOG and COST_OBS_SCHEMA in the Databricks Apps environment, "
+            "then complete the setup wizard."
+        )
+    if (catalog.lower(), schema.lower()) in _FORBIDDEN_STORAGE_LOCATIONS:
+        raise StorageConfigurationError(
+            f"'{catalog}.{schema}' is a reserved default location and cannot be used as app storage. "
+            "Set COST_OBS_CATALOG and COST_OBS_SCHEMA to a dedicated catalog and schema."
+        )
+
 
 def get_catalog_schema() -> tuple[str, str]:
     """Return the catalog and schema for cost observability tables.
@@ -107,11 +138,24 @@ def get_catalog_schema() -> tuple[str, str]:
     Priority: COST_OBS_CATALOG/COST_OBS_SCHEMA env vars → wizard override file.
     Env vars always win so a deliberate app configuration cannot be silently
     overridden by a stale .settings/catalog_override.json from a previous run.
+
+    Returns ("", "") when no location is configured (setup wizard not yet run).
+    Never returns a forbidden location — logs CRITICAL and returns ("", "") instead
+    so that callers which cannot raise can still detect the misconfiguration.
+    Use validate_app_storage_target() at write-path boundaries to raise explicitly.
     """
     # Env vars are the authoritative source — set in the Databricks Apps UI
     catalog = os.getenv("COST_OBS_CATALOG", "").strip()
     schema = os.getenv("COST_OBS_SCHEMA", "").strip()
     if catalog and schema:
+        if (catalog.lower(), schema.lower()) in _FORBIDDEN_STORAGE_LOCATIONS:
+            logger.critical(
+                "COST_OBS_CATALOG=%s and COST_OBS_SCHEMA=%s resolve to a forbidden default location. "
+                "Update the app environment variables to a dedicated catalog and schema. "
+                "Returning empty to prevent writes to a reserved location.",
+                catalog, schema,
+            )
+            return "", ""
         return catalog, schema
     # Fall back to wizard override file (written during setup when env vars not yet set)
     try:
@@ -121,7 +165,13 @@ def get_catalog_schema() -> tuple[str, str]:
             cat = data.get("catalog", "").strip()
             sch = data.get("schema", "").strip()
             if cat and sch:
-                return cat, sch
+                if (cat.lower(), sch.lower()) in _FORBIDDEN_STORAGE_LOCATIONS:
+                    logger.warning(
+                        "catalog_override.json contains forbidden location %s.%s — ignoring.",
+                        cat, sch,
+                    )
+                else:
+                    return cat, sch
     except Exception:
         pass
     return catalog, schema
@@ -131,11 +181,7 @@ def save_catalog_schema(catalog: str, schema: str) -> None:
     """Persist a catalog/schema override (written from the Setup Wizard)."""
     catalog = catalog.strip()
     schema = schema.strip()
-    if catalog.lower() == "main" and schema.lower() == "cost_obs":
-        raise ValueError(
-            "Cannot save main.cost_obs as the storage location — "
-            "choose a dedicated catalog and schema."
-        )
+    validate_app_storage_target(catalog, schema)
     os.makedirs(os.path.dirname(_CATALOG_OVERRIDE_FILE), exist_ok=True)
     with open(_CATALOG_OVERRIDE_FILE, "w") as f:
         json.dump({"catalog": catalog, "schema": schema}, f)

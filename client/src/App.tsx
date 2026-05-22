@@ -645,12 +645,17 @@ function Dashboard() {
                 {accountInfo ? (
                   <>
                     {accountInfo.account_name && (
-                      <span className="rounded px-2 py-0.5 text-xs font-mono" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }}>
-                        {accountInfo.account_name}
-                      </span>
+                      <div className="flex flex-col leading-none">
+                        <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">Account</span>
+                        <span className="rounded px-2 py-0.5 text-xs font-mono mt-0.5" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }}>
+                          {accountInfo.account_name}
+                        </span>
+                      </div>
                     )}
                     {selectedWorkspaceIds.length > 0 && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex flex-col leading-none">
+                        <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">Workspace</span>
+                        <div className="flex items-center gap-1 mt-0.5">
                         {selectedWorkspaceIds.length <= 2
                           ? selectedWorkspaceIds.map((id) => {
                               const ws = wsFilterList.find((w) => w.workspace_id === id);
@@ -675,6 +680,7 @@ function Dashboard() {
                             </span>
                           )
                         }
+                        </div>
                       </div>
                     )}
                   </>

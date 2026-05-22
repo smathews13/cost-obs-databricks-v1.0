@@ -23,11 +23,16 @@ env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
 
-  # Unity Catalog location for materialized views (defaults: main / cost_obs)
-  - name: COST_OBS_CATALOG
-    value: main
-  - name: COST_OBS_SCHEMA
-    value: cost_obs
+  # Unity Catalog location for materialized views — REQUIRED, no default.
+  # Set these to a dedicated catalog and schema before deploying.
+  # The setup wizard will also prompt for these values on first launch.
+  # Example:
+  #   COST_OBS_CATALOG: my_catalog
+  #   COST_OBS_SCHEMA:  cost_obs_app
+  # - name: COST_OBS_CATALOG
+  #   value: <your-catalog>
+  # - name: COST_OBS_SCHEMA
+  #   value: <your-schema>
 
   # Optional: uncomment to point at a specific warehouse instead of the resource above
   # - name: DATABRICKS_HTTP_PATH

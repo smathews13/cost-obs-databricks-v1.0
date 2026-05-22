@@ -75,8 +75,8 @@ Or click the **Deploy to Databricks** button at the top of this README.
 |---|---|---|
 | `DATABRICKS_HOST` | Auto-detected | Override the workspace URL if not picked up automatically |
 | `DATABRICKS_HTTP_PATH` | Auto-created | Point to an existing warehouse, or omit to auto-create one |
-| `COST_OBS_CATALOG` | `main` | Unity Catalog catalog for materialized views |
-| `COST_OBS_SCHEMA` | `cost_obs` | Schema name for materialized views |
+| `COST_OBS_CATALOG` | **Required** | Unity Catalog catalog for materialized views — must be a dedicated, non-default catalog |
+| `COST_OBS_SCHEMA` | **Required** | Schema name for materialized views — set via setup wizard or app config |
 | `GENIE_SPACE_ID` | — | Genie Space ID for AI cost chat |
 | `AZURE_SUBSCRIPTION_ID` | — | Azure subscription ID (shown in account banner on Azure) |
 | `SMTP_HOST` / `SMTP_*` | — | Email alert configuration |
@@ -320,7 +320,7 @@ All billing and compute data is **account-level** — queries run against Unity 
 
 ### Materialized Views
 
-The setup wizard creates **6 pre-aggregated Delta tables** in your Unity Catalog (`main.cost_obs` by default). These are the only persistent objects the app creates in your environment.
+The setup wizard creates **6 pre-aggregated Delta tables** in the Unity Catalog location you configure (`COST_OBS_CATALOG.COST_OBS_SCHEMA`). These are the only persistent objects the app creates in your environment.
 
 | Table | What it stores | Rows (est.) |
 |---|---|---|
@@ -389,7 +389,8 @@ source .venv/bin/activate
 DATABRICKS_HOST=https://your-workspace.cloud.databricks.com \
 DATABRICKS_TOKEN=dapi... \
 DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/your-id \
-COST_OBS_CATALOG=main \
+COST_OBS_CATALOG=my_catalog \
+COST_OBS_SCHEMA=cost_obs_app \
 uvicorn server.app:app --host 0.0.0.0 --port 8000 --reload
 
 # Frontend (port 5173, separate terminal)

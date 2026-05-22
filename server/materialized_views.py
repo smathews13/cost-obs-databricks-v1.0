@@ -815,9 +815,9 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
     """Create all materialized view tables.
 
     Args:
-        catalog: Target catalog (default: from env or 'main')
-        schema: Target schema (default: from env or 'cost_obs')
-        lookback_days: How many days of history to include (default 1095 = 3 years)
+        catalog: Target catalog (required — must be a dedicated, non-reserved catalog)
+        schema: Target schema (required — must be a dedicated, non-reserved schema)
+        lookback_days: How many days of history to include (default 180 = 6 months)
 
     Returns:
         Dict with status of each table creation
@@ -826,6 +826,14 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
         cat, sch = get_catalog_schema()
         catalog = catalog or cat
         schema = schema or sch
+
+    # Hard safety gate — never touch forbidden or unconfigured locations
+    from server.db import validate_app_storage_target, StorageConfigurationError
+    try:
+        validate_app_storage_target(catalog, schema)
+    except StorageConfigurationError as e:
+        logger.critical("create_materialized_views REFUSED: %s", e)
+        return {"error": f"error: {e}"}
 
     results = {}
 

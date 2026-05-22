@@ -66,15 +66,17 @@ The app reads the warehouse ID from a managed resource — this avoids hardcodin
 
 ## Step 3 — Configure Environment Variables
 
-In the app configuration screen, open **Environment variables**. The defaults in `app.yaml` are pre-populated — review and adjust as needed:
+In the app configuration screen, open **Environment variables** and set these **required** values:
 
-| Variable | Default | Change if… |
+| Variable | Required | Description |
 |---|---|---|
-| `COST_OBS_CATALOG` | `main` | You want materialized views in a different Unity Catalog catalog |
-| `COST_OBS_SCHEMA` | `cost_obs` | You want a different schema name |
-| `COST_OBS_WORKSPACES` | *(not set)* | You want to restrict the dashboard to specific workspace IDs |
+| `COST_OBS_CATALOG` | **Yes** | Unity Catalog catalog for materialized views — must be a dedicated catalog, not `main` |
+| `COST_OBS_SCHEMA` | **Yes** | Schema name for materialized views (e.g. `cost_obs_app`) |
+| `COST_OBS_WORKSPACES` | No | Comma-separated workspace IDs to restrict the dashboard |
 
-The catalog and schema will be created automatically during setup if they don't exist. No manual DDL is required.
+> **Important:** Do not use `main` as the catalog or `cost_obs` as the schema with the `main` catalog. These are reserved defaults. The app will refuse to create tables there. Use a dedicated catalog (e.g. `my_company_catalog`) and a descriptive schema name.
+
+The catalog and schema will be created automatically during the setup wizard if they don't exist and your identity has the necessary permissions. No manual DDL is required.
 
 ---
 

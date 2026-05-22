@@ -1,6 +1,5 @@
 """App settings endpoints - Cloud infrastructure connections management."""
 
-import asyncio
 import json
 import logging
 import os
@@ -41,8 +40,16 @@ AZURE_CONNECTIONS_FILE = os.path.join(SETTINGS_DIR, "azure_connections.json")
 # ── Delta table helpers (config tables that survive deploys) ──────────────────
 
 def _config_table(name: str) -> str:
-    from server.db import get_catalog_schema
+    from server.db import get_catalog_schema, validate_app_storage_target, StorageConfigurationError
     catalog, schema = get_catalog_schema()
+    try:
+        validate_app_storage_target(catalog, schema)
+    except StorageConfigurationError as e:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=503,
+            detail=f"App storage configuration is invalid — {e}",
+        )
     return f"`{catalog}`.`{schema}`.`{name}`"
 
 
@@ -291,10 +298,10 @@ def _get_git_sha() -> str:
 
 @router.get("/config")
 async def get_app_config():
-    """Return current app configuration: warehouse, identity, storage location, and version."""
-    from server.db import get_catalog_schema, get_workspace_client
+    """Return current app configuration from env vars — no SDK calls, instant response."""
+    from server.db import get_catalog_schema
 
-    # Determine warehouse source — Apps resource binding preferred over manual env var
+    # Warehouse: derive entirely from env vars (no SDK roundtrip)
     warehouse_id_resource = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
 
@@ -311,34 +318,17 @@ async def get_app_config():
         warehouse_source = "none"
         warehouse_id = ""
 
-    async def _fetch_warehouse():
-        if not warehouse_id:
-            return {"id": None, "name": None, "size": None, "state": "NOT_CONFIGURED", "source": "none"}
-        try:
-            w = get_workspace_client()
-            wh = await asyncio.to_thread(w.warehouses.get, warehouse_id)
-            return {
-                "id": wh.id,
-                "name": wh.name,
-                "size": wh.cluster_size,
-                "state": str(wh.state.value) if wh.state else "UNKNOWN",
-                "source": warehouse_source,
-            }
-        except Exception as e:
-            logger.warning(f"Could not fetch warehouse details: {e}")
-            return {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN", "source": warehouse_source}
+    warehouse = (
+        {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN", "source": warehouse_source}
+        if warehouse_id
+        else {"id": None, "name": None, "size": None, "state": "NOT_CONFIGURED", "source": "none"}
+    )
 
-    async def _fetch_identity():
-        try:
-            w = get_workspace_client()
-            me = await asyncio.to_thread(w.current_user.me)
-            return {"display_name": me.display_name, "user_name": me.user_name}
-        except Exception as e:
-            logger.warning(f"Could not fetch current identity: {e}")
-            return None
+    # Identity: SP client ID from env var (no current_user.me() call)
+    sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
+    identity = {"display_name": sp_client_id, "user_name": sp_client_id} if sp_client_id else None
 
-    warehouse, identity = await asyncio.gather(_fetch_warehouse(), _fetch_identity())
-
+    # Storage location: pure env var / override file read
     storage_location = None
     try:
         catalog, schema = get_catalog_schema()

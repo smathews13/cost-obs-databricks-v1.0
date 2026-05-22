@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { ReadinessChecks, normalizeReadinessResult } from "./settings/ReadinessChecks";
 import type { ReadinessResult } from "./settings/ReadinessChecks";
@@ -178,8 +178,11 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         if (configRes.ok) {
           const cfg = await configRes.json();
           setConfig(cfg);
-          setCatalogInput(cfg?.storage_location?.catalog || "");
-          setSchemaInput(cfg?.storage_location?.schema || "");
+          const rawCat = cfg?.storage_location?.catalog || "";
+          const rawSch = cfg?.storage_location?.schema || "";
+          // Never pre-fill with the forbidden defaults — force the user to choose explicitly
+          setCatalogInput(rawCat.toLowerCase() === "main" ? "" : rawCat);
+          setSchemaInput(rawSch.toLowerCase() === "cost_obs" && rawCat.toLowerCase() === "main" ? "" : rawSch);
         }
         if (cloudRes.ok) setCloud(await cloudRes.json());
       } catch (e) {
@@ -249,21 +252,20 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         throw new Error(`HTTP ${res.status}: ${body}`);
       }
 
-      // Poll for completion
+      // Poll for completion — use task.status as the authority.
+      // The status endpoint returns all_tables_exist=false until setup_done.json
+      // is written (post-wizard), so it is NOT a reliable success signal here.
       const poll = setInterval(async () => {
         const status = await pollSetupStatus();
-        if (status?.all_tables_exist) {
+        const taskStatus = status?.task?.status;
+        if (taskStatus === "done") {
           clearInterval(poll);
           setCreating(false);
-          setStep("complete");
-        } else if (status?.task?.status === "error" && status.task.error) {
+          setStep("workspace-filter");
+        } else if (taskStatus === "error") {
           clearInterval(poll);
           setCreating(false);
-          setError(`Table creation failed: ${status.task.error}`);
-        } else if (status?.task?.status === "error" || (status?.task?.status === "done" && !status.all_tables_exist)) {
-          clearInterval(poll);
-          setCreating(false);
-          const detail = status?.task?.error || "unknown error";
+          const detail = status?.task?.error || "Table creation failed — check server logs for details.";
           setError(`Table creation failed: ${detail}`);
         }
       }, 2000);
@@ -363,22 +365,24 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         </div>
 
         {/* Step indicator */}
-        <div className="flex border-b px-4 py-3" style={{ borderColor: '#E5E5E5' }}>
+        <div className="flex items-start border-b px-6 py-3" style={{ borderColor: '#E5E5E5' }}>
           {STEPS.map((s, i) => (
-            <div key={s} className="flex min-w-0 flex-1 items-center">
-              <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                i < currentIdx ? "bg-green-500 text-white" :
-                i === currentIdx ? "text-white" : "bg-gray-200 text-gray-500"
-              }`} style={i === currentIdx ? { backgroundColor: '#FF3621' } : undefined}>
-                {i < currentIdx ? (
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                ) : i + 1}
+            <Fragment key={s}>
+              {i > 0 && <div className="mt-3 h-px flex-1 self-start bg-gray-200" />}
+              <div className="flex flex-col items-center">
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                  i < currentIdx ? "bg-green-500 text-white" :
+                  i === currentIdx ? "text-white" : "bg-gray-200 text-gray-500"
+                }`} style={i === currentIdx ? { backgroundColor: '#FF3621' } : undefined}>
+                  {i < currentIdx ? (
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                  ) : i + 1}
+                </div>
+                <span className={`mt-1 w-14 text-center text-[10px] font-medium leading-tight ${i === currentIdx ? "text-gray-900" : "text-gray-500"}`}>
+                  {STEP_LABELS[s]}
+                </span>
               </div>
-              <span className={`ml-1.5 truncate text-xs font-medium ${i === currentIdx ? "text-gray-900" : "text-gray-500"}`}>
-                {STEP_LABELS[s]}
-              </span>
-              {i < STEPS.length - 1 && <div className="mx-2 h-px min-w-[8px] flex-1 bg-gray-200" />}
-            </div>
+            </Fragment>
           ))}
         </div>
 

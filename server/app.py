@@ -214,8 +214,13 @@ def setup_system_table_grants():
         # Also grant the current identity permission to create the app schema.
         # Needed when sql scope is not configured and the SP runs DDL.
         # Fails silently if the SP isn't a catalog owner/metastore admin.
-        from server.db import get_catalog_schema
+        from server.db import get_catalog_schema, validate_app_storage_target, StorageConfigurationError
         catalog, schema = get_catalog_schema()
+        try:
+            validate_app_storage_target(catalog, schema)
+        except StorageConfigurationError:
+            logger.warning("Skipping catalog grants — storage config not valid yet (wizard pending or invalid config)")
+            return
         for catalog_grant in [
             f"GRANT USE CATALOG ON CATALOG {catalog} TO `{principal}`",
             f"GRANT CREATE SCHEMA ON CATALOG {catalog} TO `{principal}`",
@@ -309,57 +314,68 @@ def setup_system_access_schema():
 
 
 def setup_materialized_views():
-    """Create materialized views if they don't exist."""
+    """Refresh materialized views post-deploy — only if setup is durably complete.
+
+    Startup must never create tables for the first time. Initial table creation is
+    exclusively the wizard's job (POST /api/setup/create-tables). This function
+    only kicks off a background refresh when it can confirm that setup has already
+    been completed durably (i.e. the core MV tables exist in the configured location).
+
+    If config is invalid or setup is incomplete, startup logs the issue and skips
+    — the wizard or a configuration fix is required before any writes happen.
+    """
     try:
-        from server.materialized_views import (
-            check_materialized_views_exist,
-            create_materialized_views,
-            get_catalog_schema,
-        )
+        from server.db import get_catalog_schema, validate_app_storage_target, StorageConfigurationError
+        from server.materialized_views import check_materialized_views_exist, create_materialized_views
 
         catalog, schema = get_catalog_schema()
-        logger.info(f"Checking materialized views in {catalog}.{schema}...")
 
-        # Check which tables exist and have data
-        tables = check_materialized_views_exist(catalog, schema)
-        missing = [name for name, exists in tables.items() if not exists]
+        # Validate config before touching anything
+        try:
+            validate_app_storage_target(catalog, schema)
+        except StorageConfigurationError as cfg_err:
+            logger.critical(
+                "Startup MV setup SKIPPED — invalid storage configuration: %s. "
+                "Fix COST_OBS_CATALOG / COST_OBS_SCHEMA in the app environment and redeploy.",
+                cfg_err,
+            )
+            return
 
-        # Also rebuild if core summary table is empty (stale/failed previous build)
-        if not missing:
-            from server.db import execute_query
+        logger.info(f"Checking durable setup state in {catalog}.{schema}...")
+
+        # Derive setup completion from durable state — whether core MV tables exist.
+        # Do NOT use setup_done.json (ephemeral, wiped on every git redeploy).
+        _CORE_TABLES = {"daily_usage_summary", "daily_product_breakdown"}
+        try:
+            tables = check_materialized_views_exist(catalog, schema)
+            setup_complete = all(tables.get(t, False) for t in _CORE_TABLES)
+        except Exception as chk_err:
+            logger.warning(f"Could not check MV table existence (non-fatal): {chk_err}")
+            setup_complete = False
+
+        if not setup_complete:
+            logger.info(
+                "Startup MV setup SKIPPED — core tables absent in %s.%s. "
+                "Complete the setup wizard to create them.",
+                catalog, schema,
+            )
+            return
+
+        # Tables durably exist — background refresh is safe
+        import threading
+        def _bg_refresh():
             try:
-                result = execute_query(
-                    f"SELECT COUNT(*) as cnt FROM {catalog}.{schema}.daily_usage_summary LIMIT 1",
-                    no_cache=True,
-                )
-                if not result or int(result[0].get("cnt", 0)) == 0:
-                    logger.info("daily_usage_summary exists but is empty — forcing MV rebuild")
-                    missing = ["daily_usage_summary"]
-            except Exception:
-                pass
-
-        if missing:
-            logger.info(f"Creating/rebuilding materialized views: {missing}")
-            results = create_materialized_views(catalog, schema)
-            success = sum(1 for v in results.values() if v == "created")
-            logger.info(f"Materialized views setup complete: {success}/{len(results)} tables built")
-        else:
-            # Tables exist and have data — refresh in background so startup isn't blocked
-            # and the setup wizard check never sees missing tables
-            import threading
-            def _bg_refresh():
-                try:
-                    logger.info("Refreshing materialized views in background (post-deploy)...")
-                    r = create_materialized_views(catalog, schema)
-                    ok = sum(1 for v in r.values() if v == "created")
-                    logger.info(f"Background MV refresh complete: {ok}/{len(r)} tables rebuilt")
-                except Exception as ex:
-                    logger.warning(f"Background MV refresh failed (non-fatal): {ex}")
-            threading.Thread(target=_bg_refresh, daemon=True).start()
-            logger.info("Materialized views exist — refresh kicked off in background")
+                logger.info("Refreshing materialized views in background (post-deploy)...")
+                r = create_materialized_views(catalog, schema)
+                ok = sum(1 for v in r.values() if v == "created")
+                logger.info(f"Background MV refresh complete: {ok}/{len(r)} tables rebuilt")
+            except Exception as ex:
+                logger.warning(f"Background MV refresh failed (non-fatal): {ex}")
+        threading.Thread(target=_bg_refresh, daemon=True).start()
+        logger.info("Materialized views exist — background refresh started")
 
     except Exception as e:
-        logger.warning(f"Materialized views setup failed (non-fatal): {e}")
+        logger.warning(f"Materialized views startup check failed (non-fatal): {e}")
 
 
 def prewarm_cache_sync():

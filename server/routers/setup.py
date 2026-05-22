@@ -1423,15 +1423,22 @@ async def get_readiness(refresh: bool = False) -> dict[str, Any]:
 
 @router.get("/list-workspaces")
 async def list_workspaces() -> dict:
-    """Return all workspaces in the account for the setup wizard workspace picker."""
-    from server.db import execute_query
+    """Return all workspaces in the account for the setup wizard workspace picker.
+
+    Queries the app's own daily_workspace_breakdown table (already created by
+    the time the wizard reaches this step) rather than system.access.workspaces_latest,
+    which requires a separate schema grant the SP does not hold.
+    """
+    from server.db import execute_query, get_catalog_schema
     try:
-        rows = execute_query("""
+        catalog, schema = get_catalog_schema()
+        rows = execute_query(f"""
             SELECT
                 CAST(workspace_id AS STRING) AS workspace_id,
-                COALESCE(workspace_name, CAST(workspace_id AS STRING)) AS workspace_name
-            FROM system.access.workspaces_latest
+                MAX(COALESCE(workspace_name, CAST(workspace_id AS STRING))) AS workspace_name
+            FROM `{catalog}`.`{schema}`.daily_workspace_breakdown
             WHERE workspace_id IS NOT NULL
+            GROUP BY workspace_id
             ORDER BY workspace_name
         """)
         return {

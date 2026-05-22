@@ -151,6 +151,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [tablesJustCreated, setTablesJustCreated] = useState(false);
+  const [storageSaving, setStorageSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Storage location step state
@@ -261,7 +263,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         if (taskStatus === "done") {
           clearInterval(poll);
           setCreating(false);
-          setStep("workspace-filter");
+          setTablesJustCreated(true);
         } else if (taskStatus === "error") {
           clearInterval(poll);
           setCreating(false);
@@ -430,6 +432,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             <CreateTablesStep
               setupStatus={setupStatus}
               creating={creating}
+              tablesJustCreated={tablesJustCreated}
             />
           )}
 
@@ -494,7 +497,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               </div>
             ) : step === "create-tables" ? (
               creating ? null
-              : setupStatus?.all_tables_exist ? (
+              : (tablesJustCreated || setupStatus?.all_tables_exist) ? (
                 <button
                   onClick={goNext}
                   className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors"
@@ -511,21 +514,35 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               )
             ) : step === "storage-location" ? (
               <button
-                onClick={() => {
-                  // Fire-and-forget the save — don't block navigation on a slow warehouse start
-                  if (catalogInput.trim() && schemaInput.trim()) {
-                    fetch("/api/settings/catalog", {
+                onClick={async () => {
+                  const cat = catalogInput.trim();
+                  const sch = schemaInput.trim();
+                  if (!cat || !sch) return;
+                  setStorageSaving(true);
+                  setError(null);
+                  try {
+                    const res = await fetch("/api/settings/catalog", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ catalog: catalogInput.trim(), schema: schemaInput.trim() }),
-                    }).catch(() => {});
+                      body: JSON.stringify({ catalog: cat, schema: sch }),
+                    });
+                    if (!res.ok) {
+                      const body = await res.json().catch(() => ({}));
+                      setError(body.detail || `Failed to save storage location (HTTP ${res.status})`);
+                      return;
+                    }
+                  } catch (e) {
+                    setError(`Failed to save storage location: ${e}`);
+                    return;
+                  } finally {
+                    setStorageSaving(false);
                   }
                   goNext();
                 }}
-                disabled={!catalogInput.trim() || !schemaInput.trim()}
+                disabled={!catalogInput.trim() || !schemaInput.trim() || storageSaving}
                 className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
               >
-                Next
+                {storageSaving ? "Saving…" : "Next"}
               </button>
             ) : step === "permissions" ? (
               <button
@@ -697,9 +714,10 @@ function WizardPermissionsStep({
   );
 }
 
-function CreateTablesStep({ setupStatus, creating }: {
+function CreateTablesStep({ setupStatus, creating, tablesJustCreated }: {
   setupStatus: SetupStatus | null;
   creating: boolean;
+  tablesJustCreated: boolean;
 }) {
   if (creating) {
     return (
@@ -723,22 +741,27 @@ function CreateTablesStep({ setupStatus, creating }: {
     );
   }
 
-  if (setupStatus?.all_tables_exist) {
+  if (tablesJustCreated || setupStatus?.all_tables_exist) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">
-          All materialized views are ready.
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
+          <svg className="h-5 w-5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-sm font-medium text-green-800">Tables created successfully. Click <strong>Next</strong> to continue.</p>
         </div>
-        <div className="space-y-1">
-          {Object.entries(setupStatus.tables).map(([table, exists]) => (
-            <div key={table} className="flex items-center gap-2 px-3 py-1 text-sm">
-              <svg className={`h-4 w-4 ${exists ? "text-green-500" : "text-red-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={exists ? "M5 13l4 4L19 7" : "M6 18L18 6M6 6l12 12"} />
-              </svg>
-              <span className="font-mono text-xs">{table}</span>
-            </div>
-          ))}
-        </div>
+        {setupStatus && Object.keys(setupStatus.tables).length > 0 && (
+          <div className="space-y-1">
+            {Object.entries(setupStatus.tables).map(([table, exists]) => (
+              <div key={table} className="flex items-center gap-2 px-3 py-1 text-sm">
+                <svg className={`h-4 w-4 ${exists ? "text-green-500" : "text-amber-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={exists ? "M5 13l4 4L19 7" : "M6 18L18 6M6 6l12 12"} />
+                </svg>
+                <span className="font-mono text-xs">{table}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

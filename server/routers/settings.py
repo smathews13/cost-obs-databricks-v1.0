@@ -685,13 +685,16 @@ async def get_catalog_settings():
 @router.post("/catalog")
 async def save_catalog_settings(body: dict):
     """Save catalog/schema override from the Setup Wizard."""
-    from server.db import save_catalog_schema
+    from fastapi import HTTPException
+    from server.db import save_catalog_schema, StorageConfigurationError
     catalog = (body.get("catalog") or "").strip()
     schema = (body.get("schema") or "").strip()
     if not catalog or not schema:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="catalog and schema are required")
-    save_catalog_schema(catalog, schema)
+    try:
+        save_catalog_schema(catalog, schema)
+    except StorageConfigurationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"catalog": catalog, "schema": schema, "source": "override"}
 
 

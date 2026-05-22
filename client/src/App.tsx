@@ -423,13 +423,13 @@ function Dashboard() {
   const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, _wsIds, true);
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, _wsIds, true);
 
-  // Infra tab data (account-wide, no workspace filter) — always preload
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, undefined, true);
+  // Infra tab data — only fetch when infra tab is active
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, isInfraTab);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
-  // KPIs + anomalies — always preload, workspace filter applied when active
-  const { data: kpisBundle, isLoading: kpisBundleLoading, isFetching: kpisBundleFetching } = useKPIsBundle(dateRange, _wsIds, true);
+  // KPIs + anomalies — only fetch when kpis tab is active
+  const { data: kpisBundle, isLoading: kpisBundleLoading, isFetching: kpisBundleFetching } = useKPIsBundle(dateRange, _wsIds, activeTab === "kpis");
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;
@@ -470,7 +470,7 @@ function Dashboard() {
   const { data: wsListData, isLoading: wsListLoading } = useQuery<{ workspaces: { id: string; name: string }[] }>({
     queryKey: ["billing", "workspaces"],
     queryFn: () => fetch("/api/billing/workspaces").then(r => r.json()),
-    staleTime: 5 * 60 * 1000,
+    staleTime: Infinity,
   });
   const wsFilterList = (wsListData?.workspaces ?? []).map(w => ({ workspace_id: w.id, workspace_name: w.name }));
 

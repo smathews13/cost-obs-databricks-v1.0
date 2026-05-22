@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime
 from typing import Any, Optional
@@ -25,6 +26,11 @@ def _require_admin(request: Request) -> str:
     if admins and email not in admins:
         raise HTTPException(status_code=403, detail="Admin role required")
     return email
+
+# In-process cache for /api/settings/tables — expensive parallel SQL + owner lookups
+_tables_cache: dict | None = None
+_tables_cache_ts: float = 0.0
+_TABLES_CACHE_TTL = 5 * 60  # 5 minutes
 
 # File-based storage (fallback / dev only — production uses Delta tables)
 SETTINGS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
@@ -382,6 +388,10 @@ async def get_app_config():
 @router.get("/tables")
 async def get_tables_status(request: Request):
     """Return status of each MV table: exists, row count, max date, days behind."""
+    global _tables_cache, _tables_cache_ts
+    if _tables_cache is not None and (time.time() - _tables_cache_ts) < _TABLES_CACHE_TTL:
+        return _tables_cache
+
     from server.db import get_catalog_schema, execute_query, _user_token
 
     # Read the raw forwarded token directly — _auth_mode may be locked to "sp"
@@ -457,38 +467,40 @@ async def get_tables_status(request: Request):
         # Owner is fetched in a separate parallel pool — not here — to avoid
         # the SDK REST call serialising before the SQL query and doubling latency.
         skip_date = table_name in no_date_tables
+        # DESCRIBE TABLE is a metadata-only op — no full scan, instant on any table size.
         try:
-            if skip_date:
-                rows = execute_query(f"SELECT COUNT(*) as cnt FROM {fqn}")
-                cnt = rows[0]["cnt"] if rows else 0
-                return {"name": table_name, "table_type": table_type, "exists": True, "row_count": cnt, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
-            else:
-                max_expr = date_expr_overrides.get(table_name, "MAX(usage_date)")
-                min_expr = min_date_expr_overrides.get(table_name, "MIN(usage_date)")
-                rows = execute_query(
-                    f"SELECT COUNT(*) as cnt, {max_expr} as max_date, {min_expr} as min_date FROM {fqn}"
-                )
-                if not rows:
-                    return {"name": table_name, "table_type": table_type, "exists": True, "row_count": 0, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
-                cnt = rows[0].get("cnt", 0)
-                max_date = rows[0].get("max_date")
-                min_date = rows[0].get("min_date")
-                max_date_str = str(max_date) if max_date else None
-                min_date_str = str(min_date) if min_date else None
-                days_behind = None
-                if max_date_str:
-                    from datetime import date as _date
-                    try:
-                        delta = _date.today() - _date.fromisoformat(max_date_str[:10])
-                        days_behind = delta.days
-                    except Exception:
-                        pass
-                return {"name": table_name, "table_type": table_type, "exists": True, "row_count": int(cnt), "min_date": min_date_str, "max_date": max_date_str, "days_behind": days_behind, "owner": None}
+            execute_query(f"DESCRIBE TABLE {fqn}")
         except Exception as e:
             err = str(e)
             if "TABLE_OR_VIEW_NOT_FOUND" in err or "does not exist" in err.lower() or "not found" in err.lower():
                 return {"name": table_name, "table_type": table_type, "exists": False, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
             return {"name": table_name, "table_type": table_type, "exists": None, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None, "error": err[:200]}
+
+        if skip_date:
+            return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
+
+        try:
+            max_expr = date_expr_overrides.get(table_name, "MAX(usage_date)")
+            min_expr = min_date_expr_overrides.get(table_name, "MIN(usage_date)")
+            rows = execute_query(f"SELECT {max_expr} as max_date, {min_expr} as min_date FROM {fqn}")
+            if not rows:
+                return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
+            max_date = rows[0].get("max_date")
+            min_date = rows[0].get("min_date")
+            max_date_str = str(max_date) if max_date else None
+            min_date_str = str(min_date) if min_date else None
+            days_behind = None
+            if max_date_str:
+                from datetime import date as _date
+                try:
+                    delta = _date.today() - _date.fromisoformat(max_date_str[:10])
+                    days_behind = delta.days
+                except Exception:
+                    pass
+            return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": min_date_str, "max_date": max_date_str, "days_behind": days_behind, "owner": None}
+        except Exception as e:
+            err = str(e)
+            return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None, "error": err[:200]}
 
     # Config tables are created lazily on first save — not existing yet is expected
     CONFIG_TABLES: set[str] = set()
@@ -572,7 +584,10 @@ async def get_tables_status(request: Request):
     except (FileNotFoundError, KeyError, ValueError, OSError):
         pass
 
-    return {"catalog": catalog, "schema": schema, "tables": results, "auth_error": auth_error, "refresh_status": refresh_status}
+    result = {"catalog": catalog, "schema": schema, "tables": results, "auth_error": auth_error, "refresh_status": refresh_status}
+    _tables_cache = result
+    _tables_cache_ts = time.time()
+    return result
 
 
 _CONTRACT_SETTINGS_FILE = os.path.join(

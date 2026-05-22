@@ -353,10 +353,10 @@ DEDICATED_WAREHOUSE_MIN_CLUSTERS = 1
 DEDICATED_WAREHOUSE_MAX_CLUSTERS = 2
 DEDICATED_WAREHOUSE_AUTO_STOP_MINS = 10
 
-# Bounded TTL cache for query results (2 hour TTL, max 500 entries, ~1GB limit)
+# Bounded TTL cache for query results (2 hour TTL, max 200 entries)
 # Using cachetools.TTLCache to prevent unbounded memory growth
-_CACHE_MAX_SIZE = 500  # Max number of cached queries
-_CACHE_TTL = 4 * 60 * 60  # 4 hours - cost data doesn't change intra-day
+_CACHE_MAX_SIZE = 200  # Max number of cached queries
+_CACHE_TTL = 2 * 60 * 60  # 2 hours
 _query_cache: TTLCache = TTLCache(maxsize=_CACHE_MAX_SIZE, ttl=_CACHE_TTL)
 
 # SQL connection timeout in seconds

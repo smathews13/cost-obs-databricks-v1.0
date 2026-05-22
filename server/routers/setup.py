@@ -387,6 +387,10 @@ async def mark_setup_complete(background_tasks: BackgroundTasks) -> dict[str, An
     from server.db import write_dbfs_setup_complete
     write_dbfs_setup_complete()
 
+    # Invalidate the settings/tables cache so the post-setup check shows fresh data.
+    from server.routers import settings as _settings_router
+    _settings_router._tables_cache = None
+
     # Kick off the initial MV build in the background — the catalog/schema were
     # just created so no data exists yet.  Failures are non-fatal: the dashboard
     # falls back to direct system-table queries until the build completes.

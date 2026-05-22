@@ -577,7 +577,14 @@ def startup_tasks():
     setup_system_access_schema()
 
     # Step 0c: Grant the active identity access to all required system tables
-    setup_system_table_grants()
+    # Only run on first setup — grants are persistent, no need to re-run every restart.
+    from server.routers.setup import SETUP_DONE_FILE
+    from server.db import read_dbfs_setup_complete
+    _setup_complete = os.path.exists(SETUP_DONE_FILE) or read_dbfs_setup_complete()
+    if not _setup_complete:
+        setup_system_table_grants()
+    else:
+        logger.info("Setup already complete — skipping system table grants")
 
     # Step 1: Create materialized views if needed
     setup_materialized_views()
@@ -590,7 +597,11 @@ def startup_tasks():
         logger.warning(f"Workspace filter restore failed (non-fatal): {e}")
 
     # Step 3: Pre-warm cache (billing - fast queries first)
-    prewarm_cache_sync()
+    # Skip if setup hasn't completed yet — MVs don't exist, prewarm would cache empty results.
+    if _setup_complete:
+        prewarm_cache_sync()
+    else:
+        logger.info("Setup not yet complete — skipping cache prewarm")
 
     # Step 6: Pre-warm permissions check (warms SDK auth + caches result for wizard)
     try:

@@ -62,28 +62,16 @@ SYSTEM_TABLE_GRANTS = [
 
 
 def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
-    """Grant the app's SP identity all required permissions via UC REST API.
+    """Grant the app SP required permissions via SQL GRANT statements.
 
-    Uses the SDK grants API directly — no SQL warehouse required, so this
-    works even when the warehouse is stopped or the SP has no CAN_USE yet.
-    Warehouse CAN_USE is granted via the permissions REST API.
+    Uses the SQL warehouse (JDBC) instead of the UC REST API to avoid the
+    'unity-catalog' OAuth scope requirement — forwarded user tokens and SP
+    m2m tokens do not carry that scope in Databricks Apps.
 
-    Always uses the user OAuth token when present, bypassing any auth_mode lock,
-    because the granting user (not the SP) needs metastore admin privileges.
-
+    Runs as the calling user (set via _user_token ContextVar by the caller).
     Returns {"ok": bool, "sp_client_id": str, "applied": int, "failed": int, "errors": list}
     """
-    from server.db import _user_token, get_workspace_client
-    from databricks.sdk import WorkspaceClient
-    from databricks.sdk.service.catalog import SecurableType, PermissionsChange, Privilege
-
-    _PRIV_MAP = {
-        "USE CATALOG": Privilege.USE_CATALOG,
-        "USE SCHEMA": Privilege.USE_SCHEMA,
-        "SELECT": Privilege.SELECT,
-        "CREATE TABLE": Privilege.CREATE_TABLE,
-        "CREATE SCHEMA": Privilege.CREATE_SCHEMA,
-    }
+    from server.db import _user_token, get_connection
 
     sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
     if not sp_client_id:
@@ -91,64 +79,72 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
         return {"ok": False, "sp_client_id": "", "applied": 0, "failed": 0,
                 "errors": ["DATABRICKS_CLIENT_ID not set — app has no service principal to grant"]}
 
-    # Always use user token for grants — the user needs metastore admin, not the SP.
-    # Bypass auth_mode lock intentionally: even if queries are locked to SP mode,
-    # the grant operation must run as the human user who has the privileges.
-    user_token = _user_token.get()
-    host = os.getenv("DATABRICKS_HOST", "")
-    if user_token and host:
-        w = WorkspaceClient(host=host, token=user_token, auth_type="pat")
-    else:
-        w = get_workspace_client()
+    p = sp_client_id  # principal name in GRANT statements
+
+    # Build (sql, label) pairs for every privilege we need to apply.
+    grant_stmts: list[tuple[str, str]] = [
+        (f"GRANT USE CATALOG ON CATALOG `system` TO `{p}`", "CATALOG/system"),
+    ]
+    for _, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
+        parts = obj_name.split(".")
+        q = ".".join(f"`{part}`" for part in parts)
+        if obj_type == "SCHEMA":
+            grant_stmts.append((f"GRANT USE SCHEMA ON SCHEMA {q} TO `{p}`", f"SCHEMA/{obj_name}"))
+        elif obj_type == "TABLE":
+            grant_stmts.append((f"GRANT SELECT ON TABLE {q} TO `{p}`", f"TABLE/{obj_name}"))
+
+    grant_stmts += [
+        (f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{p}`",                           f"CATALOG/{catalog}"),
+        (f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{p}`",                         f"CREATE_SCHEMA/{catalog}"),
+        (f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                  f"SCHEMA/{catalog}.{schema}"),
+        (f"GRANT CREATE TABLE ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                f"CREATE_TABLE/{catalog}.{schema}"),
+        (f"GRANT SELECT ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                      f"SELECT/{catalog}.{schema}"),
+    ]
 
     ok = failed = 0
     errors: list[str] = []
 
-    def _uc_grant(securable_type: SecurableType, full_name: str, *privileges: str):
-        nonlocal ok, failed
-        try:
-            priv_values = [_PRIV_MAP[p].value for p in privileges if p in _PRIV_MAP]
-            # Use raw REST API instead of w.grants.update() to avoid the Databricks SDK
-            # "unable to parse response" bug — the UC grants PATCH returns a minimal body
-            # that the SDK fails to deserialize even on success.
-            w.api_client.do(
-                "PATCH",
-                f"/api/2.1/unity-catalog/permissions/{securable_type.value}/{full_name}",
-                body={"changes": [{"principal": sp_client_id, "add": priv_values}]},
-            )
-            ok += 1
-            logger.info(f"Granted {privileges} on {securable_type.value}/{full_name} to {sp_client_id}")
-        except Exception as e:
-            err = str(e).lower()
-            if "already" in err or "not found" in err or "does not exist" in err:
-                ok += 1
-                logger.debug(f"Grant already applied for {full_name}: {e}")
-            else:
-                logger.warning(
-                    f"UC grant failed — {type(e).__name__} on {securable_type.value}/{full_name} "
-                    f"for principal {sp_client_id}: {e}"
-                )
-                errors.append(f"{securable_type.value}/{full_name}: {e}")
-                failed += 1
+    # get_connection() uses _user_token directly (no auth_mode gate) — if the
+    # caller has set the user token in context, grants run as that user.
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                for sql_stmt, label in grant_stmts:
+                    try:
+                        cursor.execute(sql_stmt)
+                        ok += 1
+                        logger.info(f"SQL GRANT ok: {label} → {p}")
+                    except Exception as e:
+                        err_lower = str(e).lower()
+                        if any(kw in err_lower for kw in ("not found", "does not exist", "already")):
+                            ok += 1
+                            logger.debug(f"GRANT skipped (already applied / object missing): {label}: {e}")
+                        else:
+                            msg = _clean_sdk_error(str(e))
+                            logger.warning(f"SQL GRANT failed: {label}: {msg}")
+                            errors.append(f"{label}: {msg}")
+                            failed += 1
+    except Exception as e:
+        msg = _clean_sdk_error(str(e))
+        logger.error(f"Could not open warehouse connection for grants: {msg}")
+        return {"ok": False, "sp_client_id": sp_client_id, "applied": ok, "failed": failed + 1,
+                "errors": errors + [f"warehouse connection: {msg}"]}
 
-    # System catalog + schemas + tables
-    _uc_grant(SecurableType.CATALOG, "system", "USE CATALOG")
-    for _, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
-        if obj_type == "SCHEMA":
-            _uc_grant(SecurableType.SCHEMA, obj_name, "USE SCHEMA")
-        elif obj_type == "TABLE":
-            _uc_grant(SecurableType.TABLE, obj_name, "SELECT")
+    logger.info(f"SP SQL grants: {ok} ok, {failed} failed for {p}")
 
-    # App catalog + schema — CREATE SCHEMA lets the SP create the schema when it doesn't yet exist.
-    _uc_grant(SecurableType.CATALOG, catalog, "USE CATALOG", "CREATE SCHEMA")
-    _uc_grant(SecurableType.SCHEMA, f"{catalog}.{schema}",
-              "USE SCHEMA", "CREATE TABLE", "SELECT")
-
-    logger.info(f"SP grants via SDK API: {ok} ok, {failed} failed for {sp_client_id}")
-
-    # Grant CAN_USE on the SQL warehouse via REST API (not SQL — works even
-    # when the SP has no warehouse access yet, making it self-healing on redeploy)
-    _grant_warehouse_can_use(w, sp_client_id)
+    # Warehouse CAN_USE via REST API — uses /api/2.0/permissions/ (not UC API,
+    # no unity-catalog scope required).
+    try:
+        user_tok = _user_token.get()
+        host = os.getenv("DATABRICKS_HOST", "")
+        if user_tok and host:
+            from databricks.sdk import WorkspaceClient
+            w = WorkspaceClient(host=host, token=user_tok, auth_type="pat")
+        else:
+            w = get_workspace_client()
+        _grant_warehouse_can_use(w, sp_client_id)
+    except Exception as e:
+        logger.warning(f"Warehouse CAN_USE grant failed (non-fatal): {e}")
 
     return {
         "ok": failed == 0,

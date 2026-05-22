@@ -347,12 +347,12 @@ async def get_app_config():
                     return {}
             loop = _asyncio.get_running_loop()
             try:
-                detail = await _asyncio.wait_for(loop.run_in_executor(None, _fetch_warehouse), timeout=10)
+                detail = await _asyncio.wait_for(loop.run_in_executor(None, _fetch_warehouse), timeout=3)
                 if detail:
                     _warehouse_cache = {"_id": warehouse_id, **detail}
-                warehouse.update(detail)
+                    warehouse.update(detail)
             except Exception:
-                pass
+                pass  # timeout or SDK error — warehouse ID is still shown
 
     # Identity: SP client ID from env var (no current_user.me() call)
     sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")

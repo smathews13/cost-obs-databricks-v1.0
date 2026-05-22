@@ -592,31 +592,41 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                     if (!cat || !sch) return;
                     setError(null);
 
-                    // Step 1: Save config
+                    // Step 1: Save config (auto-retry up to 3× for cold-start)
                     setStoragePhase("saving");
                     setStorageChecks({ config: null, catalog: null, schema: null });
-                    try {
-                      const res = await fetch("/api/settings/catalog", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ catalog: cat, schema: sch }),
-                        signal: AbortSignal.timeout(45000),
-                      });
-                      if (!res.ok) {
-                        const body = await res.json().catch(() => ({}));
-                        setError(body.detail || `Failed to save (HTTP ${res.status})`);
-                        setStorageChecks(c => ({ ...c, config: false }));
-                        setStoragePhase("error");
-                        return;
+                    {
+                      let saved = false;
+                      for (let attempt = 1; attempt <= 3 && !saved; attempt++) {
+                        try {
+                          const res = await fetch("/api/settings/catalog", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ catalog: cat, schema: sch }),
+                            signal: AbortSignal.timeout(30000),
+                          });
+                          if (!res.ok) {
+                            const body = await res.json().catch(() => ({}));
+                            setError(body.detail || `Failed to save (HTTP ${res.status})`);
+                            setStorageChecks(c => ({ ...c, config: false }));
+                            setStoragePhase("error");
+                            return;
+                          }
+                          saved = true;
+                        } catch (e: unknown) {
+                          if (e instanceof Error && e.name === "TimeoutError" && attempt < 3) {
+                            await new Promise(r => setTimeout(r, 4000));
+                          } else {
+                            setError(e instanceof Error && e.name === "TimeoutError"
+                              ? "Server is not responding. Wait a moment and try again."
+                              : `Failed to save: ${e}`);
+                            setStorageChecks(c => ({ ...c, config: false }));
+                            setStoragePhase("error");
+                            return;
+                          }
+                        }
                       }
                       setStorageChecks(c => ({ ...c, config: true }));
-                    } catch (e: unknown) {
-                      setError(e instanceof Error && e.name === "TimeoutError"
-                        ? "Server is starting up — wait a moment and try again."
-                        : `Failed to save: ${e}`);
-                      setStorageChecks(c => ({ ...c, config: false }));
-                      setStoragePhase("error");
-                      return;
                     }
 
                     // Step 2: Create catalog

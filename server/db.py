@@ -846,7 +846,19 @@ def execute_queries_parallel(
                 query_elapsed = time.time() - query_start
                 logger.info(f"✓ {name}: {query_elapsed:.2f}s")
             except Exception as e:
-                logger.error(f"✗ {name} failed: {e}")
+                # Expected structural errors (missing grants, schema differences,
+                # optional tables) — log at WARNING to reduce noise.
+                # Real errors (connection failures, unexpected types) stay at ERROR.
+                _EXPECTED_CODES = (
+                    "[INSUFFICIENT_PERMISSIONS]",
+                    "[UNRESOLVED_COLUMN",
+                    "[TABLE_OR_VIEW_NOT_FOUND]",
+                    "[SCHEMA_NOT_FOUND]",
+                )
+                if any(code in str(e) for code in _EXPECTED_CODES):
+                    logger.warning(f"✗ {name} failed (non-fatal): {e}")
+                else:
+                    logger.error(f"✗ {name} failed: {e}")
                 results[name] = None
 
     total_elapsed = time.time() - start_time

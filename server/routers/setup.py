@@ -56,6 +56,7 @@ SYSTEM_TABLE_GRANTS = [
     ("SELECT",      "TABLE",   "system.compute.clusters"),
     ("USE SCHEMA",  "SCHEMA",  "system.lakeflow"),
     ("SELECT",      "TABLE",   "system.lakeflow.pipelines"),
+    ("SELECT",      "TABLE",   "system.lakeflow.job_run_timeline"),
     ("USE SCHEMA",  "SCHEMA",  "system.serving"),
     ("SELECT",      "TABLE",   "system.serving.served_entities"),
 ]

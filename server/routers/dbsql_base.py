@@ -42,10 +42,9 @@ def _build_queries(table_name: str) -> dict[str, str]:
     return {
         "check_mv": f"""
             SELECT 1
-            FROM information_schema.tables
+            FROM {{catalog}}.information_schema.tables
             WHERE table_schema = '{{schema}}'
               AND table_name = '{table_name}'
-              AND table_catalog = '{{catalog}}'
             LIMIT 1
         """,
         "data_range": f"""

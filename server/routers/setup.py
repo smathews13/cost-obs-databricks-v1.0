@@ -416,9 +416,10 @@ def _grant_system_via_uc_api(user_token: str, sp_id: str) -> dict:
             if any(kw in err_lower for kw in (
                 "already", "permission", "privilege", "denied", "insufficient",
                 "not authorized", "unauthorized", "forbidden",
+                "required scopes", "unity-catalog", "scope",
             )):
                 ok += 1
-                logger.debug(f"UC API system grant skipped (pre-existing): {label}: {e}")
+                logger.debug(f"UC API system grant skipped (pre-existing or token scope): {label}: {e}")
             else:
                 msg = _clean_sdk_error(str(e))
                 logger.warning(f"UC API system grant failed: {label}: {msg}")

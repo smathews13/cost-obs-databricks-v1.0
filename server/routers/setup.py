@@ -32,20 +32,12 @@ SETUP_DONE_FILE = os.path.join(SETTINGS_DIR, "setup_done.json")
 # Simple in-process state for the background create-tables task
 _create_task_state: dict = {"status": "idle", "error": None, "started_at": None, "elapsed_seconds": None}  # idle | running | done | error
 
-# Tables required for the dashboard to be functional — only these gate wizard completion.
-# They source exclusively from system.billing, so they succeed whenever the SP has billing access.
+# Core billing tables — must exist for the dashboard to be functional.
+# Used by get_setup_status to gate the "ready" state.
 _CORE_REQUIRED_TABLES = frozenset({
     "daily_usage_summary",
     "daily_product_breakdown",
     "daily_workspace_breakdown",
-})
-
-# Tables that require system.query.history — granted by the wizard but may not be accessible
-# in all workspaces (system table may not be enabled). Failures here are non-blocking.
-_QUERY_HISTORY_TABLES = frozenset({
-    "sql_tool_attribution",
-    "daily_query_stats",
-    "dbsql_cost_per_query",
 })
 
 # Auto-fail bootstrap after this many seconds to prevent infinite spinner
@@ -90,6 +82,7 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
         "USE SCHEMA": Privilege.USE_SCHEMA,
         "SELECT": Privilege.SELECT,
         "CREATE TABLE": Privilege.CREATE_TABLE,
+        "CREATE SCHEMA": Privilege.CREATE_SCHEMA,
     }
 
     sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
@@ -146,8 +139,8 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
         elif obj_type == "TABLE":
             _uc_grant(SecurableType.TABLE, obj_name, "SELECT")
 
-    # App catalog + schema
-    _uc_grant(SecurableType.CATALOG, catalog, "USE CATALOG")
+    # App catalog + schema — CREATE SCHEMA lets the SP create the schema when it doesn't yet exist.
+    _uc_grant(SecurableType.CATALOG, catalog, "USE CATALOG", "CREATE SCHEMA")
     _uc_grant(SecurableType.SCHEMA, f"{catalog}.{schema}",
               "USE SCHEMA", "CREATE TABLE", "SELECT")
 
@@ -274,8 +267,7 @@ async def get_setup_status() -> dict[str, Any]:
     loop = _asyncio.get_running_loop()
     tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
 
-    # Only core billing tables are required for the dashboard to be functional.
-    # Query.history tables are optional — their absence doesn't block the wizard.
+    # Core billing tables gate the "ready" state — without them the dashboard has nothing to show.
     core_exist = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
     all_exist = all(tables.values())
     missing = [name for name, exists in tables.items() if not exists]
@@ -444,41 +436,47 @@ async def create_tables(
 def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
     """Background task to create tables (wizard path).
 
-    Runs as the user (not the SP) so CREATE SCHEMA and CREATE TABLE succeed
-    on fresh deployments where the SP has no grants yet.
+    Runs entirely as the SP — OAuth is not used for data operations.
+    The permissions step must have already granted the SP CREATE SCHEMA on the app
+    catalog and SELECT on all required system tables before this runs.
+
+    user_token is retained only for the post-creation re-grant so schema-level
+    privileges (USE SCHEMA, CREATE TABLE, SELECT) are recorded after the schema exists.
+    Any error — catalog, schema, or any individual table — blocks completion.
     """
     logger.info(f"Starting background table creation for {catalog}.{schema}")
-    tok = _db_user_token.set(user_token) if user_token else None
     try:
+        # All data operations run as SP — no user token in context.
         results = create_materialized_views(catalog, schema)
         logger.info(f"Table creation completed: {results}")
 
-        all_errors = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
-        core_errors = {k: v for k, v in all_errors.items() if k in _CORE_REQUIRED_TABLES}
-        qh_errors = {k: v for k, v in all_errors.items() if k in _QUERY_HISTORY_TABLES}
+        # Any error key (catalog, schema, or table name) blocks task completion.
+        # "catalog"/"schema" keys mean infra setup failed before tables were attempted.
+        all_errors = {
+            k: v for k, v in results.items()
+            if k != "__mv_timings__" and isinstance(v, str) and v.startswith("error:")
+        }
 
-        if core_errors:
-            first_error = next(iter(core_errors.values()))
+        if all_errors:
+            first_error = next(iter(all_errors.values()))
             _create_task_state["status"] = "error"
             _create_task_state["error"] = first_error.replace("error: ", "", 1)
         else:
-            # Core billing tables succeeded. Query.history tables are best-effort.
             _create_task_state["status"] = "done"
             _create_task_state["error"] = None
-            if qh_errors:
-                logger.warning(
-                    "Query.history tables could not be created (system.query.history may not be "
-                    "accessible) — SQL per-query attribution will be unavailable: %s",
-                    list(qh_errors.keys()),
-                )
-            _grant_sp_schema_access(catalog, schema)
+            # Re-apply SP grants now that the schema exists. Schema-level privileges
+            # (USE SCHEMA, CREATE TABLE, SELECT) silently no-op when schema is absent,
+            # so running after creation ensures they are actually recorded in UC.
+            grant_tok = _db_user_token.set(user_token) if user_token else None
+            try:
+                _grant_sp_schema_access(catalog, schema)
+            finally:
+                if grant_tok is not None:
+                    _db_user_token.reset(grant_tok)
     except Exception as e:
         _create_task_state["status"] = "error"
         _create_task_state["error"] = str(e)
         logger.error(f"Table creation failed: {e}")
-    finally:
-        if tok is not None:
-            _db_user_token.reset(tok)
 
 
 @router.post("/refresh-tables")

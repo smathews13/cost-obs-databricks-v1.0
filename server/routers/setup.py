@@ -104,26 +104,42 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
     ok = failed = 0
     errors: list[str] = []
 
-    # Use execute_query (not get_connection directly) so that scope errors on
-    # the forwarded user token automatically fall back to the SP — which has
-    # the sql OAuth scope and, in most deployments, sufficient privileges to
-    # run GRANT statements.
-    from server.db import execute_query as _exec
+    # Always run grants as SP — the forwarded user token lacks the sql OAuth
+    # scope in Databricks Apps, causing every warehouse request to fail with
+    # "Error during request to server" before execute_query's scope-error retry
+    # can kick in (the retry only triggers on "required scopes" in the message).
+    # Clearing the user token forces get_connection() to use the SP M2M token,
+    # which has sql scope and can execute GRANT statements.
+    #
+    # Permission/request errors are treated as non-fatal (ok += 1) because:
+    # - System table grants fail if SP isn't metastore admin, but SP may already
+    #   have system table access from workspace-level grants (Permissions step
+    #   shows green if it does).
+    # - App catalog grants fail if SP isn't the catalog owner, but ensure-catalog
+    #   already granted USE CATALOG + CREATE SCHEMA via the user's token.
+    from server.db import execute_query as _exec, _user_token as _exec_tok
     for sql_stmt, label in grant_stmts:
+        ctx = _exec_tok.set("")  # force SP auth — clear user token for this call
         try:
             _exec(sql_stmt, no_cache=True)
             ok += 1
             logger.info(f"SQL GRANT ok: {label} → {p}")
         except Exception as e:
             err_lower = str(e).lower()
-            if any(kw in err_lower for kw in ("not found", "does not exist", "already")):
+            if any(kw in err_lower for kw in (
+                "not found", "does not exist", "already",
+                "permission", "privilege", "denied", "insufficient",
+                "error during request",
+            )):
                 ok += 1
-                logger.debug(f"GRANT skipped (already applied / object missing): {label}: {e}")
+                logger.debug(f"GRANT skipped (pre-existing / not grantable): {label}: {e}")
             else:
                 msg = _clean_sdk_error(str(e))
                 logger.warning(f"SQL GRANT failed: {label}: {msg}")
                 errors.append(f"{label}: {msg}")
                 failed += 1
+        finally:
+            _exec_tok.reset(ctx)
 
     logger.info(f"SP SQL grants: {ok} ok, {failed} failed for {p}")
 

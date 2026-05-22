@@ -260,30 +260,18 @@ async def get_setup_status() -> dict[str, Any]:
     tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
 
     # setup_done.json absent (wiped on every git redeploy).
-    # Auto-heal: if core tables already exist, recreate the file so the dashboard
-    # loads immediately instead of forcing the wizard again.
+    # Auto-heal: if catalog+schema are configured, setup was done at some point.
+    # Recreate the file unconditionally — tables may still be building in the
+    # background, but the dashboard falls back to direct system queries.
     if not os.path.exists(SETUP_DONE_FILE):
-        core_ok = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
-        if core_ok:
-            try:
-                import datetime as _dt, json as _json
-                os.makedirs(SETTINGS_DIR, exist_ok=True)
-                with open(SETUP_DONE_FILE, "w") as f:
-                    _json.dump({"completed_at": _dt.datetime.utcnow().isoformat(), "auto_healed": True}, f)
-                logger.info("setup_done.json auto-healed on redeploy — tables already exist")
-            except Exception as e:
-                logger.warning(f"Could not auto-heal setup_done.json: {e}")
-        else:
-            missing_t = [name for name, exists in tables.items() if not exists]
-            return {
-                "catalog": catalog,
-                "schema": schema,
-                "tables": tables,
-                "all_tables_exist": False,
-                "missing_tables": missing_t,
-                "status": "setup_required",
-                "task": _create_task_state.copy(),
-            }
+        try:
+            import datetime as _dt, json as _json
+            os.makedirs(SETTINGS_DIR, exist_ok=True)
+            with open(SETUP_DONE_FILE, "w") as f:
+                _json.dump({"completed_at": _dt.datetime.utcnow().isoformat(), "auto_healed": True}, f)
+            logger.info("setup_done.json auto-healed on redeploy")
+        except Exception as e:
+            logger.warning(f"Could not auto-heal setup_done.json: {e}")
 
     # Core billing tables gate the "ready" state — without them the dashboard has nothing to show.
     core_exist = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
@@ -291,13 +279,18 @@ async def get_setup_status() -> dict[str, Any]:
     missing = [name for name, exists in tables.items() if not exists]
 
     if not core_exist:
+        # setup_done.json exists but MVs aren't built yet (post-redeploy background
+        # build in progress, or tables were dropped).  Return "ready" so the dashboard
+        # shows — it will fall back to direct system-table queries until the build
+        # finishes.  Don't force the wizard: the user already completed setup.
         return {
             "catalog": catalog,
             "schema": schema,
             "tables": tables,
             "all_tables_exist": False,
             "missing_tables": missing,
-            "status": "setup_required",
+            "status": "ready",
+            "tables_building": True,
             "task": _create_task_state.copy(),
         }
 

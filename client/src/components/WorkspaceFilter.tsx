@@ -30,11 +30,19 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
 
   function toggle(id: string | null) {
     if (!id) return;
+    if (allSelected) {
+      // All checked — unchecking one means select everything except this one
+      onChange(validWorkspaces.map((w) => w.workspace_id!).filter((x) => x !== id));
+      return;
+    }
     if (selectedIds.includes(id)) {
       const next = selectedIds.filter((x) => x !== id);
-      onChange(next);
+      // If removing the last one, revert to "all"
+      onChange(next.length === 0 ? [] : next);
     } else {
-      onChange([...selectedIds, id]);
+      const next = [...selectedIds, id];
+      // If all are now checked, normalise back to the "all" empty-array representation
+      onChange(next.length === validWorkspaces.length ? [] : next);
     }
   }
 
@@ -86,7 +94,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Workspaces</span>
             <div className="flex gap-2">
               <button
-                onClick={() => onChange(validWorkspaces.map(ws => ws.workspace_id!))}
+                onClick={() => onChange([])}
                 className="text-xs text-gray-500 hover:text-gray-800"
               >
                 All

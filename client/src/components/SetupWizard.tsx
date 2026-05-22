@@ -635,7 +635,6 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                         }
                       }
                       setStorageChecks(c => ({ ...c, config: true }));
-                      setStoragePhase("creating-catalog");
                     }
 
                     // Step 2: Create catalog

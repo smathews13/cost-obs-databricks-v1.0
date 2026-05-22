@@ -153,6 +153,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Storage location step state
+  const [catalogInput, setCatalogInput] = useState("");
+  const [schemaInput, setSchemaInput] = useState("");
+
   // Workspace filter step state
   const [wsLoading, setWsLoading] = useState(false);
   const [allWorkspaces, setAllWorkspaces] = useState<{ id: string; name: string }[]>([]);
@@ -171,7 +175,12 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
           fetch("/api/settings/config"),
           fetch("/api/settings/cloud-provider"),
         ]);
-        if (configRes.ok) setConfig(await configRes.json());
+        if (configRes.ok) {
+          const cfg = await configRes.json();
+          setConfig(cfg);
+          setCatalogInput(cfg?.storage_location?.catalog || "");
+          setSchemaInput(cfg?.storage_location?.schema || "");
+        }
         if (cloudRes.ok) setCloud(await cloudRes.json());
       } catch (e) {
         setError(`Failed to load environment info: ${e}`);
@@ -393,7 +402,12 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
           )}
 
           {step === "storage-location" && (
-            <StorageLocationStep config={config} />
+            <StorageLocationStep
+              catalog={catalogInput}
+              schema={schemaInput}
+              onCatalogChange={setCatalogInput}
+              onSchemaChange={setSchemaInput}
+            />
           )}
 
           {step === "permissions" && (
@@ -493,8 +507,18 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               )
             ) : step === "storage-location" ? (
               <button
-                onClick={goNext}
-                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors"
+                onClick={async () => {
+                  if (catalogInput.trim() && schemaInput.trim()) {
+                    await fetch("/api/settings/catalog", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ catalog: catalogInput.trim(), schema: schemaInput.trim() }),
+                    }).catch(() => {});
+                  }
+                  goNext();
+                }}
+                disabled={!catalogInput.trim() || !schemaInput.trim()}
+                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
               >
                 Next
               </button>
@@ -656,44 +680,55 @@ function WelcomeStep({ config, cloud, loading }: { config: ConfigData | null; cl
   );
 }
 
-function StorageLocationStep({ config }: { config: ConfigData | null }) {
-  const catalog = config?.storage_location?.catalog;
-  const schema = config?.storage_location?.schema;
-
+function StorageLocationStep({
+  catalog,
+  schema,
+  onCatalogChange,
+  onSchemaChange,
+}: {
+  catalog: string;
+  schema: string;
+  onCatalogChange: (v: string) => void;
+  onSchemaChange: (v: string) => void;
+}) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <p className="text-sm text-gray-600">
-        Materialized views will be created in the catalog and schema configured in your app's
-        environment variables. This location is set at deployment time and cannot be changed
-        without redeploying the app.
+        Choose where the app will store its pre-aggregated cost tables. The service principal
+        needs <span className="font-mono text-xs">USE CATALOG</span> and{" "}
+        <span className="font-mono text-xs">CREATE SCHEMA</span> privileges on the target catalog.
       </p>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-        {catalog && schema ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-500">Catalog</span>
-            <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-sm font-mono font-medium text-orange-800">{catalog}</span>
-            <span className="text-gray-300">·</span>
-            <span className="text-xs text-gray-500">Schema</span>
-            <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-sm font-mono font-medium text-orange-800">{schema}</span>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            <p className="text-sm text-amber-700 font-medium">No storage location detected</p>
-            <p className="text-xs text-amber-600">
-              Set <span className="font-mono">COST_OBS_CATALOG</span> and{" "}
-              <span className="font-mono">COST_OBS_SCHEMA</span> in your app.yaml environment
-              variables, then restart the app before continuing.
-            </p>
-          </div>
-        )}
+      <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-gray-700">
+            Catalog
+          </label>
+          <input
+            type="text"
+            value={catalog}
+            onChange={(e) => onCatalogChange(e.target.value)}
+            placeholder="e.g. my_catalog"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-gray-700">
+            Schema
+          </label>
+          <input
+            type="text"
+            value={schema}
+            onChange={(e) => onSchemaChange(e.target.value)}
+            placeholder="e.g. cost_obs"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+          />
+        </div>
       </div>
 
       <p className="text-xs text-gray-500">
-        To use a different catalog or schema, update <span className="font-mono">COST_OBS_CATALOG</span>{" "}
-        and <span className="font-mono">COST_OBS_SCHEMA</span> in app.yaml and redeploy.
-        The service principal needs <span className="font-mono">USE CATALOG</span> and{" "}
-        <span className="font-mono">CREATE SCHEMA</span> privileges on the target catalog.
+        The schema will be created automatically if it doesn't exist. Tables will be placed
+        at <span className="font-mono">{catalog || "…"}.{schema || "…"}</span>.
       </p>
     </div>
   );

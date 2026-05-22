@@ -672,6 +672,19 @@ async def get_catalog_settings():
     return get_catalog_schema_info()
 
 
+@router.post("/catalog")
+async def save_catalog_settings(body: dict):
+    """Save catalog/schema override from the Setup Wizard."""
+    from server.db import save_catalog_schema
+    catalog = (body.get("catalog") or "").strip()
+    schema = (body.get("schema") or "").strip()
+    if not catalog or not schema:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="catalog and schema are required")
+    save_catalog_schema(catalog, schema)
+    return {"catalog": catalog, "schema": schema, "source": "override"}
+
+
 @router.post("/refresh-mvs")
 async def trigger_mv_refresh(background_tasks: BackgroundTasks, lookback_days: int = 180):
     """Kick off an MV rebuild in the background and return immediately.

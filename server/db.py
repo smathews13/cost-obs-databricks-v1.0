@@ -96,15 +96,37 @@ def get_host_url() -> str:
     return host
 
 
+_CATALOG_OVERRIDE_FILE = os.path.join(
+    os.path.dirname(__file__), "..", ".settings", "catalog_override.json"
+)
+
+
 def get_catalog_schema() -> tuple[str, str]:
     """Return the catalog and schema for cost observability tables.
 
-    Source: COST_OBS_CATALOG / COST_OBS_SCHEMA env vars (set in app.yaml).
-    Defaults to main.cost_obs when env vars are absent.
+    Priority: wizard override file → COST_OBS_CATALOG/COST_OBS_SCHEMA env vars → main/cost_obs.
     """
+    try:
+        if os.path.exists(_CATALOG_OVERRIDE_FILE):
+            with open(_CATALOG_OVERRIDE_FILE) as f:
+                data = json.load(f)
+            cat = data.get("catalog", "").strip()
+            sch = data.get("schema", "").strip()
+            if cat and sch:
+                return cat, sch
+    except Exception:
+        pass
     catalog = os.getenv("COST_OBS_CATALOG", "main")
     schema = os.getenv("COST_OBS_SCHEMA", "cost_obs")
     return catalog, schema
+
+
+def save_catalog_schema(catalog: str, schema: str) -> None:
+    """Persist a catalog/schema override (written from the Setup Wizard)."""
+    os.makedirs(os.path.dirname(_CATALOG_OVERRIDE_FILE), exist_ok=True)
+    with open(_CATALOG_OVERRIDE_FILE, "w") as f:
+        json.dump({"catalog": catalog.strip(), "schema": schema.strip()}, f)
+    logger.info("Catalog override saved: %s.%s", catalog, schema)
 
 
 # ── MV table name overrides ─────────────────────────────────────────────────
@@ -148,6 +170,16 @@ def apply_mv_overrides(sql: str, catalog: str, schema: str) -> str:
 
 def get_catalog_schema_info() -> dict:
     """Return catalog/schema info for the settings read-only display."""
+    try:
+        if os.path.exists(_CATALOG_OVERRIDE_FILE):
+            with open(_CATALOG_OVERRIDE_FILE) as f:
+                data = json.load(f)
+            cat = data.get("catalog", "").strip()
+            sch = data.get("schema", "").strip()
+            if cat and sch:
+                return {"catalog": cat, "schema": sch, "source": "override"}
+    except Exception:
+        pass
     catalog = os.getenv("COST_OBS_CATALOG", "main")
     schema = os.getenv("COST_OBS_SCHEMA", "cost_obs")
     return {"catalog": catalog, "schema": schema, "source": "env"}

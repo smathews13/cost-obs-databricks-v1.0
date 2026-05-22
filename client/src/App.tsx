@@ -230,11 +230,10 @@ function Dashboard() {
   };
 
   // On every load, verify setup status with the server.
-  // 10s timeout — if the server is still starting up, go straight to the wizard
-  // rather than leaving the user stuck on "Loading..." indefinitely.
+  // 45s timeout — matches App cold-start window.
   useEffect(() => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
+    const timeout = setTimeout(() => controller.abort(), 45_000);
 
     fetch("/api/setup/status", { signal: controller.signal })
       .then((r) => r.json())
@@ -250,9 +249,11 @@ function Dashboard() {
       })
       .catch(() => {
         clearTimeout(timeout);
-        // Timeout or server unreachable — always show wizard so the user isn't stuck.
-        localStorage.removeItem("coc-setup-complete");
-        setShowSetupWizard(true);
+        // If setup was previously completed, trust localStorage on timeout/error.
+        // Only force the wizard if there's no prior completion record.
+        if (localStorage.getItem("coc-setup-complete") !== "true") {
+          setShowSetupWizard(true);
+        }
       });
 
     return () => { clearTimeout(timeout); controller.abort(); };

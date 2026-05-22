@@ -402,10 +402,6 @@ async def get_tables_status(request: Request):
         "daily_query_stats",
         "dbsql_cost_per_query",
         "app_user_permissions",
-        "app_contract_settings",
-        "app_cloud_connections",
-        "app_webhook_settings",
-        "app_warehouse_settings",
     ]
     # Which tables are conceptually "materialized views" (rebuilt on schedule)
     # vs persistent managed tables
@@ -427,8 +423,7 @@ async def get_tables_status(request: Request):
         "dbsql_cost_per_query": "CAST(MAX(start_time) AS DATE)",
     }
     no_date_tables = {
-        "app_user_permissions", "app_contract_settings", "app_cloud_connections",
-        "app_webhook_settings", "app_warehouse_settings",
+        "app_user_permissions",
     }
 
     min_date_expr_overrides = {
@@ -506,10 +501,7 @@ async def get_tables_status(request: Request):
             return {"name": table_name, "table_type": table_type, "exists": None, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": owner, "error": err[:200]}
 
     # Config tables are created lazily on first save — not existing yet is expected
-    CONFIG_TABLES = {
-        "app_contract_settings", "app_cloud_connections",
-        "app_webhook_settings", "app_warehouse_settings",
-    }
+    CONFIG_TABLES: set[str] = set()
 
     # Build task list: (table_name, fqn, table_type)
     tasks = [

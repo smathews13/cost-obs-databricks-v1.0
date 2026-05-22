@@ -421,7 +421,7 @@ function Dashboard() {
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, _wsIds, true);
 
   // Infra tab data (account-wide, no workspace filter) — always preload
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, true);
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, undefined, true);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
@@ -697,7 +697,7 @@ function Dashboard() {
                 {authStatus && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
                     {authStatus.identity !== "user_oauth" && authStatus.sp_client_id && (
-                      <span className="font-mono opacity-70">{authStatus.sp_client_id.slice(0, 8)}</span>
+                      <span className="font-mono opacity-70">{authStatus.sp_client_id.slice(0, 16)}</span>
                     )}
                     <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
                     {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}

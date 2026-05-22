@@ -2007,7 +2007,8 @@ async def get_kpis_bundle(
     """
 
     # Direct Delta query for query stats — used as fallback if Lakebase daily_query_stats is empty
-    delta_query_stats_sql = MV_PLATFORM_KPIS.format(catalog=catalog, schema=schema, ws_filter="")
+    mv_ws = _mv_ws_clause(id_list)
+    delta_query_stats_sql = MV_PLATFORM_KPIS.format(catalog=catalog, schema=schema, ws_filter=mv_ws)
 
     anomalies_sql = SPEND_ANOMALIES
 
@@ -2027,7 +2028,7 @@ async def get_kpis_bundle(
 
     # Add MV query if available
     if use_mv:
-        parallel_queries.append(("mv_kpis", lambda: _exec_mv(MV_PLATFORM_KPIS, params)))
+        parallel_queries.append(("mv_kpis", lambda: _exec_mv(MV_PLATFORM_KPIS, params, mv_ws)))
 
     # Add supplemental user count query (runs in parallel, fast from materialized table)
     try:

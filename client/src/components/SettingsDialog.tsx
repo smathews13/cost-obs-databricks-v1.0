@@ -119,9 +119,10 @@ interface SettingsDialogProps {
   onSettingsChange: (settings: AppSettings) => void;
   tabVisibility: TabVisibility;
   appSettings: AppSettings;
+  onLaunchWizard: () => void;
 }
 
-export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings }: SettingsDialogProps) {
+export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings, onLaunchWizard }: SettingsDialogProps) {
   const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "accuracy-checks" | "permissions" | "debugger">("general");
   const [localVisibility, setLocalVisibility] = useState<TabVisibility>(tabVisibility);
   const [localSettings, setLocalSettings] = useState<AppSettings>(appSettings);
@@ -272,6 +273,20 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                   Debugger
+                </button>
+                <button
+                  onClick={async () => {
+                    await fetch("/api/setup/rerun", { method: "POST" }).catch(() => {});
+                    localStorage.removeItem("coc-setup-complete");
+                    onClose();
+                    onLaunchWizard();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Re-run Setup Wizard
                 </button>
               </div>
               <div className="relative group">

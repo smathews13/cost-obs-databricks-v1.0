@@ -1090,6 +1090,7 @@ function Dashboard() {
       <SettingsDialog
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
+        onLaunchWizard={() => { setShowSettings(false); setShowSetupWizard(true); }}
         tabVisibility={tabVisibility}
         appSettings={appSettings}
         onTabVisibilityChange={(v) => {

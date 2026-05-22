@@ -373,6 +373,28 @@ async def mark_setup_complete(background_tasks: BackgroundTasks) -> dict[str, An
     return {"ok": True}
 
 
+@router.post("/rerun")
+async def rerun_setup() -> dict[str, Any]:
+    """Clear setup_done.json and reset task state so the wizard shows again.
+
+    Called when an admin clicks Re-run Setup Wizard in Settings. Safe to call
+    at any time — existing tables are left in place and are not dropped.
+    """
+    try:
+        if os.path.exists(SETUP_DONE_FILE):
+            os.remove(SETUP_DONE_FILE)
+            logger.info("setup_done.json removed — wizard will reappear on next load")
+    except Exception as e:
+        logger.warning(f"Could not remove setup_done.json: {e}")
+
+    _create_task_state["status"] = "idle"
+    _create_task_state["error"] = None
+    _create_task_state["started_at"] = None
+    _create_task_state["elapsed_seconds"] = None
+
+    return {"ok": True}
+
+
 @router.post("/reset-bootstrap")
 async def reset_bootstrap_state() -> dict[str, Any]:
     """Reset the in-process bootstrap state so auto-init can retry.

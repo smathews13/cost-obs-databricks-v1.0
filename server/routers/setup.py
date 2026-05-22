@@ -226,64 +226,17 @@ async def get_setup_status() -> dict[str, Any]:
                     "task": _create_task_state.copy(),
                 }
 
-        # If bootstrap previously errored or "done" but tables still missing,
-        # fall through to setup_required so the wizard shows instead of looping forever.
-        if _create_task_state["status"] in ("error", "done"):
-            return {
-                "catalog": catalog,
-                "schema": schema,
-                "tables": tables,
-                "all_tables_exist": False,
-                "missing_tables": missing,
-                "status": "setup_required",
-                "task": _create_task_state.copy(),
-            }
-
-        # Auto-bootstrap: tables missing + user OAuth active + not already creating
-        user_token = _db_user_token.get()
-        if user_token:
-            import threading, time as _time
-            _create_task_state["status"] = "running"
-            _create_task_state["error"] = None
-            _create_task_state["started_at"] = _time.monotonic()
-            _create_task_state["elapsed_seconds"] = 0
-            _token_snap = user_token
-            _catalog_snap = catalog
-            _schema_snap = schema
-
-            def _auto_bootstrap():
-                tok = _db_user_token.set(_token_snap)
-                try:
-                    logger.info("Auto-bootstrapping materialized views with user OAuth token...")
-                    results = create_materialized_views(_catalog_snap, _schema_snap)
-                    errors = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
-                    if errors:
-                        first_err = next(iter(errors.values()))
-                        _create_task_state["status"] = "error"
-                        _create_task_state["error"] = first_err.replace("error: ", "", 1)
-                        logger.error(f"Auto-bootstrap failed: {first_err}")
-                    else:
-                        _create_task_state["status"] = "done"
-                        _create_task_state["error"] = None
-                        logger.info("Auto-bootstrap complete — granting SP schema access")
-                        _grant_sp_schema_access(_catalog_snap, _schema_snap)
-                except Exception as exc:
-                    _create_task_state["status"] = "error"
-                    _create_task_state["error"] = str(exc)
-                    logger.error(f"Auto-bootstrap exception: {exc}")
-                finally:
-                    _db_user_token.reset(tok)
-
-            threading.Thread(target=_auto_bootstrap, daemon=True).start()
-            return {
-                "catalog": catalog,
-                "schema": schema,
-                "tables": tables,
-                "all_tables_exist": False,
-                "missing_tables": missing,
-                "status": "initializing",
-                "task": _create_task_state.copy(),
-            }
+        # Tables missing — always show the Setup Wizard so the user understands
+        # what's being created and can grant permissions through the guided flow.
+        return {
+            "catalog": catalog,
+            "schema": schema,
+            "tables": tables,
+            "all_tables_exist": False,
+            "missing_tables": missing,
+            "status": "setup_required",
+            "task": _create_task_state.copy(),
+        }
 
     # Tables exist — but if a user OAuth token is present, re-run SP grants in the
     # background. Each git deploy creates a new SP with no grants; auto-bootstrap only

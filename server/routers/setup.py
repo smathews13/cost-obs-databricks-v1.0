@@ -312,13 +312,17 @@ async def get_setup_status() -> dict[str, Any]:
                     _db_user_token.reset(tok)
             _threading.Thread(target=_bg_grant, daemon=True).start()
 
+    # Core tables exist (checked above) and setup_done.json is present (either
+    # pre-existing or just auto-healed). Non-core tables being absent just means
+    # some SQL/job views are still building — the dashboard falls back gracefully.
+    # Never return "setup_required" here: it would re-show the wizard incorrectly.
     return {
         "catalog": catalog,
         "schema": schema,
         "tables": tables,
         "all_tables_exist": all_exist,
         "missing_tables": missing,
-        "status": "ready" if all_exist else "setup_required",
+        "status": "ready",
         "task": _create_task_state.copy(),
     }
 
@@ -972,7 +976,11 @@ async def bootstrap_admin(request: Request) -> dict[str, Any]:
 def _grant_user_catalog_visibility(
     catalog: str, schema: str | None, user_token: str
 ) -> None:
-    """Best-effort: grant the installing user USE CATALOG (and USE SCHEMA if given).
+    """Best-effort: grant the installing user full visibility + MANAGE on the app catalog/schema.
+
+    Grants:
+      - USE CATALOG + MANAGE ON CATALOG (navigate + re-grant SP on future redeploys)
+      - USE SCHEMA + SELECT ON SCHEMA + MANAGE ON SCHEMA (see tables, read data, manage grants)
 
     Uses SQL GRANT via the warehouse — NOT the UC REST API — because SP M2M tokens
     in Databricks Apps lack the unity-catalog OAuth scope required for direct UC API
@@ -995,15 +1003,25 @@ def _grant_user_catalog_visibility(
         ctx = _exec_tok.set("")  # clear user token → SP M2M auth (has sql scope + owns objects)
         try:
             _exec(f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{user_email}`", no_cache=True)
+            _exec(f"GRANT MANAGE ON CATALOG `{catalog}` TO `{user_email}`", no_cache=True)
             if schema:
                 _exec(
                     f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{user_email}`",
                     no_cache=True,
                 )
+                _exec(
+                    f"GRANT SELECT ON SCHEMA `{catalog}`.`{schema}` TO `{user_email}`",
+                    no_cache=True,
+                )
+                _exec(
+                    f"GRANT MANAGE ON SCHEMA `{catalog}`.`{schema}` TO `{user_email}`",
+                    no_cache=True,
+                )
         finally:
             _exec_tok.reset(ctx)
         logger.info(
-            f"Granted USE CATALOG" + (f" + USE SCHEMA" if schema else "")
+            f"Granted USE CATALOG + MANAGE ON CATALOG"
+            + (f" + USE SCHEMA + SELECT ON SCHEMA + MANAGE ON SCHEMA" if schema else "")
             + f" on `{catalog}`" + (f".`{schema}`" if schema else "")
             + f" to {user_email}"
         )
@@ -1018,7 +1036,7 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
     Flow:
     1. Try w.catalogs.create() as SP (SP becomes owner — can self-grant everything).
     2. If catalog already existed (owned by user), grant SP USE CATALOG + CREATE SCHEMA
-       using the user's forwarded OAuth token via UC REST API.
+       via SQL GRANT using the user's forwarded token (avoids unity-catalog scope issue).
     3. Verify SP can now access the catalog. If still blocked, return clear SQL to run.
     """
     import asyncio as _asyncio
@@ -1031,30 +1049,31 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="No catalog configured.")
 
     def _grant_sp_via_user_token() -> bool:
-        """Grant SP USE CATALOG + CREATE SCHEMA using the calling user's OAuth token.
+        """Grant SP USE CATALOG + CREATE SCHEMA using the calling user's SQL credentials.
 
-        The catalog owner (the user) can make UC grants even when the SP cannot
-        self-grant. Best-effort — returns True on success, False on any failure.
+        Uses SQL GRANT via the warehouse (NOT the UC REST API) — forwarded user
+        tokens and SP M2M tokens in Databricks Apps lack the unity-catalog OAuth
+        scope required for direct UC API calls, but they have the sql scope needed
+        for warehouse-based GRANT statements.
+
+        Best-effort — returns True on success, False on any failure.
         """
         if not user_token or not sp_id:
             return False
-        host = os.getenv("DATABRICKS_HOST", "")
-        if not host:
-            return False
         try:
-            from databricks.sdk import WorkspaceClient as _WC
-            user_w = _WC(host=host, token=user_token, auth_type="pat")
-            user_w.api_client.do(
-                "PATCH",
-                f"/api/2.1/unity-catalog/permissions/catalog/{catalog}",
-                body={"changes": [
-                    {"principal": sp_id, "add": ["USE CATALOG", "CREATE SCHEMA"]},
-                ]},
-            )
-            logger.info(f"Granted SP USE CATALOG + CREATE SCHEMA on `{catalog}` via user token")
+            from server.db import execute_query as _exec, _user_token as _exec_tok
+            # Run the GRANT as the calling user (catalog owner). The user token is
+            # set directly in the ContextVar so get_connection() uses it for auth.
+            ctx = _exec_tok.set(user_token)
+            try:
+                _exec(f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{sp_id}`", no_cache=True)
+                _exec(f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{sp_id}`", no_cache=True)
+            finally:
+                _exec_tok.reset(ctx)
+            logger.info(f"Granted SP USE CATALOG + CREATE SCHEMA on `{catalog}` via user SQL GRANT")
             return True
         except Exception as e:
-            logger.warning(f"User token UC grant on `{catalog}` failed: {_clean_sdk_error(str(e))}")
+            logger.warning(f"User token SQL grant on `{catalog}` failed: {_clean_sdk_error(str(e))}")
             return False
 
     def _create():

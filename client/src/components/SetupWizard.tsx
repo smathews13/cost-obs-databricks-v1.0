@@ -585,7 +585,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ catalog: cat, schema: sch }),
-                      signal: AbortSignal.timeout(10000),
+                      signal: AbortSignal.timeout(45000),
                     });
                     if (!res.ok) {
                       const body = await res.json().catch(() => ({}));
@@ -595,7 +595,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                     saved = true;
                   } catch (e: unknown) {
                     const msg = e instanceof Error && e.name === "TimeoutError"
-                      ? "Save timed out — server may be starting up. Try again."
+                      ? "Server is taking too long to respond. The app may still be starting — wait a moment and try again."
                       : `Failed to save: ${e}`;
                     setError(msg);
                     return;
@@ -612,7 +612,15 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                 className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
                 style={storageSaved ? { backgroundColor: '#16a34a' } : undefined}
               >
-                {storageSaved ? "Saved ✓" : storageSaving ? "Saving…" : "Next"}
+                {storageSaved ? "Saved ✓" : storageSaving ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                    </svg>
+                    Saving…
+                  </span>
+                ) : "Next"}
               </button>
             ) : step === "permissions" ? (
               <button
@@ -1047,7 +1055,10 @@ function InfoRow({ label, value, status, loading }: { label: string; value: stri
       <span className="shrink-0 text-sm font-medium text-gray-500">{label}</span>
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
         {loading ? (
-          <div className="h-3.5 w-36 animate-pulse rounded bg-gray-200" />
+          <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+          </svg>
         ) : (
           <span className="truncate text-right text-sm font-medium text-gray-900" title={value}>{value}</span>
         )}

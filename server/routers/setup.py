@@ -259,30 +259,43 @@ async def get_setup_status() -> dict[str, Any]:
     loop = _asyncio.get_running_loop()
     tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
 
-    # setup_done.json absent (wiped on every git redeploy).
-    # Auto-heal: if catalog+schema are configured, setup was done at some point.
-    # Recreate the file unconditionally — tables may still be building in the
-    # background, but the dashboard falls back to direct system queries.
-    if not os.path.exists(SETUP_DONE_FILE):
-        try:
-            import datetime as _dt, json as _json
-            os.makedirs(SETTINGS_DIR, exist_ok=True)
-            with open(SETUP_DONE_FILE, "w") as f:
-                _json.dump({"completed_at": _dt.datetime.utcnow().isoformat(), "auto_healed": True}, f)
-            logger.info("setup_done.json auto-healed on redeploy")
-        except Exception as e:
-            logger.warning(f"Could not auto-heal setup_done.json: {e}")
-
-    # Core billing tables gate the "ready" state — without them the dashboard has nothing to show.
+    # Compute table state before the setup_done.json check so auto-heal can
+    # use core_exist as a signal that setup was genuinely completed before.
     core_exist = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
     all_exist = all(tables.values())
     missing = [name for name, exists in tables.items() if not exists]
 
+    if not os.path.exists(SETUP_DONE_FILE):
+        if core_exist:
+            # Auto-heal: catalog+schema configured AND core tables exist → a previous
+            # setup run completed successfully. Recreate setup_done.json so the wizard
+            # does not re-appear after a git redeploy that wiped .settings/.
+            try:
+                import datetime as _dt, json as _json
+                os.makedirs(SETTINGS_DIR, exist_ok=True)
+                with open(SETUP_DONE_FILE, "w") as f:
+                    _json.dump({"completed_at": _dt.datetime.utcnow().isoformat(), "auto_healed": True}, f)
+                logger.info("setup_done.json auto-healed on redeploy")
+            except Exception as e:
+                logger.warning(f"Could not auto-heal setup_done.json: {e}")
+        else:
+            # No setup_done.json and no core tables — fresh deploy (env vars may be set
+            # but wizard has never run) or tables were dropped. Wizard must run.
+            return {
+                "catalog": catalog,
+                "schema": schema,
+                "tables": tables,
+                "all_tables_exist": False,
+                "missing_tables": missing,
+                "status": "setup_required",
+                "task": _create_task_state.copy(),
+            }
+
     if not core_exist:
-        # setup_done.json exists but MVs aren't built yet (post-redeploy background
-        # build in progress, or tables were dropped).  Return "ready" so the dashboard
-        # shows — it will fall back to direct system-table queries until the build
-        # finishes.  Don't force the wizard: the user already completed setup.
+        # setup_done.json exists but core tables aren't built yet — background build
+        # in progress or tables were dropped after a completed setup. Return "ready"
+        # so the dashboard shows (falls back to direct system-table queries). Don't
+        # force the wizard again: the user already completed setup.
         return {
             "catalog": catalog,
             "schema": schema,

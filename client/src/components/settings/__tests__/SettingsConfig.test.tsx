@@ -102,6 +102,17 @@ describe("SettingsConfig — destructive action disabled in degraded state", () 
     expect(screen.getByText(/table.*already missing|missing.*table/i)).toBeInTheDocument();
   });
 
+  it("confirm UI never appears in degraded state — hard block, no break-glass path", async () => {
+    renderSettingsConfig(DEGRADED_TABLES);
+
+    await screen.findByRole("button", { name: /drop tables/i });
+
+    // The button is disabled so wipePending can never become true.
+    // CONFIRM input must not exist in the DOM at all.
+    expect(screen.queryByPlaceholderText(/type confirm/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /confirm drop/i })).not.toBeInTheDocument();
+  });
+
   it("'Drop Tables' button is enabled when all required tables exist", async () => {
     renderSettingsConfig(HEALTHY_TABLES);
 

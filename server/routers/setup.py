@@ -962,6 +962,48 @@ async def bootstrap_admin(request: Request) -> dict[str, Any]:
 # ============================================================================
 
 
+def _grant_user_catalog_visibility(
+    catalog: str, schema: str | None, user_token: str
+) -> None:
+    """Best-effort: grant the installing user USE CATALOG (and USE SCHEMA if given).
+
+    Uses SQL GRANT via the warehouse — NOT the UC REST API — because SP M2M tokens
+    in Databricks Apps lack the unity-catalog OAuth scope required for direct UC API
+    calls (same reason _grant_sp_schema_access uses SQL instead of REST).
+    Fails silently — visibility is convenience, not correctness.
+    """
+    if not user_token:
+        return
+    host = os.getenv("DATABRICKS_HOST", "")
+    if not host:
+        return
+    try:
+        from databricks.sdk import WorkspaceClient as _WC
+        user_w = _WC(host=host, token=user_token, auth_type="pat")
+        me = user_w.current_user.me()
+        user_email = me.user_name or ""
+        if not user_email:
+            return
+        from server.db import execute_query as _exec, _user_token as _exec_tok
+        ctx = _exec_tok.set("")  # clear user token → SP M2M auth (has sql scope + owns objects)
+        try:
+            _exec(f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{user_email}`", no_cache=True)
+            if schema:
+                _exec(
+                    f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{user_email}`",
+                    no_cache=True,
+                )
+        finally:
+            _exec_tok.reset(ctx)
+        logger.info(
+            f"Granted USE CATALOG" + (f" + USE SCHEMA" if schema else "")
+            + f" on `{catalog}`" + (f".`{schema}`" if schema else "")
+            + f" to {user_email}"
+        )
+    except Exception as e:
+        logger.warning(f"Could not grant catalog visibility to installer: {_clean_sdk_error(str(e))}")
+
+
 @router.post("/ensure-catalog")
 async def ensure_catalog(request: Request) -> dict[str, Any]:
     """Create the target catalog if it doesn't already exist, then grant SP access.
@@ -1045,6 +1087,7 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
         try:
             w.catalogs.get(catalog)
             logger.info(f"Catalog `{catalog}` verified accessible to SP")
+            _grant_user_catalog_visibility(catalog, None, user_token)
             return {"ok": True, "catalog": catalog, "message": f"Catalog `{catalog}` is ready."}
         except Exception as e:
             msg = _clean_sdk_error(str(e))
@@ -1079,6 +1122,7 @@ async def ensure_schema(request: Request) -> dict[str, Any]:
     import asyncio as _asyncio
 
     catalog, schema = get_catalog_schema()
+    user_token = request.headers.get("x-forwarded-access-token", "")
 
     if not catalog or not schema:
         raise HTTPException(status_code=400, detail="No catalog/schema configured.")
@@ -1102,6 +1146,7 @@ async def ensure_schema(request: Request) -> dict[str, Any]:
         try:
             w.schemas.get(f"{catalog}.{schema}")
             logger.info(f"Schema `{catalog}`.`{schema}` verified")
+            _grant_user_catalog_visibility(catalog, schema, user_token)
             return {"ok": True, "schema": f"{catalog}.{schema}",
                     "message": f"Schema `{catalog}.{schema}` is ready."}
         except Exception as e:
@@ -1110,6 +1155,7 @@ async def ensure_schema(request: Request) -> dict[str, Any]:
             if any(kw in lower for kw in ("permission", "privilege", "forbidden", "unauthorized",
                                           "does not have", "access", "insufficient")):
                 logger.info(f"Schema `{catalog}`.`{schema}` exists (SP lacks USE SCHEMA, grants pending)")
+                _grant_user_catalog_visibility(catalog, schema, user_token)
                 return {"ok": True, "schema": f"{catalog}.{schema}",
                         "message": f"Schema `{catalog}.{schema}` is ready."}
             logger.warning(f"ensure-schema verify failed: {msg}")

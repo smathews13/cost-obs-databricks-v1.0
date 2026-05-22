@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle, XCircle, AlertTriangle, Shield, ExternalLink, Copy, Check, Eye, X, Loader2 } from "lucide-react";
+import { CheckCircle, XCircle, AlertTriangle, Shield, ExternalLink, Copy, Check, Eye, X } from "lucide-react";
 
 interface Permission {
   table: string;
@@ -163,35 +163,9 @@ export function PermissionsDialog() {
     );
   }
 
-  // Show loading or error states inside the modal overlay
+  // Load silently in the background — don't block the dashboard with a full-screen overlay.
   if (isLoading || error || !data) {
-    return createPortal(
-      <div
-        className="fixed inset-0 z-[100] flex items-start justify-center pt-36 p-4"
-        style={{ backgroundColor: "rgba(255, 255, 255, 1)" }}
-      >
-        <div className="w-full max-w-md rounded-xl bg-white p-8 text-center shadow-2xl border border-gray-200">
-          {isLoading ? (
-            <Loader2 className="mx-auto h-10 w-10 text-gray-500 mb-4 animate-spin" />
-          ) : (
-            <Shield className="mx-auto h-10 w-10 text-gray-500 mb-4" />
-          )}
-          <p className="text-lg font-medium text-gray-700">
-            {isLoading ? "Post-deployment initial setup — this could take a few minutes" : "Unable to check permissions"}
-          </p>
-          {(error || !data) && !isLoading && (
-            <button
-              onClick={() => setDismissed(true)}
-              className="mt-4 rounded-lg px-4 py-2 text-sm font-medium text-white"
-              style={{ backgroundColor: "#FF3621" }}
-            >
-              Continue Anyway
-            </button>
-          )}
-        </div>
-      </div>,
-      document.body
-    );
+    return null;
   }
 
   const handleDismiss = () => {

@@ -907,16 +907,23 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
                 logger.warning(f"ensure-catalog SDK create failed for `{catalog}`: {msg}")
                 return {"ok": False, "catalog": catalog, "message": f"Could not create catalog: {msg}"}
 
-        # Verify via SDK get() — avoids SHOW CATALOGS LIKE wildcard bug where
-        # underscore in catalog name matches unrelated catalogs.
+        # Verify via SDK get(). A permission error means the catalog EXISTS but the
+        # SP hasn't received USE CATALOG yet — grants run in the next step, so
+        # treat it as success. Only "not found" errors mean genuine failure.
         try:
             w.catalogs.get(catalog)
             logger.info(f"Catalog `{catalog}` verified")
             return {"ok": True, "catalog": catalog, "message": f"Catalog `{catalog}` is ready."}
         except Exception as e:
             msg = _clean_sdk_error(str(e))
+            lower = msg.lower()
+            if any(kw in lower for kw in ("permission", "privilege", "forbidden", "unauthorized",
+                                          "does not have", "access", "insufficient")):
+                # Catalog exists; SP just hasn't received USE CATALOG yet — grants will fix it.
+                logger.info(f"Catalog `{catalog}` exists (SP lacks USE CATALOG, grants pending)")
+                return {"ok": True, "catalog": catalog, "message": f"Catalog `{catalog}` is ready."}
             logger.warning(f"ensure-catalog verify failed for `{catalog}`: {msg}")
-            return {"ok": False, "catalog": catalog, "message": f"Could not verify catalog `{catalog}`: {msg}"}
+            return {"ok": False, "catalog": catalog, "message": f"Catalog `{catalog}` not found: {msg}"}
 
     loop = _asyncio.get_running_loop()
     return await loop.run_in_executor(None, _create)
@@ -950,7 +957,8 @@ async def ensure_schema(request: Request) -> dict[str, Any]:
                 logger.warning(f"ensure-schema SDK create failed: {msg}")
                 return {"ok": False, "schema": f"{catalog}.{schema}", "message": f"Could not create schema: {msg}"}
 
-        # Verify via SDK get() — avoids SHOW SCHEMAS LIKE underscore wildcard bug.
+        # Verify via SDK get(). Permission errors mean schema exists, SP just lacks
+        # USE SCHEMA yet — same as catalog, grants run later.
         try:
             w.schemas.get(f"{catalog}.{schema}")
             logger.info(f"Schema `{catalog}`.`{schema}` verified")
@@ -958,8 +966,14 @@ async def ensure_schema(request: Request) -> dict[str, Any]:
                     "message": f"Schema `{catalog}.{schema}` is ready."}
         except Exception as e:
             msg = _clean_sdk_error(str(e))
+            lower = msg.lower()
+            if any(kw in lower for kw in ("permission", "privilege", "forbidden", "unauthorized",
+                                          "does not have", "access", "insufficient")):
+                logger.info(f"Schema `{catalog}`.`{schema}` exists (SP lacks USE SCHEMA, grants pending)")
+                return {"ok": True, "schema": f"{catalog}.{schema}",
+                        "message": f"Schema `{catalog}.{schema}` is ready."}
             logger.warning(f"ensure-schema verify failed: {msg}")
-            return {"ok": False, "schema": f"{catalog}.{schema}", "message": f"Could not verify schema: {msg}"}
+            return {"ok": False, "schema": f"{catalog}.{schema}", "message": f"Schema not found: {msg}"}
 
     loop = _asyncio.get_running_loop()
     return await loop.run_in_executor(None, _create)

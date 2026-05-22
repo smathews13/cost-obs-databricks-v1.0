@@ -27,7 +27,6 @@ function lazyWithRetry<T>(factory: () => Promise<T>): Promise<T> {
 // Lazy-loaded tab views — chunks download on first render
 const InteractiveBreakdown = lazy(() => lazyWithRetry(() => import("@/components/InteractiveBreakdown").then(m => ({ default: m.InteractiveBreakdown }))));
 const CloudCostsView = lazy(() => lazyWithRetry(() => import("@/components/CloudCostsView").then(m => ({ default: m.CloudCostsView }))));
-const GenieChatView = lazy(() => lazyWithRetry(() => import("@/components/GenieChatView").then(m => ({ default: m.GenieChatView }))));
 const PlatformKPIsView = lazy(() => lazyWithRetry(() => import("@/components/PlatformKPIsView").then(m => ({ default: m.PlatformKPIsView }))));
 const AIMLCostCenter = lazy(() => lazyWithRetry(() => import("@/components/AIMLCostCenter").then(m => ({ default: m.AIMLCostCenter }))));
 const AppsCostCenter = lazy(() => lazyWithRetry(() => import("@/components/AppsCostCenter").then(m => ({ default: m.AppsCostCenter }))));
@@ -55,7 +54,6 @@ function preloadTabChunks() {
   import("@/pages/Alerts");
   import("@/pages/UseCases");
   import("@/pages/UsersGroups");
-  import("@/components/GenieChatView");
 }
 
 if (typeof window !== "undefined") {
@@ -192,7 +190,6 @@ function Dashboard() {
   const defaultRange = useDefaultDateRange(appSettings.defaultDateRangeDays);
   const [dateRange, setDateRange] = useState<DateRange>(defaultRange);
   const [activeTab, setActiveTab] = useState<ViewTab>("dbu");
-  const [showGenie, setShowGenie] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>([]);
@@ -770,21 +767,6 @@ function Dashboard() {
                 $DBU Spend
               </button>
               )}
-              {tabVisibility.infra && (
-              <button
-                onClick={() => setActiveTab("infra")}
-                className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-400 ${
-                  activeTab === "infra"
-                    ? "border-[#FF3621] text-[#FF3621]"
-                    : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
-                }`}
-              >
-                <svg className="mr-2 -mt-0.5 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-                </svg>
-                Cloud Costs
-              </button>
-              )}
               {tabVisibility.kpis && (
               <button
                 onClick={() => setActiveTab("kpis")}
@@ -935,6 +917,21 @@ function Dashboard() {
                 Contract
               </button>
               )}
+              {tabVisibility.infra && (
+              <button
+                onClick={() => setActiveTab("infra")}
+                className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-400 ${
+                  activeTab === "infra"
+                    ? "border-[#FF3621] text-[#FF3621]"
+                    : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
+                }`}
+              >
+                <svg className="mr-2 -mt-0.5 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                </svg>
+                Cloud Costs
+              </button>
+              )}
             </nav>
           </div>
         </div>
@@ -978,54 +975,6 @@ function Dashboard() {
               </div>
             </div>
 
-            {/* Genie Chat Section */}
-            {appSettings.enableGenie && (
-            <div className="rounded-lg border bg-white shadow" style={{ borderColor: '#E5E5E5' }}>
-              <button
-                onClick={() => setShowGenie(!showGenie)}
-                className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors"
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = appSettings.darkMode ? '#3A3D41' : '#F9F7F4'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: '#FFF0ED' }}>
-                    <svg
-                      className="h-5 w-5" style={{ color: '#FF3621' }}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900">Genie Assistant</h2>
-                    <p className="text-xs text-gray-500">
-                      Ask questions about your cost data in natural language
-                    </p>
-                  </div>
-                </div>
-                <svg
-                  className={`h-5 w-5 text-gray-500 transition-transform ${showGenie ? "rotate-180" : ""}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showGenie && (
-                <div className="animate-slide-down border-t" style={{ borderColor: '#E5E5E5' }}>
-                  <GenieChatView />
-                </div>
-              )}
-            </div>
-            )}
 
             <SummaryCards
               data={summary}
@@ -1083,7 +1032,6 @@ function Dashboard() {
             anomaliesLoading={anomaliesLoading}
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
-            enableAIFeatures={appSettings.enableAIFeatures}
             workspaceIds={_wsIds}
           />
           </TabErrorBoundary>

@@ -38,10 +38,6 @@ env:
   # - name: DATABRICKS_HTTP_PATH
   #   value: /sql/1.0/warehouses/<id>
 
-  # Genie Space for AI cost queries (optional)
-  # - name: GENIE_SPACE_ID
-  #   value: <genie-space-id>
-
   # Azure subscription ID (shown in account banner on Azure workspaces)
   # - name: AZURE_SUBSCRIPTION_ID
   #   value: <subscription-id>

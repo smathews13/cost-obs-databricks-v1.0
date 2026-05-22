@@ -156,36 +156,8 @@ export function SettingsConfig({
     staleTime: 60 * 1000,
   });
 
-  const [genieCreating, setGenieCreating] = useState(false);
-  const [genieCreateStatus, setGenieCreateStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const genieCreateStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
-  const createGenieSpace = async () => {
-    setGenieCreating(true);
-    setGenieCreateStatus(null);
-    try {
-      const res = await fetch("/api/setup/create-genie-space", { method: "POST" });
-      const data = await res.json();
-      if (data.space_id) {
-        updateSetting("genieSpaceId", data.space_id);
-        updateSetting("enableGenie", true);
-        setGenieCreateStatus({ type: "success", message: `Genie Space created (${data.space_id})` });
-      } else if (data.status === "already_exists") {
-        updateSetting("genieSpaceId", data.space_id || "");
-        updateSetting("enableGenie", true);
-        setGenieCreateStatus({ type: "success", message: "Using existing Genie Space" });
-      } else {
-        setGenieCreateStatus({ type: "error", message: data.message || "Failed to create Genie Space" });
-      }
-    } catch {
-      setGenieCreateStatus({ type: "error", message: "Request failed — check server logs" });
-    } finally {
-      setGenieCreating(false);
-      if (genieCreateStatusTimer.current) clearTimeout(genieCreateStatusTimer.current);
-      genieCreateStatusTimer.current = setTimeout(() => setGenieCreateStatus(null), 6000);
-    }
-  };
 
   return (
     <div className="space-y-5">
@@ -292,90 +264,6 @@ export function SettingsConfig({
                   </div>
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* Enable AI Features */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              <h4 className="text-sm font-semibold text-gray-900">AI Features</h4>
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={localSettings.enableAIFeatures}
-                  onChange={(e) => {
-                    updateSetting("enableAIFeatures", e.target.checked);
-                    if (!e.target.checked) updateSetting("enableGenie", false);
-                  }}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                />
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Enable AI Features</div>
-                  <div className="mt-0.5 text-xs text-gray-500">
-                    Enables AI-powered features across the app, including the Genie Assistant and AI-assisted analysis of cost spikes on the KPIs tab. Disable to turn off all AI capabilities for this deployment.
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Genie Assistant */}
-          <div className={localSettings.enableAIFeatures ? "" : "opacity-50 pointer-events-none"}>
-            <div className="flex items-center gap-2 mb-3">
-              <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-              <h4 className="text-sm font-semibold text-gray-900">Genie Assistant</h4>
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={localSettings.enableGenie}
-                  onChange={(e) => updateSetting("enableGenie", e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-gray-900">Enable Genie Assistant</div>
-                  <div className="mt-0.5 text-xs text-gray-500">
-                    Show the Genie AI assistant on the DBU Overview tab for natural language questions about your cost data.
-                  </div>
-                </div>
-              </label>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Genie Space ID</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={localSettings.genieSpaceId}
-                    onChange={(e) => updateSetting("genieSpaceId", e.target.value)}
-                    placeholder="e.g. 01f0abcd1234..."
-                    className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                  />
-                  {!localSettings.genieSpaceId && (
-                    <button
-                      onClick={createGenieSpace}
-                      disabled={genieCreating}
-                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-wait whitespace-nowrap transition-colors"
-                    >
-                      {genieCreating ? "Creating…" : "Auto-Create"}
-                    </button>
-                  )}
-                </div>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Enter an existing Genie Space ID, or click Auto-Create to deploy one automatically using your workspace's billing tables.
-                </p>
-                {genieCreateStatus && (
-                  <div className={`mt-2 rounded-md px-3 py-2 text-xs ${genieCreateStatus.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                    {genieCreateStatus.message}
-                  </div>
-                )}
-              </div>
             </div>
           </div>
 

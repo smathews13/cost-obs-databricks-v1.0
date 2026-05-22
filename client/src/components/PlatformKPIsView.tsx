@@ -13,7 +13,6 @@ interface PlatformKPIsViewProps {
   anomaliesLoading: boolean;
   startDate?: string;
   endDate?: string;
-  enableAIFeatures?: boolean;
   workspaceIds?: string[];
 }
 
@@ -103,7 +102,7 @@ const PLATFORM_KPI_KEYS = [
   "active_workspaces", "models_served", "total_users",
 ] as const;
 
-export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoading, startDate, endDate, enableAIFeatures = true, workspaceIds }: PlatformKPIsViewProps) {
+export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoading, startDate, endDate, workspaceIds }: PlatformKPIsViewProps) {
   const queryClient = useQueryClient();
 
   // Per-feature availability from the shared hook (caches under READINESS_QUERY_KEY).
@@ -430,7 +429,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
       </div>
 
       {/* Spend Changes & Trends */}
-      <SpendAnomalies data={spendAnomalies} isLoading={anomaliesLoading} enableAIFeatures={enableAIFeatures} />
+      <SpendAnomalies data={spendAnomalies} isLoading={anomaliesLoading} />
 
       {/* Platform KPI Trend Modal */}
       {selectedKPI && startDate && endDate && (

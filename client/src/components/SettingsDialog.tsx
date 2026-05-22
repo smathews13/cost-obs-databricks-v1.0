@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsExperimental, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
+import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
 
 export interface TabVisibility {
   dbu: boolean;
@@ -65,9 +65,6 @@ export interface AppSettings {
   enableAppHostingComparison: boolean;
   enableUseCaseTracking: boolean;
   enableAccuracyChecks: boolean;
-  enableAIFeatures: boolean;
-  enableGenie: boolean;
-  genieSpaceId: string;
   enableAlerts: boolean;
   enableForecasting: boolean;
   enableContractTracking: boolean;
@@ -90,9 +87,6 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   enableAppHostingComparison: false,
   enableUseCaseTracking: false,
   enableAccuracyChecks: false,
-  enableAIFeatures: true,
-  enableGenie: false,
-  genieSpaceId: "",
   enableAlerts: false,
   enableForecasting: false,
   enableContractTracking: false,
@@ -128,7 +122,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings }: SettingsDialogProps) {
-  const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "experimental" | "accuracy-checks" | "permissions" | "debugger">("general");
+  const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "accuracy-checks" | "permissions" | "debugger">("general");
   const [localVisibility, setLocalVisibility] = useState<TabVisibility>(tabVisibility);
   const [localSettings, setLocalSettings] = useState<AppSettings>(appSettings);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -241,7 +235,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
 
             <div className="mt-4 flex items-center justify-between">
               <div className="flex flex-wrap gap-1">
-                {(["general", "permissions", "config", "experimental", "tabs"] as const).map((section) => (
+                {(["general", "permissions", "config", "tabs"] as const).map((section) => (
                   <button
                     key={section}
                     onClick={() => setActiveSection(section)}
@@ -250,7 +244,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                     }`}
                     style={activeSection === section ? { backgroundColor: '#1B3139' } : {}}
                   >
-                    {section === "general" ? "General" : section === "tabs" ? "Visibility" : section === "experimental" ? "Experimental" : section === "permissions" ? "Permissions" : "Configuration"}
+                    {section === "general" ? "General" : section === "tabs" ? "Visibility" : section === "permissions" ? "Permissions" : "Configuration"}
                   </button>
                 ))}
                 {localSettings.enableAccuracyChecks && (
@@ -334,13 +328,6 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 enableForecasting={localSettings.enableForecasting}
               />
             )}
-            {activeSection === "experimental" && (
-              <SettingsExperimental
-                localSettings={localSettings}
-                updateSetting={updateSetting}
-                saveStatus={saveStatus}
-              />
-            )}
             {activeSection === "accuracy-checks" && (
               <SettingsAccuracyChecks />
             )}
@@ -360,7 +347,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
 
           {/* Footer */}
           <div className="flex shrink-0 items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
-            {(activeSection === "general" || activeSection === "tabs" || activeSection === "experimental" || activeSection === "config") && (
+            {(activeSection === "general" || activeSection === "tabs" || activeSection === "config") && (
               <button onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Cancel
               </button>
@@ -373,7 +360,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 Save Settings
               </button>
             )}
-            {(activeSection === "general" || activeSection === "experimental" || activeSection === "config") && (
+            {(activeSection === "general" || activeSection === "config") && (
               <button
                 onClick={handleSaveGeneral}
                 disabled={!generalDirty}

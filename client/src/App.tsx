@@ -226,19 +226,29 @@ function Dashboard() {
     }
   };
 
-  // Launch setup wizard on first deploy if materialized views don't exist yet.
+  // On every load, verify with the server that tables actually exist.
+  // Never rely solely on localStorage — tables can be deleted externally.
   useEffect(() => {
-    if (localStorage.getItem("coc-setup-complete") === "true") return;
     fetch("/api/setup/status")
       .then((r) => r.json())
       .then((status) => {
-        // Only skip wizard when setup is confirmed complete. Any other status
-        // (setup_required, error, or backend still starting) → show wizard.
-        setShowSetupWizard(status?.status === "ready" ? false : true);
+        if (status?.status === "ready") {
+          localStorage.setItem("coc-setup-complete", "true");
+          setShowSetupWizard(false);
+        } else {
+          // Tables missing or setup_required — clear stale cache and show wizard.
+          localStorage.removeItem("coc-setup-complete");
+          setShowSetupWizard(true);
+        }
       })
       .catch(() => {
-        // Backend not ready yet — default to wizard, not broken dashboard.
-        setShowSetupWizard(true);
+        // Server unreachable — if we have a prior confirmed-complete session,
+        // don't disrupt it. Otherwise default to wizard.
+        if (localStorage.getItem("coc-setup-complete") !== "true") {
+          setShowSetupWizard(true);
+        } else {
+          setShowSetupWizard(false);
+        }
       });
   }, []);
 

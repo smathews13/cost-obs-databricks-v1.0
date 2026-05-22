@@ -232,9 +232,14 @@ function Dashboard() {
     fetch("/api/setup/status")
       .then((r) => r.json())
       .then((status) => {
-        setShowSetupWizard(status?.status === "setup_required" ? true : false);
+        // Only skip wizard when setup is confirmed complete. Any other status
+        // (setup_required, error, or backend still starting) → show wizard.
+        setShowSetupWizard(status?.status === "ready" ? false : true);
       })
-      .catch(() => { setShowSetupWizard(false); });
+      .catch(() => {
+        // Backend not ready yet — default to wizard, not broken dashboard.
+        setShowSetupWizard(true);
+      });
   }, []);
 
   const handleSetupComplete = () => {

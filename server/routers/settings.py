@@ -454,13 +454,14 @@ async def get_tables_status(request: Request):
             return None
 
     def _check_table_inner(table_name: str, fqn: str, table_type: str) -> dict:
+        # Owner is fetched in a separate parallel pool — not here — to avoid
+        # the SDK REST call serialising before the SQL query and doubling latency.
         skip_date = table_name in no_date_tables
-        owner = _get_table_owner(fqn)
         try:
             if skip_date:
                 rows = execute_query(f"SELECT COUNT(*) as cnt FROM {fqn}")
                 cnt = rows[0]["cnt"] if rows else 0
-                return {"name": table_name, "table_type": table_type, "exists": True, "row_count": cnt, "min_date": None, "max_date": None, "days_behind": None, "owner": owner}
+                return {"name": table_name, "table_type": table_type, "exists": True, "row_count": cnt, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
             else:
                 max_expr = date_expr_overrides.get(table_name, "MAX(usage_date)")
                 min_expr = min_date_expr_overrides.get(table_name, "MIN(usage_date)")
@@ -468,7 +469,7 @@ async def get_tables_status(request: Request):
                     f"SELECT COUNT(*) as cnt, {max_expr} as max_date, {min_expr} as min_date FROM {fqn}"
                 )
                 if not rows:
-                    return {"name": table_name, "table_type": table_type, "exists": True, "row_count": 0, "min_date": None, "max_date": None, "days_behind": None, "owner": owner}
+                    return {"name": table_name, "table_type": table_type, "exists": True, "row_count": 0, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
                 cnt = rows[0].get("cnt", 0)
                 max_date = rows[0].get("max_date")
                 min_date = rows[0].get("min_date")
@@ -482,12 +483,12 @@ async def get_tables_status(request: Request):
                         days_behind = delta.days
                     except Exception:
                         pass
-                return {"name": table_name, "table_type": table_type, "exists": True, "row_count": int(cnt), "min_date": min_date_str, "max_date": max_date_str, "days_behind": days_behind, "owner": owner}
+                return {"name": table_name, "table_type": table_type, "exists": True, "row_count": int(cnt), "min_date": min_date_str, "max_date": max_date_str, "days_behind": days_behind, "owner": None}
         except Exception as e:
             err = str(e)
             if "TABLE_OR_VIEW_NOT_FOUND" in err or "does not exist" in err.lower() or "not found" in err.lower():
-                return {"name": table_name, "table_type": table_type, "exists": False, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": owner}
-            return {"name": table_name, "table_type": table_type, "exists": None, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": owner, "error": err[:200]}
+                return {"name": table_name, "table_type": table_type, "exists": False, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
+            return {"name": table_name, "table_type": table_type, "exists": None, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None, "error": err[:200]}
 
     # Config tables are created lazily on first save — not existing yet is expected
     CONFIG_TABLES: set[str] = set()
@@ -500,16 +501,20 @@ async def get_tables_status(request: Request):
 
     results = []
     _TABLE_CHECK_TIMEOUT = 25  # seconds — keeps total request under proxy timeout limits
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        futures = {ex.submit(check_table, name, fqn, ttype): (name, fqn, ttype) for name, fqn, ttype in tasks}
+    # Submit SQL checks AND owner lookups into the same pool so they run concurrently.
+    # Previously _get_table_owner (an SDK REST call) ran sequentially before each SQL
+    # query, adding 1–3 s per table to the critical path.
+    with ThreadPoolExecutor(max_workers=14) as ex:
+        sql_futures = {ex.submit(check_table, name, fqn, ttype): (name, fqn, ttype) for name, fqn, ttype in tasks}
+        owner_futures = {name: ex.submit(_get_table_owner, fqn) for name, fqn, _ in tasks}
         try:
-            for fut in as_completed(futures, timeout=_TABLE_CHECK_TIMEOUT):
+            for fut in as_completed(sql_futures, timeout=_TABLE_CHECK_TIMEOUT):
                 results.append(fut.result())
         except FuturesTimeoutError:
             # Some queries didn't finish (cold warehouse). Return partial results:
             # completed futures + placeholder rows for anything still pending.
             completed_names = {r["name"] for r in results}
-            for fut, (name, _fqn, ttype) in futures.items():
+            for fut, (name, _fqn, ttype) in sql_futures.items():
                 if name not in completed_names:
                     results.append({
                         "name": name, "table_type": ttype, "exists": None,
@@ -517,6 +522,12 @@ async def get_tables_status(request: Request):
                         "owner": None, "error": "timed out — warehouse may be starting up",
                     })
             logger.warning("Table status check timed out — warehouse likely cold")
+        # Merge owner results — they've been running in parallel; should be done or nearly done.
+        for r in results:
+            try:
+                r["owner"] = owner_futures[r["name"]].result(timeout=5)
+            except Exception:
+                r["owner"] = None
 
     # Preserve original order and tag optional config tables
     order = {name: i for i, (name, _, _) in enumerate(tasks)}

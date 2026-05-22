@@ -9,6 +9,7 @@ import { useFeatureAvailability } from "@/hooks/useFeatureAvailability";
 interface PlatformKPIsViewProps {
   data: PlatformKPIsResponse | undefined;
   isLoading: boolean;
+  isFetching?: boolean;
   spendAnomalies: SpendAnomaliesResponse | undefined;
   anomaliesLoading: boolean;
   startDate?: string;
@@ -102,7 +103,7 @@ const PLATFORM_KPI_KEYS = [
   "active_workspaces", "models_served", "total_users",
 ] as const;
 
-export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoading, startDate, endDate, workspaceIds }: PlatformKPIsViewProps) {
+export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, anomaliesLoading, startDate, endDate, workspaceIds }: PlatformKPIsViewProps) {
   const queryClient = useQueryClient();
 
   // Per-feature availability from the shared hook (caches under READINESS_QUERY_KEY).
@@ -262,8 +263,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <KPICard
             title="Total Queries Executed"
-            value={isLoading ? "—" : formatNumber(data.total_queries)}
-            subtitle={isLoading ? "" : `${data.unique_query_users} unique users`}
+            value={(isLoading || isFetching) ? "—" : formatNumber(data.total_queries)}
+            subtitle={(isLoading || isFetching) ? "" : `${data.unique_query_users} unique users`}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
             onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_queries", "Total Queries Executed") : undefined}
@@ -276,7 +277,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
 
           <KPICard
             title="Rows Processed"
-            value={isLoading ? "—" : formatNumber(data.total_rows_read)}
+            value={(isLoading || isFetching) ? "—" : formatNumber(data.total_rows_read)}
             subtitle="Total data scanned"
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
@@ -290,7 +291,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
 
           <KPICard
             title="Data Processed"
-            value={isLoading ? "—" : formatBytes(data.total_bytes_read)}
+            value={(isLoading || isFetching) ? "—" : formatBytes(data.total_bytes_read)}
             subtitle="Total throughput"
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
@@ -304,7 +305,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
 
           <KPICard
             title="Compute Time"
-            value={isLoading ? "—" : formatDurationSeconds(data.total_compute_seconds)}
+            value={(isLoading || isFetching) ? "—" : formatDurationSeconds(data.total_compute_seconds)}
             subtitle="Total processing time"
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}

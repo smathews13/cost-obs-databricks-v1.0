@@ -430,7 +430,7 @@ function Dashboard() {
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
   // KPIs + anomalies — always preload, workspace filter applied when active
-  const { data: kpisBundle, isLoading: kpisBundleLoading } = useKPIsBundle(dateRange, _wsIds, true);
+  const { data: kpisBundle, isLoading: kpisBundleLoading, isFetching: kpisBundleFetching } = useKPIsBundle(dateRange, _wsIds, true);
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;
@@ -451,7 +451,7 @@ function Dashboard() {
   const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, isInfraTab);
 
   // DBSQL/SQL Warehousing tab data
-  const { data: dbsqlData, isLoading: dbsqlLoading } = useDBSQLQueryCosts(dateRange, _wsIds, !hasWsFilter || activeTab === "sql");
+  const { data: dbsqlData, isLoading: dbsqlLoading, isFetching: dbsqlFetching } = useDBSQLQueryCosts(dateRange, _wsIds, !hasWsFilter || activeTab === "sql");
 
   // Users & Groups tab data
   const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, !hasWsFilter || isUsersTab);
@@ -995,6 +995,7 @@ function Dashboard() {
           <PlatformKPIsView
             data={platformKPIs}
             isLoading={kpisLoading}
+            isFetching={kpisBundleFetching}
             spendAnomalies={spendAnomalies}
             anomaliesLoading={anomaliesLoading}
             startDate={dateRange.startDate}
@@ -1043,7 +1044,7 @@ function Dashboard() {
           <SQLWarehousing360
             sqlBreakdownData={sqlBreakdown}
             queryData={dbsqlData}
-            isLoading={sqlLoading || dbsqlLoading}
+            isLoading={sqlLoading || dbsqlLoading || dbsqlFetching}
             host={accountInfo?.host}
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}

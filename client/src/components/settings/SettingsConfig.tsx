@@ -250,15 +250,10 @@ export function SettingsConfig({
                         <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
                         <span className="text-sm font-medium text-green-700">User OAuth</span>
                       </>
-                    ) : authStatus.locked_to_sp ? (
-                      <>
-                        <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
-                        <span className="text-sm font-medium text-amber-700">Service principal (token failed scope check)</span>
-                      </>
                     ) : (
                       <>
-                        <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
-                        <span className="text-sm font-medium text-amber-700">Service principal</span>
+                        <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                        <span className="text-sm font-medium text-green-700">Service principal</span>
                       </>
                     )}
                   </div>

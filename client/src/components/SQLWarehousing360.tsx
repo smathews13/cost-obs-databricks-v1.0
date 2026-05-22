@@ -420,24 +420,31 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
           </div>
 
           {/* Stale data warning — shown when MV exists but has no data in the selected range */}
-          {summary?.total_queries === 0 && (summary?.data_range?.total_rows ?? 0) > 0 && (
+          {summary?.total_queries === 0 && (summary?.data_range?.total_rows ?? 0) > 0 && (() => {
+            const earliest = summary.data_range?.earliest_date;
+            const latest = summary.data_range?.latest_date;
+            const rangeOutside = earliest && latest && startDate && endDate
+              && (endDate < earliest || startDate > latest);
+            return (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
               <div className="flex items-start gap-3">
                 <svg className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                 </svg>
                 <div>
-                  <p className="text-sm font-medium text-amber-800">No data in selected date range</p>
+                  <p className="text-sm font-medium text-amber-800">No data in selected range</p>
                   <p className="mt-1 text-sm text-amber-700">
-                    The Query materialized view has data from{" "}
-                    <strong>{summary.data_range?.earliest_date ?? "unknown"}</strong> to{" "}
-                    <strong>{summary.data_range?.latest_date ?? "unknown"}</strong>, but the current date range
-                    ({startDate} – {endDate}) falls outside that window. Adjust the date range to see data.
+                    {rangeOutside ? (
+                      <>The Query data runs from <strong>{earliest}</strong> to <strong>{latest}</strong> — adjust the date range to see data.</>
+                    ) : (
+                      <>No SQL warehouse queries found for the selected {workspaceIds?.length ? `${workspaceIds.length} workspace${workspaceIds.length > 1 ? 's' : ''}` : 'filters'} in this date range. Try selecting all workspaces or a different date range.</>
+                    )}
                   </p>
                 </div>
               </div>
             </div>
-          )}
+            );
+          })() }
 
           {/* Summary Cards */}
           {(() => {

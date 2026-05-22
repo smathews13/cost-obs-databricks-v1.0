@@ -870,21 +870,55 @@ async def bootstrap_admin(request: Request) -> dict[str, Any]:
 
 @router.post("/ensure-catalog")
 async def ensure_catalog(request: Request) -> dict[str, Any]:
-    """Create the target catalog if it doesn't already exist.
+    """Create the target catalog if it doesn't already exist, then grant SP access.
 
-    Runs as the SP using the UC SDK (M2M token has unity-catalog scope).
-    SQL warehouse CREATE CATALOG is NOT used — it silently no-ops on permission
-    errors and SHOW CATALOGS LIKE has underscore wildcard bugs.
+    Flow:
+    1. Try w.catalogs.create() as SP (SP becomes owner — can self-grant everything).
+    2. If catalog already existed (owned by user), grant SP USE CATALOG + CREATE SCHEMA
+       using the user's forwarded OAuth token via UC REST API.
+    3. Verify SP can now access the catalog. If still blocked, return clear SQL to run.
     """
     import asyncio as _asyncio
 
     catalog, _ = get_catalog_schema()
+    user_token = request.headers.get("x-forwarded-access-token", "")
+    sp_id = os.getenv("DATABRICKS_CLIENT_ID", "")
 
     if not catalog:
         raise HTTPException(status_code=400, detail="No catalog configured.")
 
+    def _grant_sp_via_user_token() -> bool:
+        """Grant SP USE CATALOG + CREATE SCHEMA using the calling user's OAuth token.
+
+        The catalog owner (the user) can make UC grants even when the SP cannot
+        self-grant. Best-effort — returns True on success, False on any failure.
+        """
+        if not user_token or not sp_id:
+            return False
+        host = os.getenv("DATABRICKS_HOST", "")
+        if not host:
+            return False
+        try:
+            from databricks.sdk import WorkspaceClient as _WC
+            user_w = _WC(host=host, token=user_token, auth_type="pat")
+            user_w.api_client.do(
+                "PATCH",
+                f"/api/2.1/unity-catalog/permissions/catalog/{catalog}",
+                body={"changes": [
+                    {"principal": sp_id, "add": ["USE CATALOG", "CREATE SCHEMA"]},
+                ]},
+            )
+            logger.info(f"Granted SP USE CATALOG + CREATE SCHEMA on `{catalog}` via user token")
+            return True
+        except Exception as e:
+            logger.warning(f"User token UC grant on `{catalog}` failed: {_clean_sdk_error(str(e))}")
+            return False
+
     def _create():
         w = get_workspace_client()  # SP M2M — has unity-catalog scope
+
+        # Step 1: Create catalog as SP (SP becomes owner → full self-grant ability).
+        already_existed = False
         try:
             w.catalogs.create(name=catalog)
             logger.info(f"Catalog `{catalog}` created via SDK as SP")
@@ -892,36 +926,48 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
             msg = _clean_sdk_error(str(e))
             lower = msg.lower()
             if any(kw in lower for kw in ("already exists", "already_exists", "already exist")):
-                logger.info(f"Catalog `{catalog}` already exists — ok")
-            elif any(kw in lower for kw in ("permission", "privilege", "forbidden", "unauthorized", "insufficient", "does not have")):
-                sp_id = os.getenv("DATABRICKS_CLIENT_ID", "<sp-client-id>")
+                logger.info(f"Catalog `{catalog}` already exists — will try to grant SP access")
+                already_existed = True
+            elif any(kw in lower for kw in ("permission", "privilege", "forbidden",
+                                             "unauthorized", "insufficient", "does not have")):
                 return {
                     "ok": False, "catalog": catalog,
                     "message": (
-                        f"The app service principal (client ID: {sp_id}) lacks CREATE CATALOG. "
-                        f"Run this in Databricks SQL then retry: "
+                        f"Service principal lacks CREATE CATALOG. "
+                        f"Run in Databricks SQL then retry: "
                         f"GRANT CREATE CATALOG ON METASTORE TO `{sp_id}`"
                     ),
                 }
             else:
-                logger.warning(f"ensure-catalog SDK create failed for `{catalog}`: {msg}")
+                logger.warning(f"ensure-catalog create failed for `{catalog}`: {msg}")
                 return {"ok": False, "catalog": catalog, "message": f"Could not create catalog: {msg}"}
 
-        # Verify via SDK get(). A permission error means the catalog EXISTS but the
-        # SP hasn't received USE CATALOG yet — grants run in the next step, so
-        # treat it as success. Only "not found" errors mean genuine failure.
+        # Step 2: If catalog pre-existed, grant SP access via the user's token so
+        # SP can verify and later create schemas / grant itself the rest.
+        if already_existed:
+            _grant_sp_via_user_token()
+
+        # Step 3: Verify SP can now access the catalog.
         try:
             w.catalogs.get(catalog)
-            logger.info(f"Catalog `{catalog}` verified")
+            logger.info(f"Catalog `{catalog}` verified accessible to SP")
             return {"ok": True, "catalog": catalog, "message": f"Catalog `{catalog}` is ready."}
         except Exception as e:
             msg = _clean_sdk_error(str(e))
             lower = msg.lower()
-            if any(kw in lower for kw in ("permission", "privilege", "forbidden", "unauthorized",
-                                          "does not have", "access", "insufficient")):
-                # Catalog exists; SP just hasn't received USE CATALOG yet — grants will fix it.
-                logger.info(f"Catalog `{catalog}` exists (SP lacks USE CATALOG, grants pending)")
-                return {"ok": True, "catalog": catalog, "message": f"Catalog `{catalog}` is ready."}
+            if any(kw in lower for kw in ("permission", "privilege", "does not have",
+                                          "use catalog", "access", "forbidden", "unauthorized")):
+                # Still blocked — user token grant likely failed (scope restriction).
+                # Show the manual SQL so the user can unblock themselves.
+                return {
+                    "ok": False, "catalog": catalog,
+                    "message": (
+                        f"Catalog `{catalog}` exists but the service principal still needs access. "
+                        f"Run in Databricks SQL then retry: "
+                        f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{sp_id}`; "
+                        f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{sp_id}`"
+                    ),
+                }
             logger.warning(f"ensure-catalog verify failed for `{catalog}`: {msg}")
             return {"ok": False, "catalog": catalog, "message": f"Catalog `{catalog}` not found: {msg}"}
 

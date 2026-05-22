@@ -552,8 +552,8 @@ def _tab_aiml() -> dict:
         result = execute_query(
             "SELECT COUNT(*) AS cnt FROM system.billing.usage "
             "WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) "
-            "AND (product_category LIKE '%Model Serving%' OR product_category LIKE '%Foundation Model%' "
-            "     OR product_category LIKE '%Inference%' OR product_category LIKE '%Vector Search%') LIMIT 1",
+            "AND (sku_name LIKE '%Model Serving%' OR sku_name LIKE '%Foundation Model%' "
+            "     OR sku_name LIKE '%Inference%' OR sku_name LIKE '%Vector Search%') LIMIT 1",
             None, no_cache=True
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
@@ -570,7 +570,7 @@ def _tab_apps() -> dict:
         result = execute_query(
             "SELECT COUNT(*) AS cnt FROM system.billing.usage "
             "WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) "
-            "AND product_category LIKE '%Apps%' LIMIT 1",
+            "AND sku_name LIKE '%Apps%' LIMIT 1",
             None, no_cache=True
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
@@ -586,7 +586,7 @@ def _tab_tagging() -> dict:
     try:
         result = execute_query(
             "SELECT COUNT(*) AS cnt FROM system.compute.clusters "
-            "WHERE last_event_time >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
+            "LIMIT 1",
             None, no_cache=True
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
@@ -604,7 +604,8 @@ def _tab_infra() -> dict:
         result = execute_query(
             "SELECT COUNT(*) AS cnt FROM system.billing.usage "
             "WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) "
-            "AND product_category NOT IN ('All Purpose Compute', 'Jobs Compute', 'SQL', 'DLT') LIMIT 1",
+            "AND sku_name NOT LIKE '%All Purpose%' AND sku_name NOT LIKE '%Jobs Compute%' "
+            "AND sku_name NOT LIKE '%SQL%' AND sku_name NOT LIKE '%Delta Live%' LIMIT 1",
             None, no_cache=True
         )
         cnt = int((result or [{}])[0].get("cnt", 0))

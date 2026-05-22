@@ -14,36 +14,56 @@ interface WorkspaceFilterProps {
 export function WorkspaceFilter({ workspaces, selectedIds, onChange }: WorkspaceFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // Draft state — reflects checkbox clicks but is NOT applied until "Apply" is clicked.
+  // draftAll=true means "all workspaces" (no filter). draftAll=false + draftIds=[]
+  // means "nothing selected" (Apply is disabled until at least one is checked).
+  const [draftAll, setDraftAll] = useState(true);
+  const [draftIds, setDraftIds] = useState<string[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const validWorkspaces = workspaces.filter((ws) => ws.workspace_id != null);
+
+  // Sync draft from applied state each time the dropdown opens
   useEffect(() => {
     if (isOpen) {
+      setDraftAll(selectedIds.length === 0);
+      setDraftIds(selectedIds);
       setSearch("");
       setTimeout(() => searchRef.current?.focus(), 0);
     }
   }, [isOpen]);
 
-  const validWorkspaces = workspaces.filter((ws) => ws.workspace_id != null);
   if (validWorkspaces.length <= 1) return null;
 
   const allSelected = selectedIds.length === 0;
+  const applyEnabled = draftAll || draftIds.length > 0;
 
-  function toggle(id: string | null) {
-    if (!id) return;
-    if (allSelected) {
-      // All checked — unchecking one means select everything except this one
-      onChange(validWorkspaces.map((w) => w.workspace_id!).filter((x) => x !== id));
+  function draftToggle(id: string) {
+    if (draftAll) {
+      setDraftAll(false);
+      setDraftIds([id]);
       return;
     }
-    if (selectedIds.includes(id)) {
-      const next = selectedIds.filter((x) => x !== id);
-      // If removing the last one, revert to "all"
-      onChange(next.length === 0 ? [] : next);
+    if (draftIds.includes(id)) {
+      const next = draftIds.filter((x) => x !== id);
+      setDraftIds(next);
+      // Don't auto-switch to "all" when last is unchecked — let the user see nothing
+      // selected and be forced to pick something before Apply is enabled.
     } else {
-      const next = [...selectedIds, id];
-      // If all are now checked, normalise back to the "all" empty-array representation
-      onChange(next.length === validWorkspaces.length ? [] : next);
+      const next = [...draftIds, id];
+      if (next.length === validWorkspaces.length) {
+        setDraftAll(true);
+        setDraftIds([]);
+      } else {
+        setDraftIds(next);
+      }
     }
+  }
+
+  function handleApply() {
+    if (!applyEnabled) return;
+    onChange(draftAll ? [] : draftIds);
+    setIsOpen(false);
   }
 
   function label() {
@@ -94,14 +114,14 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Workspaces</span>
             <div className="flex gap-2">
               <button
-                onClick={() => onChange([])}
+                onClick={() => { setDraftAll(true); setDraftIds([]); }}
                 className="text-xs text-gray-500 hover:text-gray-800"
               >
                 All
               </button>
               <span className="text-gray-300">·</span>
               <button
-                onClick={() => onChange([])}
+                onClick={() => { setDraftAll(false); setDraftIds([]); }}
                 className="text-xs text-gray-500 hover:text-gray-800"
               >
                 Clear
@@ -138,13 +158,11 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
                 return (ws.workspace_name || ws.workspace_id || "").toLowerCase().includes(q);
               });
               if (filtered.length === 0) {
-                return (
-                  <p className="px-2 py-3 text-center text-xs text-gray-500">No workspaces match</p>
-                );
+                return <p className="px-2 py-3 text-center text-xs text-gray-500">No workspaces match</p>;
               }
               return filtered.map((ws) => {
                 const id = ws.workspace_id!;
-                const checked = allSelected || selectedIds.includes(id);
+                const checked = draftAll || draftIds.includes(id);
                 return (
                   <label
                     key={id}
@@ -153,7 +171,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => toggle(id)}
+                      onChange={() => draftToggle(id)}
                       className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
                     />
                     <span className="flex-1 truncate text-sm text-gray-700">
@@ -164,11 +182,19 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
               });
             })()}
           </div>
-          {!allSelected && (
-            <div className="mt-2 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
-              {selectedIds.length} of {validWorkspaces.length} selected
-            </div>
-          )}
+          <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2">
+            <span className="text-[11px] text-gray-400">
+              {draftAll ? `All ${validWorkspaces.length}` : `${draftIds.length} of ${validWorkspaces.length}`} selected
+            </span>
+            <button
+              onClick={handleApply}
+              disabled={!applyEnabled}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ backgroundColor: applyEnabled ? '#FF3621' : '#FFA390' }}
+            >
+              Apply
+            </button>
+          </div>
         </div>
       )}
     </div>

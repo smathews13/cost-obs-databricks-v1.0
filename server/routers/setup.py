@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 SETTINGS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
 GENIE_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "genie_settings.json")
 
+# Written when the setup wizard completes. This file lives in .settings/ which is
+# wiped on every Databricks Apps git redeploy — ensuring the wizard always runs on
+# a fresh deployment, even if tables already exist from a previous run.
+SETUP_DONE_FILE = os.path.join(SETTINGS_DIR, "setup_done.json")
+
 # Simple in-process state for the background create-tables task
 _create_task_state: dict = {"status": "idle", "error": None, "started_at": None, "elapsed_seconds": None}  # idle | running | done | error
 
@@ -182,16 +187,74 @@ def _grant_warehouse_can_use(w, sp_client_id: str) -> None:
 
 @router.get("/status")
 async def get_setup_status() -> dict[str, Any]:
-    """Check the status of materialized views.
+    """Check setup status for the wizard gate.
 
-    If tables are missing and a user OAuth token is present (git-deploy / first load),
-    automatically kick off table creation in a background thread using the user's
-    token — no wizard interaction required. Returns status='initializing' in that case.
+    setup_done.json lives in .settings/ which is wiped on every Databricks Apps
+    git redeploy. If the file is absent the wizard always shows, regardless of
+    whether tables already exist from a previous deployment.
+
+    The only exception: if a table-creation task is actively running (the wizard
+    is on the create-tables step and polling), return 'initializing' so it keeps
+    polling instead of resetting back to the wizard start.
     """
     import asyncio as _asyncio
+
+    # While table creation is running (wizard polling mid-flow), keep returning
+    # initializing regardless of setup_done state so the wizard doesn't reset.
+    if _create_task_state["status"] == "running":
+        import time as _time
+        catalog, schema = get_catalog_schema()
+        started = _create_task_state.get("started_at") or _time.monotonic()
+        elapsed = int(_time.monotonic() - started)
+        _create_task_state["elapsed_seconds"] = elapsed
+        if elapsed > _BOOTSTRAP_TIMEOUT_SECONDS:
+            _create_task_state["status"] = "error"
+            _create_task_state["error"] = (
+                f"Table creation timed out after {elapsed // 60} minutes. "
+                "The warehouse may be cold or the billing dataset is very large. "
+                "Use the Setup wizard to retry, or check app logs for details."
+            )
+            logger.error(f"Bootstrap timed out after {elapsed}s — marking as error")
+        else:
+            return {
+                "catalog": catalog,
+                "schema": schema,
+                "tables": {},
+                "all_tables_exist": False,
+                "missing_tables": [],
+                "status": "initializing",
+                "task": _create_task_state.copy(),
+            }
+
+    # setup_done.json absent → wizard has not completed on this deployment.
+    # Return setup_required regardless of table existence. This fires on every
+    # fresh git redeploy because .settings/ is wiped by Databricks Apps.
+    if not os.path.exists(SETUP_DONE_FILE):
+        catalog, schema = get_catalog_schema()
+        return {
+            "catalog": catalog,
+            "schema": schema,
+            "tables": {},
+            "all_tables_exist": False,
+            "missing_tables": [],
+            "status": "setup_required",
+            "task": _create_task_state.copy(),
+        }
+
     catalog, schema = get_catalog_schema()
-    # Run the blocking SDK call (tables.list) in a thread executor so it doesn't
-    # block the async event loop — the frontend polls this every few seconds.
+
+    # No catalog configured — wizard must run first.
+    if not catalog or not schema:
+        return {
+            "catalog": catalog,
+            "schema": schema,
+            "tables": {},
+            "all_tables_exist": False,
+            "missing_tables": [],
+            "status": "setup_required",
+            "task": _create_task_state.copy(),
+        }
+
     loop = _asyncio.get_running_loop()
     tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
 
@@ -199,35 +262,6 @@ async def get_setup_status() -> dict[str, Any]:
     missing = [name for name, exists in tables.items() if not exists]
 
     if not all_exist:
-        # If bootstrap is already running (started by a prior request), keep returning
-        # "initializing" so the frontend continues polling instead of showing the wizard.
-        if _create_task_state["status"] == "running":
-            import time as _time
-            started = _create_task_state.get("started_at") or _time.monotonic()
-            elapsed = int(_time.monotonic() - started)
-            _create_task_state["elapsed_seconds"] = elapsed
-            # Auto-fail after timeout so the wizard shows instead of spinning forever
-            if elapsed > _BOOTSTRAP_TIMEOUT_SECONDS:
-                _create_task_state["status"] = "error"
-                _create_task_state["error"] = (
-                    f"Table creation timed out after {elapsed // 60} minutes. "
-                    "The warehouse may be cold or the billing dataset is very large. "
-                    "Use the Setup wizard to retry, or check app logs for details."
-                )
-                logger.error(f"Bootstrap timed out after {elapsed}s — marking as error")
-            else:
-                return {
-                    "catalog": catalog,
-                    "schema": schema,
-                    "tables": tables,
-                    "all_tables_exist": False,
-                    "missing_tables": missing,
-                    "status": "initializing",
-                    "task": _create_task_state.copy(),
-                }
-
-        # Tables missing — always show the Setup Wizard so the user understands
-        # what's being created and can grant permissions through the guided flow.
         return {
             "catalog": catalog,
             "schema": schema,
@@ -265,6 +299,25 @@ async def get_setup_status() -> dict[str, Any]:
         "status": "ready" if all_exist else "setup_required",
         "task": _create_task_state.copy(),
     }
+
+
+@router.post("/complete")
+async def mark_setup_complete() -> dict[str, Any]:
+    """Write setup_done.json to mark wizard completion for this deployment.
+
+    Called by the frontend when the user clicks 'Complete' in the setup wizard.
+    Without this file, every fresh git redeploy will show the wizard.
+    """
+    try:
+        os.makedirs(SETTINGS_DIR, exist_ok=True)
+        with open(SETUP_DONE_FILE, "w") as f:
+            import time as _time
+            json.dump({"completed_at": _time.time()}, f)
+        logger.info("Setup wizard marked complete — setup_done.json written")
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Failed to write setup_done.json: {e}")
+        return {"ok": False, "error": str(e)}
 
 
 @router.post("/reset-bootstrap")

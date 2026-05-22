@@ -254,6 +254,8 @@ function Dashboard() {
 
   const handleSetupComplete = () => {
     localStorage.setItem("coc-setup-complete", "true");
+    // Mark setup complete server-side (survives page refresh, cleared on redeploy)
+    fetch("/api/setup/complete", { method: "POST" }).catch(() => {});
     // Save the deploying user as admin (fire-and-forget)
     fetch("/api/setup/bootstrap-admin", { method: "POST" }).catch(() => {});
     setShowSetupWizard(false);

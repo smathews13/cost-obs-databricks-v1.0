@@ -144,7 +144,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange }: Workspace
               }
               return filtered.map((ws) => {
                 const id = ws.workspace_id!;
-                const checked = selectedIds.includes(id);
+                const checked = allSelected || selectedIds.includes(id);
                 return (
                   <label
                     key={id}

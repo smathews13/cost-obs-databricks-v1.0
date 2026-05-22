@@ -164,6 +164,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   // Storage location step state
   const [catalogInput, setCatalogInput] = useState("");
   const [schemaInput, setSchemaInput] = useState("");
+  const [storageEnvVarLocked, setStorageEnvVarLocked] = useState(false);
 
   // Workspace filter step state
   const [wsLoading, setWsLoading] = useState(false);
@@ -188,6 +189,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
           setConfig(cfg);
           const rawCat = cfg?.storage_location?.catalog || "";
           const rawSch = cfg?.storage_location?.schema || "";
+          const isEnvVar = cfg?.storage_location?.catalog_source === "env_var";
+          setStorageEnvVarLocked(isEnvVar);
           // Never pre-fill with the forbidden defaults — force the user to choose explicitly
           setCatalogInput(rawCat.toLowerCase() === "main" ? "" : rawCat);
           setSchemaInput(rawSch.toLowerCase() === "cost_obs" && rawCat.toLowerCase() === "main" ? "" : rawSch);
@@ -471,6 +474,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               onSchemaChange={setSchemaInput}
               phase={storagePhase}
               checks={storageChecks}
+              envVarLocked={storageEnvVarLocked}
             />
           )}
 
@@ -523,7 +527,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         {/* Footer */}
         <div className="flex items-center justify-between rounded-b-xl border-t px-8 py-4" style={{ borderColor: '#E5E5E5' }}>
           <div>
-            {currentIdx > 0 && step !== "complete" && (
+            {currentIdx > 0 && (
               <button
                 onClick={goBack}
                 className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
@@ -592,10 +596,14 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                     if (!cat || !sch) return;
                     setError(null);
 
-                    // Step 1: Save config (auto-retry up to 3× for cold-start)
-                    setStoragePhase("saving");
+                    // Step 1: Save config — skip when catalog/schema come from env vars
+                    // (env vars always win in get_catalog_schema(); saving to file is a no-op).
                     setStorageChecks({ config: null, catalog: null, schema: null });
-                    {
+                    if (storageEnvVarLocked) {
+                      setStoragePhase("creating-catalog");
+                      setStorageChecks(c => ({ ...c, config: true }));
+                    } else {
+                      setStoragePhase("saving");
                       let saved = false;
                       for (let attempt = 1; attempt <= 3 && !saved; attempt++) {
                         try {
@@ -627,6 +635,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                         }
                       }
                       setStorageChecks(c => ({ ...c, config: true }));
+                      setStoragePhase("creating-catalog");
                     }
 
                     // Step 2: Create catalog
@@ -794,6 +803,7 @@ function StorageLocationStep({
   onSchemaChange,
   phase,
   checks,
+  envVarLocked,
 }: {
   catalog: string;
   schema: string;
@@ -801,6 +811,7 @@ function StorageLocationStep({
   onSchemaChange: (v: string) => void;
   phase: string;
   checks: { config: boolean | null; catalog: boolean | null; schema: boolean | null };
+  envVarLocked?: boolean;
 }) {
   const locked = phase !== "idle" && phase !== "error";
 
@@ -823,14 +834,25 @@ function StorageLocationStep({
         The catalog and schema will be created for you if they don't already exist.
       </p>
 
-      <div className={`rounded-lg border p-4 space-y-4 ${locked ? "border-gray-100 bg-gray-50" : "border-gray-200 bg-white"}`}>
+      {envVarLocked && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m2-6V7a4 4 0 00-8 0v4H3a1 1 0 00-1 1v6a2 2 0 002 2h14a2 2 0 002-2v-6a1 1 0 00-1-1h-1V7a4 4 0 00-8 0z" />
+          </svg>
+          <p className="text-xs text-amber-800">
+            Catalog and schema are set by environment variable (<code className="font-mono">COST_OBS_CATALOG</code> / <code className="font-mono">COST_OBS_SCHEMA</code>). To change them, update the environment variables in the Databricks Apps configuration.
+          </p>
+        </div>
+      )}
+
+      <div className={`rounded-lg border p-4 space-y-4 ${locked || envVarLocked ? "border-gray-100 bg-gray-50" : "border-gray-200 bg-white"}`}>
         <div className="space-y-1.5">
           <label className="block text-xs font-medium text-gray-700">Catalog</label>
           <input
             type="text"
             value={catalog}
             onChange={(e) => onCatalogChange(e.target.value)}
-            disabled={locked}
+            disabled={locked || envVarLocked}
             placeholder="e.g. my_catalog"
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:bg-gray-100 disabled:text-gray-500"
           />
@@ -841,7 +863,7 @@ function StorageLocationStep({
             type="text"
             value={schema}
             onChange={(e) => onSchemaChange(e.target.value)}
-            disabled={locked}
+            disabled={locked || envVarLocked}
             placeholder="e.g. cost_obs_app"
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:bg-gray-100 disabled:text-gray-500"
           />
@@ -850,7 +872,9 @@ function StorageLocationStep({
 
       {showProgress ? (
         <div className="space-y-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
-          <StorageCheckRow label="Saving configuration" state={rowState(checks.config, "saving")} />
+          {!envVarLocked && (
+            <StorageCheckRow label="Saving configuration" state={rowState(checks.config, "saving")} />
+          )}
           {(checks.catalog !== null || phase === "creating-catalog" || phase === "creating-schema" || phase === "done" || phase === "error") && (
             <StorageCheckRow label={`Creating catalog \`${catalog}\``} state={rowState(checks.catalog, "creating-catalog")} />
           )}

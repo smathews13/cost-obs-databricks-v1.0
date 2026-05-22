@@ -383,9 +383,9 @@ async def get_sql_breakdown(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
-    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     try:
+        ws_clause = wf.build_ws_filter_clause(id_list=id_list)
         use_mv = _check_mv_available()
         if use_mv:
             results = _exec_mv(MV_SQL_TOOL_ATTRIBUTION, params, _mv_ws_clause(id_list))

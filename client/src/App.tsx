@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TabRefreshButton } from "@/components/TabRefreshButton";
 import { SetupWizard } from "@/components/SetupWizard";
@@ -201,6 +201,9 @@ function Dashboard() {
   );
   // Set when user closes wizard without completing — shows the incomplete banner on dashboard.
   const [setupIncomplete, setSetupIncomplete] = useState(false);
+  // Stored so onLaunchWizard can abort the in-flight status check and prevent it from
+  // overriding the manually-triggered wizard with a stale "ready" response.
+  const setupStatusAbortRef = useRef<AbortController | null>(null);
   const rqClient = useQueryClient();
 
   // Per-tab query key prefixes — used by the refresh button to invalidate only
@@ -233,6 +236,7 @@ function Dashboard() {
   // 45s timeout — matches App cold-start window.
   useEffect(() => {
     const controller = new AbortController();
+    setupStatusAbortRef.current = controller;
     const timeout = setTimeout(() => controller.abort(), 45_000);
 
     fetch("/api/setup/status", { signal: controller.signal })
@@ -464,7 +468,7 @@ function Dashboard() {
   useQuery({ queryKey: ["alerts", "databricks"], queryFn: async () => { const r = await fetch("/api/alerts/databricks-alerts"); if (!r.ok) throw new Error("Failed"); return r.json(); } });
 
   // Workspace list for the filter dropdown — pool-scoped, independent of the bundle.
-  const { data: wsListData } = useQuery<{ workspaces: { id: string; name: string }[] }>({
+  const { data: wsListData, isLoading: wsListLoading } = useQuery<{ workspaces: { id: string; name: string }[] }>({
     queryKey: ["billing", "workspaces"],
     queryFn: () => fetch("/api/billing/workspaces").then(r => r.json()),
     staleTime: 5 * 60 * 1000,
@@ -763,6 +767,7 @@ function Dashboard() {
                 workspaces={wsFilterList}
                 selectedIds={selectedWorkspaceIds}
                 onChange={setSelectedWorkspaceIds}
+                isLoading={wsListLoading}
               />
             </div>
             <div />
@@ -919,6 +924,7 @@ function Dashboard() {
               <p className="text-sm text-gray-500">Loading DBU spend data...</p>
             </div>
           ) : (
+          <TabErrorBoundary tabName="$DBU Spend">
           <div className="space-y-6">
             {/* Header */}
             <div className="flex items-center gap-3">
@@ -957,6 +963,7 @@ function Dashboard() {
 
             <PipelineObjectsTable data={pipelineObjects} isLoading={pipelineLoading} host={accountInfo?.host} />
           </div>
+          </TabErrorBoundary>
           )
         ) : activeTab === "infra" ? (
           <TabErrorBoundary tabName="Cloud Costs">
@@ -1090,7 +1097,7 @@ function Dashboard() {
       <SettingsDialog
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        onLaunchWizard={() => { setShowSettings(false); setShowSetupWizard(true); }}
+        onLaunchWizard={() => { setupStatusAbortRef.current?.abort(); setShowSettings(false); setShowSetupWizard(true); }}
         tabVisibility={tabVisibility}
         appSettings={appSettings}
         onTabVisibilityChange={(v) => {

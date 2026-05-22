@@ -288,10 +288,7 @@ export function SettingsConfig({
                       {catalogInfo?.catalog ?? appConfig?.storage_location?.catalog ?? "—"}
                     </span>
                     {appConfig?.storage_location?.catalog_source === "env_var" && (
-                      <span className="text-[10px] text-gray-500" title="Set via DATABRICKS_UC_CATALOG environment variable">env var</span>
-                    )}
-                    {appConfig?.storage_location?.catalog_source === "default" && (
-                      <span className="text-[10px] text-gray-500">default (main)</span>
+                      <span className="text-[10px] text-gray-500" title="Set via COST_OBS_CATALOG environment variable">env var</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -300,10 +297,7 @@ export function SettingsConfig({
                       {catalogInfo?.schema ?? appConfig?.storage_location?.schema ?? "—"}
                     </span>
                     {appConfig?.storage_location?.schema_source === "env_var" && (
-                      <span className="text-[10px] text-gray-500" title="Set via DATABRICKS_UC_SCHEMA environment variable">env var</span>
-                    )}
-                    {appConfig?.storage_location?.schema_source === "default" && (
-                      <span className="text-[10px] text-gray-500">default (cost_observability)</span>
+                      <span className="text-[10px] text-gray-500" title="Set via COST_OBS_SCHEMA environment variable">env var</span>
                     )}
                   </div>
                   {appConfig?.version?.commit_sha && (

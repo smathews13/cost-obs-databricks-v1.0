@@ -2011,7 +2011,10 @@ async def get_kpis_bundle(
 
     anomalies_sql = SPEND_ANOMALIES
 
-    billing_kpis_sql = _inject_ws_filter(BILLING_KPIS_FAST, ws_clause)
+    # BILLING_KPIS_FAST has no table alias — use unqualified column name for the workspace filter.
+    # ws_clause uses "u.workspace_id" (for aliased queries); build a separate clause here.
+    billing_ws_clause = wf.build_ws_filter_clause(id_list=id_list, col="workspace_id")
+    billing_kpis_sql = _inject_ws_filter(BILLING_KPIS_FAST, billing_ws_clause)
 
     # Run billing and lakeflow queries separately so a lakeflow permission failure
     # doesn't zero out the billing-backed KPIs (jobs, workspaces, clusters).

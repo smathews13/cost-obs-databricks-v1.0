@@ -485,7 +485,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                   </button>
                 )}
                 <button
-                  onClick={async () => { if (!wsLocked) await saveWorkspaceFilter(); goNext(); }}
+                  onClick={() => { if (!wsLocked) saveWorkspaceFilter(); goNext(); }}
                   disabled={wsLoading}
                   className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
                 >
@@ -511,9 +511,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               )
             ) : step === "storage-location" ? (
               <button
-                onClick={async () => {
+                onClick={() => {
+                  // Fire-and-forget the save — don't block navigation on a slow warehouse start
                   if (catalogInput.trim() && schemaInput.trim()) {
-                    await fetch("/api/settings/catalog", {
+                    fetch("/api/settings/catalog", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ catalog: catalogInput.trim(), schema: schemaInput.trim() }),
@@ -574,8 +575,8 @@ function WelcomeStep({ config, cloud, loading }: { config: ConfigData | null; cl
         ) : config?.warehouse ? (
           <InfoRow
             label="SQL Warehouse"
-            value={`${config.warehouse.name || config.warehouse.id} (${config.warehouse.state})`}
-            status={config.warehouse.state === "RUNNING" ? "ok" : "warn"}
+            value={config.warehouse.name || config.warehouse.id || "Unknown"}
+            status={config.warehouse.state === "RUNNING" ? "ok" : config.warehouse.state === "UNKNOWN" ? undefined : "warn"}
           />
         ) : (
           <div className="rounded-lg bg-amber-50 px-4 py-3">
@@ -588,7 +589,11 @@ function WelcomeStep({ config, cloud, loading }: { config: ConfigData | null; cl
         )}
         <InfoRow
           label="Identity"
-          value={loading ? "Detecting…" : (config?.identity ? `${config.identity.display_name} (${config.identity.user_name})` : "Unknown")}
+          value={loading ? "Detecting…" : (config?.identity
+            ? (config.identity.display_name === config.identity.user_name
+                ? config.identity.user_name
+                : `${config.identity.display_name} (${config.identity.user_name})`)
+            : "Unknown")}
           loading={loading}
         />
       </div>
@@ -617,10 +622,7 @@ function StorageLocationStep({
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-medium text-gray-700">Catalog</label>
-            <span className="font-mono text-[10px] text-gray-400">COST_OBS_CATALOG</span>
-          </div>
+          <label className="block text-xs font-medium text-gray-700">Catalog</label>
           <input
             type="text"
             value={catalog}
@@ -630,15 +632,12 @@ function StorageLocationStep({
           />
         </div>
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-medium text-gray-700">Schema</label>
-            <span className="font-mono text-[10px] text-gray-400">COST_OBS_SCHEMA</span>
-          </div>
+          <label className="block text-xs font-medium text-gray-700">Schema</label>
           <input
             type="text"
             value={schema}
             onChange={(e) => onSchemaChange(e.target.value)}
-            placeholder="e.g. cost_obs"
+            placeholder="e.g. cost_obs_app"
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
           />
         </div>
@@ -647,7 +646,6 @@ function StorageLocationStep({
       <p className="text-xs text-gray-500">
         The schema will be created automatically if it doesn't exist. Tables will be placed
         at <span className="font-mono">{catalog || "…"}.{schema || "…"}</span>.
-        {(catalog || schema) && <span className="ml-1">Values sourced from app environment variables.</span>}
       </p>
     </div>
   );
@@ -823,12 +821,12 @@ function WorkspaceFilterStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
-        Choose which workspaces this app should display data for. This is a one-time choice — it cannot be changed after setup.
+        Choose which workspaces this app should display data for. You can adjust this after setup in the workspace filter dropdown.
       </p>
 
       {workspaces.length === 0 ? (
         <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
-          No workspaces found in the last 90 days of billing data. Skip this step to show all workspaces.
+          Could not load workspace list. Click <strong>Continue (all workspaces)</strong> to show data for all workspaces, or go back and check that system table permissions are granted.
         </div>
       ) : (
         <>
@@ -881,17 +879,27 @@ function WorkspaceFilterStep({
 
 function CompleteStep() {
   return (
-    <div className="flex flex-col items-center justify-center py-8 text-center">
+    <div className="flex flex-col items-center py-8">
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
         <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       </div>
-      <h3 className="text-lg font-bold text-gray-900">Setup Complete</h3>
-      <p className="mt-2 max-w-sm text-sm text-gray-600">
+      <h3 className="text-lg font-bold text-gray-900 text-center">Setup Complete</h3>
+      <p className="mt-2 max-w-sm text-sm text-gray-600 text-center">
         Your environment is configured and materialized views are ready.
         Click below to start exploring your cost data.
       </p>
+      <div className="mt-6 w-full rounded-lg border border-amber-200 bg-amber-50 p-4">
+        <p className="text-xs font-semibold text-amber-800 mb-1">Important Disclaimer</p>
+        <p className="text-xs text-amber-700 leading-relaxed">
+          This application is provided as a reference implementation and is not official production software from Databricks.
+          It is not covered by Databricks support SLAs. If you encounter issues or have questions, your Solutions Architect
+          (SA) and account team are available to assist. We encourage you to customize and tune this application to meet
+          your organization's specific requirements. Databricks customers using this reference architecture should treat
+          their deployment and use like OSS software.
+        </p>
+      </div>
     </div>
   );
 }
@@ -907,13 +915,16 @@ function LoadingSpinner({ text }: { text: string }) {
 
 function InfoRow({ label, value, status, loading }: { label: string; value: string; status?: "ok" | "warn" | "error"; loading?: boolean }) {
   return (
-    <div className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-2.5">
-      <span className="text-sm font-medium text-gray-500">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className={`text-sm font-medium ${loading ? "text-gray-400 italic" : "text-gray-900"}`}>{value}</span>
-        {status === "ok" && <span className="h-2 w-2 rounded-full bg-green-500" />}
-        {status === "warn" && <span className="h-2 w-2 rounded-full bg-amber-500" />}
-        {status === "error" && <span className="h-2 w-2 rounded-full bg-red-500" />}
+    <div className="flex items-center gap-4 rounded-lg bg-gray-50 px-4 py-2.5">
+      <span className="shrink-0 text-sm font-medium text-gray-500">{label}</span>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+        <span
+          className={`truncate text-right text-sm font-medium ${loading ? "text-gray-400 italic" : "text-gray-900"}`}
+          title={value}
+        >{value}</span>
+        {status === "ok" && <span className="shrink-0 h-2 w-2 rounded-full bg-green-500" />}
+        {status === "warn" && <span className="shrink-0 h-2 w-2 rounded-full bg-amber-500" />}
+        {status === "error" && <span className="shrink-0 h-2 w-2 rounded-full bg-red-500" />}
       </div>
     </div>
   );

@@ -94,10 +94,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [queriesPage, setQueriesPage] = useState(1);
   const [showHistoricalQueries, setShowHistoricalQueries] = useState(false);
-  const [setupStatus, setSetupStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const { tableGranted } = useFeatureAvailability();
   const queryHistoryGranted = tableGranted("system.query.history");
-  const [setupMessage, setSetupMessage] = useState<string>("");
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [sourceQueriesCache, setSourceQueriesCache] = useState<Record<string, SourceQuery[]>>({});
@@ -239,26 +237,6 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
     }
   };
 
-  const handleCreateTables = async () => {
-    setSetupStatus("loading");
-    setSetupMessage("Creating materialized views (this may take a few minutes)...");
-    try {
-      const response = await fetch("/api/setup/create-tables?run_in_background=true", {
-        method: "POST",
-      });
-      const result = await response.json();
-      if (response.ok) {
-        setSetupStatus("success");
-        setSetupMessage("Materialized views creation started. Refresh the page in a few minutes to see query cost data.");
-      } else {
-        setSetupStatus("error");
-        setSetupMessage(result.message || "Failed to create materialized views");
-      }
-    } catch (err) {
-      setSetupStatus("error");
-      setSetupMessage("Failed to connect to setup API");
-    }
-  };
 
   const userBarData = useMemo(() => {
     if (!queryData?.by_user?.users) return [];
@@ -370,75 +348,18 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
     <div className="space-y-6">
       {/* Query-level Cost Attribution */}
       {!hasQueryData ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-6">
-          <h3 className="text-lg font-semibold text-gray-900">Query-level Cost Attribution Not Available</h3>
-          <p className="mt-2 text-sm text-gray-600">
-            The <code className="rounded bg-orange-100 px-1">dbsql_cost_per_query</code> table has not been created yet.
-          </p>
-          <p className="mt-2 text-sm text-gray-600">
-            This feature provides granular query-level cost attribution for all DBSQL queries, including:
-          </p>
-          <ul className="mt-2 list-inside list-disc text-sm text-gray-600">
-            <li>Cost breakdown by query source (Genie, Dashboards, SQL Editor, Jobs)</li>
-            <li>Per-user query spend analysis</li>
-            <li>Most expensive query identification</li>
-            <li>Deep links to query profiles</li>
-          </ul>
-
-          <div className="mt-4 rounded-lg bg-white p-4 border border-amber-100">
-            <h4 className="font-medium text-gray-900">Create Materialized Views</h4>
-            <p className="mt-1 text-sm text-gray-600">
-              Click the button below to create all required materialized views. This process runs in the background and may take a few minutes.
-            </p>
-
-            <div className="mt-4">
-              {setupStatus === "idle" && (
-                <button
-                  onClick={handleCreateTables}
-                  className="btn-brand inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Create Materialized Views
-                </button>
-              )}
-              {setupStatus === "loading" && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  <span className="text-sm">{setupMessage}</span>
-                </div>
-              )}
-              {setupStatus === "success" && (
-                <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-green-700">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm">{setupMessage}</span>
-                </div>
-              )}
-              {setupStatus === "error" && (
-                <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-700">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm">{setupMessage}</span>
-                  <button
-                    onClick={() => setSetupStatus("idle")}
-                    className="ml-auto text-sm text-red-600 hover:text-red-800 underline"
-                  >
-                    Try again
-                  </button>
-                </div>
-              )}
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
+          <div className="flex items-start gap-3">
+            <svg className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-gray-700">Query-level cost attribution is not available</p>
+              <p className="mt-1 text-sm text-gray-500">
+                This tab requires <code className="rounded bg-gray-200 px-1 text-xs">system.query.history</code> access for the app's service principal.
+                Grant it in <strong>Settings → Permissions → Run SP Grants</strong>, then rebuild tables from <strong>Settings → Config</strong>.
+              </p>
             </div>
-
-            <p className="mt-3 text-xs text-gray-500">
-              The tables will be automatically refreshed daily after initial creation.
-            </p>
           </div>
         </div>
       ) : (

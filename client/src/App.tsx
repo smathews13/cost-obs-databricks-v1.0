@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tan
 import { TabRefreshButton } from "@/components/TabRefreshButton";
 import { SetupWizard } from "@/components/SetupWizard";
 import { SummaryCards } from "@/components/SummaryCards";
-import { PermissionsDialog } from "@/components/PermissionsDialog";
 import { SpendChart } from "@/components/SpendChart";
 import { ProductBreakdown } from "@/components/ProductBreakdown";
 import { WorkspaceTable } from "@/components/WorkspaceTable";
@@ -328,6 +327,7 @@ function Dashboard() {
     identity: "user_oauth" | "service_principal";
     locked_to_sp: boolean;
     has_sql_scope: boolean | null;
+    sp_client_id?: string;
   } | null>({
     queryKey: ["settings-auth-status"],
     queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
@@ -620,9 +620,6 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Permissions Check Dialog */}
-      <PermissionsDialog />
-
       {/* Account Info Banner */}
       <div className="text-white" style={{ backgroundColor: '#1B3139' }}>
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
@@ -647,16 +644,22 @@ function Dashboard() {
                     {accountInfo.account_name && (
                       <div className="flex flex-col leading-none">
                         <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">Account</span>
-                        <span className="rounded px-2 py-0.5 text-xs font-mono mt-0.5" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }}>
+                        <span className="mt-0.5 max-w-[120px] truncate rounded px-2 py-0.5 text-[10px] font-medium text-white/90" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
                           {accountInfo.account_name}
                         </span>
                       </div>
                     )}
-                    {selectedWorkspaceIds.length > 0 && (
-                      <div className="flex flex-col leading-none">
-                        <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">Workspace</span>
-                        <div className="flex items-center gap-1 mt-0.5">
-                        {selectedWorkspaceIds.length <= 2
+                    <div className="flex flex-col leading-none">
+                      <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">Workspace</span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        {selectedWorkspaceIds.length === 0 ? (
+                          <span
+                            className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
+                            style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+                          >
+                            All
+                          </span>
+                        ) : selectedWorkspaceIds.length <= 2
                           ? selectedWorkspaceIds.map((id) => {
                               const ws = wsFilterList.find((w) => w.workspace_id === id);
                               const label = ws?.workspace_name || id;
@@ -680,9 +683,8 @@ function Dashboard() {
                             </span>
                           )
                         }
-                        </div>
                       </div>
-                    )}
+                    </div>
                   </>
                 ) : (
                   <span className="text-sm opacity-75">Loading account info...</span>
@@ -692,11 +694,11 @@ function Dashboard() {
             {user && (
               <div className="flex items-center gap-2">
                 {authStatus && (
-                  <span
-                    title={authStatus.identity === "user_oauth" ? "Queries running as your OAuth token" : authStatus.locked_to_sp ? "Locked to service principal (token failed scope check)" : "Queries running as service principal"}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${authStatus.identity === "user_oauth" ? "bg-green-500/20 text-green-200" : "bg-amber-400/20 text-amber-200"}`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${authStatus.identity === "user_oauth" ? "bg-green-400" : "bg-amber-400"}`} />
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
+                    {authStatus.identity !== "user_oauth" && authStatus.sp_client_id && (
+                      <span className="font-mono opacity-70">{authStatus.sp_client_id.slice(0, 8)}</span>
+                    )}
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
                     {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}
                   </span>
                 )}

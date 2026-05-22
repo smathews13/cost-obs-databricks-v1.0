@@ -298,10 +298,11 @@ def _get_git_sha() -> str:
 
 @router.get("/config")
 async def get_app_config():
-    """Return current app configuration from env vars — no SDK calls, instant response."""
+    """Return current app configuration. Warehouse name fetched from SDK; other fields are instant from env vars."""
+    import asyncio as _asyncio
     from server.db import get_catalog_schema
 
-    # Warehouse: derive entirely from env vars (no SDK roundtrip)
+    # Warehouse: resolve ID from env vars, then look up name/state via SDK.
     warehouse_id_resource = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
 
@@ -318,11 +319,31 @@ async def get_app_config():
         warehouse_source = "none"
         warehouse_id = ""
 
-    warehouse = (
+    warehouse: dict = (
         {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN", "source": warehouse_source}
         if warehouse_id
         else {"id": None, "name": None, "size": None, "state": "NOT_CONFIGURED", "source": "none"}
     )
+
+    if warehouse_id:
+        def _fetch_warehouse():
+            try:
+                from server.db import get_workspace_client
+                w = get_workspace_client()
+                wh = w.warehouses.get(warehouse_id)
+                return {
+                    "name": wh.name or None,
+                    "size": wh.cluster_size or None,
+                    "state": str(wh.state.value) if wh.state else "UNKNOWN",
+                }
+            except Exception:
+                return {}
+        loop = _asyncio.get_running_loop()
+        try:
+            detail = await _asyncio.wait_for(loop.run_in_executor(None, _fetch_warehouse), timeout=10)
+            warehouse.update(detail)
+        except Exception:
+            pass
 
     # Identity: SP client ID from env var (no current_user.me() call)
     sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")

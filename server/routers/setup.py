@@ -32,6 +32,22 @@ SETUP_DONE_FILE = os.path.join(SETTINGS_DIR, "setup_done.json")
 # Simple in-process state for the background create-tables task
 _create_task_state: dict = {"status": "idle", "error": None, "started_at": None, "elapsed_seconds": None}  # idle | running | done | error
 
+# Tables required for the dashboard to be functional — only these gate wizard completion.
+# They source exclusively from system.billing, so they succeed whenever the SP has billing access.
+_CORE_REQUIRED_TABLES = frozenset({
+    "daily_usage_summary",
+    "daily_product_breakdown",
+    "daily_workspace_breakdown",
+})
+
+# Tables that require system.query.history — granted by the wizard but may not be accessible
+# in all workspaces (system table may not be enabled). Failures here are non-blocking.
+_QUERY_HISTORY_TABLES = frozenset({
+    "sql_tool_attribution",
+    "daily_query_stats",
+    "dbsql_cost_per_query",
+})
+
 # Auto-fail bootstrap after this many seconds to prevent infinite spinner
 _BOOTSTRAP_TIMEOUT_SECONDS = 25 * 60  # 25 minutes
 
@@ -258,10 +274,13 @@ async def get_setup_status() -> dict[str, Any]:
     loop = _asyncio.get_running_loop()
     tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
 
+    # Only core billing tables are required for the dashboard to be functional.
+    # Query.history tables are optional — their absence doesn't block the wizard.
+    core_exist = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
     all_exist = all(tables.values())
     missing = [name for name, exists in tables.items() if not exists]
 
-    if not all_exist:
+    if not core_exist:
         return {
             "catalog": catalog,
             "schema": schema,
@@ -434,14 +453,24 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
         results = create_materialized_views(catalog, schema)
         logger.info(f"Table creation completed: {results}")
 
-        errors = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
-        if errors:
-            first_error = next(iter(errors.values()))
+        all_errors = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
+        core_errors = {k: v for k, v in all_errors.items() if k in _CORE_REQUIRED_TABLES}
+        qh_errors = {k: v for k, v in all_errors.items() if k in _QUERY_HISTORY_TABLES}
+
+        if core_errors:
+            first_error = next(iter(core_errors.values()))
             _create_task_state["status"] = "error"
             _create_task_state["error"] = first_error.replace("error: ", "", 1)
         else:
+            # Core billing tables succeeded. Query.history tables are best-effort.
             _create_task_state["status"] = "done"
             _create_task_state["error"] = None
+            if qh_errors:
+                logger.warning(
+                    "Query.history tables could not be created (system.query.history may not be "
+                    "accessible) — SQL per-query attribution will be unavailable: %s",
+                    list(qh_errors.keys()),
+                )
             _grant_sp_schema_access(catalog, schema)
     except Exception as e:
         _create_task_state["status"] = "error"
@@ -1394,22 +1423,16 @@ async def get_readiness(refresh: bool = False) -> dict[str, Any]:
 
 @router.get("/list-workspaces")
 async def list_workspaces() -> dict:
-    """Return all workspaces with billing activity for the setup wizard workspace picker."""
+    """Return all workspaces in the account for the setup wizard workspace picker."""
     from server.db import execute_query
     try:
         rows = execute_query("""
             SELECT
-                CAST(u.workspace_id AS STRING) as workspace_id,
-                COALESCE(ws.workspace_name, CAST(u.workspace_id AS STRING)) as workspace_name,
-                SUM(u.usage_quantity) as total_dbus
-            FROM system.billing.usage u
-            LEFT JOIN system.access.workspaces_latest ws ON u.workspace_id = ws.workspace_id
-            WHERE u.usage_date >= CURRENT_DATE - 90
-              AND u.usage_quantity > 0
-              AND u.workspace_id IS NOT NULL
-            GROUP BY u.workspace_id, ws.workspace_name
-            HAVING workspace_id IS NOT NULL AND workspace_id != ''
-            ORDER BY total_dbus DESC
+                CAST(workspace_id AS STRING) AS workspace_id,
+                COALESCE(workspace_name, CAST(workspace_id AS STRING)) AS workspace_name
+            FROM system.access.workspaces_latest
+            WHERE workspace_id IS NOT NULL
+            ORDER BY workspace_name
         """)
         return {
             "workspaces": [

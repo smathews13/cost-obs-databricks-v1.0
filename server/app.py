@@ -345,7 +345,7 @@ def setup_materialized_views():
 
         # Derive setup completion from durable state — whether core MV tables exist.
         # Do NOT use setup_done.json (ephemeral, wiped on every git redeploy).
-        _CORE_TABLES = {"daily_usage_summary", "daily_product_breakdown"}
+        from server.routers.setup import _CORE_REQUIRED_TABLES as _CORE_TABLES
         try:
             tables = check_materialized_views_exist(catalog, schema)
             setup_complete = all(tables.get(t, False) for t in _CORE_TABLES)

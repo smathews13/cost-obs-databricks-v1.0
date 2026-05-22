@@ -829,7 +829,46 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
 
     results = {}
 
-    # Create schema if it doesn't already exist.
+    # ── Step 0: ensure the catalog exists ────────────────────────────────────
+    # `CREATE CATALOG IF NOT EXISTS` is a no-op when the catalog already exists,
+    # and creates it when the running identity has CREATE CATALOG privilege (e.g.
+    # the setup wizard runs as the user, who may be a metastore admin).
+    # If we can't create it AND it doesn't exist, we surface a clear error
+    # instead of letting a cryptic "SCHEMA_DOES_NOT_EXIST" or misclassified
+    # permission error bubble up from the CREATE SCHEMA step.
+    if catalog != "main":
+        try:
+            execute_query(f"CREATE CATALOG IF NOT EXISTS `{catalog}` COMMENT 'Cost Observability data'")
+            logger.info(f"Catalog `{catalog}` is ready")
+            results["catalog"] = "ok"
+        except Exception as _cat_e:
+            _cat_err = str(_cat_e)
+            # Verify whether the catalog already exists despite the error
+            _cat_exists = False
+            try:
+                from server.db import get_user_workspace_client, get_workspace_client
+                for _wc in [get_user_workspace_client(), get_workspace_client()]:
+                    try:
+                        next(iter(_wc.schemas.list(catalog_name=catalog)), None)
+                        _cat_exists = True
+                        break
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            if _cat_exists:
+                logger.info(f"Catalog `{catalog}` already exists (CREATE CATALOG not permitted but catalog is accessible)")
+                results["catalog"] = "exists"
+            else:
+                logger.error(f"Catalog `{catalog}` does not exist and could not be created: {_cat_err}")
+                results["catalog"] = (
+                    f"error: Catalog `{catalog}` does not exist. "
+                    f"Create it in the Databricks catalog explorer (Data > Create catalog), "
+                    f"then return to this step and click 'Create Tables'."
+                )
+                return results
+
+    # ── Step 1: ensure the schema exists ─────────────────────────────────────
     # Use tables.list() for existence detection — the x-forwarded-access-token has the
     # "sql" scope which authorises tables.list() but NOT schemas.get() (a UC management
     # API requiring a broader scope).  schemas.get() always returns 403 in Databricks

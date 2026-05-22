@@ -379,7 +379,7 @@ async def create_tables(
     """Create all materialized view tables.
 
     This will create pre-aggregated tables from system tables for fast queries.
-    Tables are created with 365 days of historical data.
+    Tables are created with 180 days (6 months) of historical data.
 
     WARNING: This operation can take several minutes on large accounts.
     Set run_in_background=true (default) to run asynchronously.

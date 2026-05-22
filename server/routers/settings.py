@@ -1,5 +1,6 @@
 """App settings endpoints - Cloud infrastructure connections management."""
 
+import asyncio
 import json
 import logging
 import os
@@ -293,13 +294,6 @@ async def get_app_config():
     """Return current app configuration: warehouse, identity, storage location, and version."""
     from server.db import get_catalog_schema, get_workspace_client
 
-    result: dict[str, Any] = {
-        "warehouse": None,
-        "identity": None,
-        "storage_location": None,
-        "version": {"commit_sha": _get_git_sha()},
-    }
-
     # Determine warehouse source — Apps resource binding preferred over manual env var
     warehouse_id_resource = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
@@ -317,11 +311,13 @@ async def get_app_config():
         warehouse_source = "none"
         warehouse_id = ""
 
-    if warehouse_id:
+    async def _fetch_warehouse():
+        if not warehouse_id:
+            return {"id": None, "name": None, "size": None, "state": "NOT_CONFIGURED", "source": "none"}
         try:
             w = get_workspace_client()
-            wh = w.warehouses.get(warehouse_id)
-            result["warehouse"] = {
+            wh = await asyncio.to_thread(w.warehouses.get, warehouse_id)
+            return {
                 "id": wh.id,
                 "name": wh.name,
                 "size": wh.cluster_size,
@@ -330,25 +326,23 @@ async def get_app_config():
             }
         except Exception as e:
             logger.warning(f"Could not fetch warehouse details: {e}")
-            result["warehouse"] = {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN", "source": warehouse_source}
-    else:
-        result["warehouse"] = {"id": None, "name": None, "size": None, "state": "NOT_CONFIGURED", "source": "none"}
+            return {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN", "source": warehouse_source}
 
-    # Service principal / current identity
-    try:
-        w = get_workspace_client()
-        me = w.current_user.me()
-        result["identity"] = {
-            "display_name": me.display_name,
-            "user_name": me.user_name,
-        }
-    except Exception as e:
-        logger.warning(f"Could not fetch current identity: {e}")
+    async def _fetch_identity():
+        try:
+            w = get_workspace_client()
+            me = await asyncio.to_thread(w.current_user.me)
+            return {"display_name": me.display_name, "user_name": me.user_name}
+        except Exception as e:
+            logger.warning(f"Could not fetch current identity: {e}")
+            return None
 
-    # Storage location (catalog.schema) with source labels
+    warehouse, identity = await asyncio.gather(_fetch_warehouse(), _fetch_identity())
+
+    storage_location = None
     try:
         catalog, schema = get_catalog_schema()
-        result["storage_location"] = {
+        storage_location = {
             "catalog": catalog,
             "schema": schema,
             "catalog_source": "env_var" if os.getenv("COST_OBS_CATALOG") else "default",
@@ -357,7 +351,12 @@ async def get_app_config():
     except Exception as e:
         logger.warning(f"Could not fetch catalog/schema: {e}")
 
-    return result
+    return {
+        "warehouse": warehouse,
+        "identity": identity,
+        "storage_location": storage_location,
+        "version": {"commit_sha": _get_git_sha()},
+    }
 
 
 @router.get("/tables")

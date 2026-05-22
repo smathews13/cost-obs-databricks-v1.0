@@ -104,8 +104,16 @@ _CATALOG_OVERRIDE_FILE = os.path.join(
 def get_catalog_schema() -> tuple[str, str]:
     """Return the catalog and schema for cost observability tables.
 
-    Priority: wizard override file → COST_OBS_CATALOG/COST_OBS_SCHEMA env vars → main/cost_obs.
+    Priority: COST_OBS_CATALOG/COST_OBS_SCHEMA env vars → wizard override file.
+    Env vars always win so a deliberate app configuration cannot be silently
+    overridden by a stale .settings/catalog_override.json from a previous run.
     """
+    # Env vars are the authoritative source — set in the Databricks Apps UI
+    catalog = os.getenv("COST_OBS_CATALOG", "").strip()
+    schema = os.getenv("COST_OBS_SCHEMA", "").strip()
+    if catalog and schema:
+        return catalog, schema
+    # Fall back to wizard override file (written during setup when env vars not yet set)
     try:
         if os.path.exists(_CATALOG_OVERRIDE_FILE):
             with open(_CATALOG_OVERRIDE_FILE) as f:
@@ -116,16 +124,21 @@ def get_catalog_schema() -> tuple[str, str]:
                 return cat, sch
     except Exception:
         pass
-    catalog = os.getenv("COST_OBS_CATALOG", "")
-    schema = os.getenv("COST_OBS_SCHEMA", "")
     return catalog, schema
 
 
 def save_catalog_schema(catalog: str, schema: str) -> None:
     """Persist a catalog/schema override (written from the Setup Wizard)."""
+    catalog = catalog.strip()
+    schema = schema.strip()
+    if catalog.lower() == "main" and schema.lower() == "cost_obs":
+        raise ValueError(
+            "Cannot save main.cost_obs as the storage location — "
+            "choose a dedicated catalog and schema."
+        )
     os.makedirs(os.path.dirname(_CATALOG_OVERRIDE_FILE), exist_ok=True)
     with open(_CATALOG_OVERRIDE_FILE, "w") as f:
-        json.dump({"catalog": catalog.strip(), "schema": schema.strip()}, f)
+        json.dump({"catalog": catalog, "schema": schema}, f)
     logger.info("Catalog override saved: %s.%s", catalog, schema)
 
 

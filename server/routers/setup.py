@@ -1085,40 +1085,88 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
             logger.warning(f"User token SQL grant on `{catalog}` failed: {_clean_sdk_error(str(e))}")
             return False
 
+    def _try_grant_create_catalog_via_user_token() -> bool:
+        """Attempt GRANT CREATE CATALOG ON METASTORE using the calling user's token.
+
+        Succeeds silently if the user is a metastore admin, allowing the subsequent
+        w.catalogs.create() to succeed without any manual intervention.
+        Best-effort — returns True on success, False if the user lacks metastore admin.
+        """
+        if not user_token or not sp_id:
+            return False
+        try:
+            from server.db import execute_query as _exec, _user_token as _exec_tok
+            ctx = _exec_tok.set(user_token)
+            try:
+                _exec(f"GRANT CREATE CATALOG ON METASTORE TO `{sp_id}`", no_cache=True)
+            finally:
+                _exec_tok.reset(ctx)
+            logger.info(f"Granted CREATE CATALOG ON METASTORE to SP `{sp_id}` via user token")
+            return True
+        except Exception as e:
+            logger.debug(f"CREATE CATALOG grant via user token failed (not metastore admin?): {_clean_sdk_error(str(e))}")
+            return False
+
     def _create():
         w = get_workspace_client()  # SP M2M — has unity-catalog scope
 
-        # Step 1: Create catalog as SP (SP becomes owner → full self-grant ability).
+        # Step 1: Check whether the catalog already exists before attempting creation.
+        # The SP may lack USE CATALOG on a pre-existing catalog, causing create() to
+        # return a permission error rather than "already exists" — so we probe first.
         already_existed = False
         try:
-            w.catalogs.create(name=catalog)
-            logger.info(f"Catalog `{catalog}` created via SDK as SP")
+            w.catalogs.get(catalog)
+            logger.info(f"Catalog `{catalog}` already exists (SP can see it)")
+            already_existed = True
         except Exception as e:
-            msg = _clean_sdk_error(str(e))
-            lower = msg.lower()
-            if any(kw in lower for kw in ("already exists", "already_exists", "already exist")):
-                logger.info(f"Catalog `{catalog}` already exists — will try to grant SP access")
-                already_existed = True
-            elif any(kw in lower for kw in ("permission", "privilege", "forbidden",
-                                             "unauthorized", "insufficient", "does not have")):
-                return {
-                    "ok": False, "catalog": catalog,
-                    "message": (
-                        f"Service principal lacks CREATE CATALOG. "
-                        f"Run in Databricks SQL then retry: "
-                        f"GRANT CREATE CATALOG ON METASTORE TO `{sp_id}`"
-                    ),
-                }
+            msg_lower = _clean_sdk_error(str(e)).lower()
+            if any(kw in msg_lower for kw in ("not found", "does not exist", "no such")):
+                pass  # Catalog truly doesn't exist — proceed to create
             else:
-                logger.warning(f"ensure-catalog create failed for `{catalog}`: {msg}")
-                return {"ok": False, "catalog": catalog, "message": f"Could not create catalog: {msg}"}
+                # SP can't see the catalog (likely exists but SP lacks USE CATALOG).
+                # Try granting USE CATALOG via user token, then re-probe.
+                logger.debug(f"catalogs.get(`{catalog}`) failed — catalog may exist but SP lacks access: {msg_lower}")
+                _grant_sp_via_user_token()
+                try:
+                    w.catalogs.get(catalog)
+                    logger.info(f"Catalog `{catalog}` exists — accessible after user-token grant")
+                    already_existed = True
+                except Exception:
+                    pass  # Still not visible — will try create below
 
-        # Step 2: If catalog pre-existed, grant SP access via the user's token so
-        # SP can verify and later create schemas / grant itself the rest.
+        if not already_existed:
+            # Step 2: Catalog doesn't exist. Try to grant CREATE CATALOG via user token
+            # first (silent success if user is metastore admin), then create as SP.
+            _try_grant_create_catalog_via_user_token()
+            try:
+                w.catalogs.create(name=catalog)
+                logger.info(f"Catalog `{catalog}` created via SDK as SP")
+            except Exception as e:
+                msg = _clean_sdk_error(str(e))
+                lower = msg.lower()
+                if any(kw in lower for kw in ("already exists", "already_exists", "already exist")):
+                    logger.info(f"Catalog `{catalog}` created concurrently — treating as existing")
+                    already_existed = True
+                elif any(kw in lower for kw in ("permission", "privilege", "forbidden",
+                                                 "unauthorized", "insufficient", "does not have")):
+                    return {
+                        "ok": False, "catalog": catalog,
+                        "message": (
+                            f"Service principal lacks CREATE CATALOG. "
+                            f"Run in Databricks SQL then retry: "
+                            f"GRANT CREATE CATALOG ON METASTORE TO `{sp_id}`"
+                        ),
+                    }
+                else:
+                    logger.warning(f"ensure-catalog create failed for `{catalog}`: {msg}")
+                    return {"ok": False, "catalog": catalog, "message": f"Could not create catalog: {msg}"}
+
+        # Step 3: If catalog pre-existed (or was just created by someone else), grant
+        # SP access via the user's token so SP can verify and create schemas.
         if already_existed:
             _grant_sp_via_user_token()
 
-        # Step 3: Verify SP can now access the catalog.
+        # Step 4: Verify SP can now access the catalog.
         try:
             w.catalogs.get(catalog)
             logger.info(f"Catalog `{catalog}` verified accessible to SP")

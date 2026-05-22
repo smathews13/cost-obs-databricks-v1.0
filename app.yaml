@@ -9,11 +9,6 @@ command: ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
 #    leave the resource key as "sql-warehouse".
 #    The app reads DATABRICKS_WAREHOUSE_ID (injected automatically) to connect.
 #
-# 2. User authorization → + Add scope → sql   (optional but recommended)
-#    Allows the app to run queries as the logged-in user rather than the SP.
-#    Workspace admins get system table access automatically — no GRANT needed.
-#    Users will see a one-time consent prompt on first open.
-#
 # =============================================================================
 
 resources:

@@ -71,7 +71,7 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
     Runs as the calling user (set via _user_token ContextVar by the caller).
     Returns {"ok": bool, "sp_client_id": str, "applied": int, "failed": int, "errors": list}
     """
-    from server.db import _user_token, get_connection
+    from server.db import _user_token
 
     sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
     if not sp_client_id:
@@ -104,31 +104,26 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
     ok = failed = 0
     errors: list[str] = []
 
-    # get_connection() uses _user_token directly (no auth_mode gate) — if the
-    # caller has set the user token in context, grants run as that user.
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cursor:
-                for sql_stmt, label in grant_stmts:
-                    try:
-                        cursor.execute(sql_stmt)
-                        ok += 1
-                        logger.info(f"SQL GRANT ok: {label} → {p}")
-                    except Exception as e:
-                        err_lower = str(e).lower()
-                        if any(kw in err_lower for kw in ("not found", "does not exist", "already")):
-                            ok += 1
-                            logger.debug(f"GRANT skipped (already applied / object missing): {label}: {e}")
-                        else:
-                            msg = _clean_sdk_error(str(e))
-                            logger.warning(f"SQL GRANT failed: {label}: {msg}")
-                            errors.append(f"{label}: {msg}")
-                            failed += 1
-    except Exception as e:
-        msg = _clean_sdk_error(str(e))
-        logger.error(f"Could not open warehouse connection for grants: {msg}")
-        return {"ok": False, "sp_client_id": sp_client_id, "applied": ok, "failed": failed + 1,
-                "errors": errors + [f"warehouse connection: {msg}"]}
+    # Use execute_query (not get_connection directly) so that scope errors on
+    # the forwarded user token automatically fall back to the SP — which has
+    # the sql OAuth scope and, in most deployments, sufficient privileges to
+    # run GRANT statements.
+    from server.db import execute_query as _exec
+    for sql_stmt, label in grant_stmts:
+        try:
+            _exec(sql_stmt, no_cache=True)
+            ok += 1
+            logger.info(f"SQL GRANT ok: {label} → {p}")
+        except Exception as e:
+            err_lower = str(e).lower()
+            if any(kw in err_lower for kw in ("not found", "does not exist", "already")):
+                ok += 1
+                logger.debug(f"GRANT skipped (already applied / object missing): {label}: {e}")
+            else:
+                msg = _clean_sdk_error(str(e))
+                logger.warning(f"SQL GRANT failed: {label}: {msg}")
+                errors.append(f"{label}: {msg}")
+                failed += 1
 
     logger.info(f"SP SQL grants: {ok} ok, {failed} failed for {p}")
 
@@ -877,43 +872,51 @@ async def bootstrap_admin(request: Request) -> dict[str, Any]:
 async def ensure_catalog(request: Request) -> dict[str, Any]:
     """Create the target catalog if it doesn't already exist.
 
-    Runs as the calling user (their forwarded token) so the CREATE CATALOG
-    uses their metastore-admin privileges, not the SP.
-    Called by the Storage step immediately after saving catalog/schema config.
+    Runs as the SP using the UC SDK (M2M token has unity-catalog scope).
+    SQL warehouse CREATE CATALOG is NOT used — it silently no-ops on permission
+    errors and SHOW CATALOGS LIKE has underscore wildcard bugs.
     """
     import asyncio as _asyncio
 
     catalog, _ = get_catalog_schema()
-    user_token = request.headers.get("x-forwarded-access-token", "")
 
     if not catalog:
         raise HTTPException(status_code=400, detail="No catalog configured.")
 
     def _create():
-        from server.db import execute_query
-        tok = _db_user_token.set(user_token)
+        w = get_workspace_client()  # SP M2M — has unity-catalog scope
         try:
-            execute_query(f"CREATE CATALOG IF NOT EXISTS `{catalog}`", no_cache=True)
-            # Verify — CREATE CATALOG IF NOT EXISTS silently succeeds on permission
-            # errors without actually creating the catalog. Confirm it exists.
-            rows = execute_query(f"SHOW CATALOGS LIKE '{catalog}'", no_cache=True)
-            if not rows:
+            w.catalogs.create(name=catalog)
+            logger.info(f"Catalog `{catalog}` created via SDK as SP")
+        except Exception as e:
+            msg = _clean_sdk_error(str(e))
+            lower = msg.lower()
+            if any(kw in lower for kw in ("already exists", "already_exists", "already exist")):
+                logger.info(f"Catalog `{catalog}` already exists — ok")
+            elif any(kw in lower for kw in ("permission", "privilege", "forbidden", "unauthorized", "insufficient", "does not have")):
+                sp_id = os.getenv("DATABRICKS_CLIENT_ID", "<sp-client-id>")
                 return {
                     "ok": False, "catalog": catalog,
                     "message": (
-                        f"Could not create catalog `{catalog}`. "
-                        "Your account may lack the CREATE CATALOG privilege. "
-                        "Ask a metastore admin to create it, then retry."
+                        f"The app service principal (client ID: {sp_id}) lacks CREATE CATALOG. "
+                        f"Run this in Databricks SQL then retry: "
+                        f"GRANT CREATE CATALOG ON METASTORE TO `{sp_id}`"
                     ),
                 }
-            logger.info(f"Catalog `{catalog}` verified after creation")
+            else:
+                logger.warning(f"ensure-catalog SDK create failed for `{catalog}`: {msg}")
+                return {"ok": False, "catalog": catalog, "message": f"Could not create catalog: {msg}"}
+
+        # Verify via SDK get() — avoids SHOW CATALOGS LIKE wildcard bug where
+        # underscore in catalog name matches unrelated catalogs.
+        try:
+            w.catalogs.get(catalog)
+            logger.info(f"Catalog `{catalog}` verified")
             return {"ok": True, "catalog": catalog, "message": f"Catalog `{catalog}` is ready."}
         except Exception as e:
             msg = _clean_sdk_error(str(e))
-            logger.warning(f"ensure-catalog failed for `{catalog}`: {msg}")
-            return {"ok": False, "catalog": catalog, "message": msg}
-        finally:
-            _db_user_token.reset(tok)
+            logger.warning(f"ensure-catalog verify failed for `{catalog}`: {msg}")
+            return {"ok": False, "catalog": catalog, "message": f"Could not verify catalog `{catalog}`: {msg}"}
 
     loop = _asyncio.get_running_loop()
     return await loop.run_in_executor(None, _create)
@@ -923,41 +926,40 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
 async def ensure_schema(request: Request) -> dict[str, Any]:
     """Create the target schema if it doesn't already exist.
 
-    Runs as the calling user (their forwarded token).
-    Called by the Storage step after ensure-catalog succeeds.
+    Runs as the SP via UC SDK. The SP owns the catalog after ensure-catalog
+    creates it, so CREATE SCHEMA succeeds without any extra privilege grant.
     """
     import asyncio as _asyncio
 
     catalog, schema = get_catalog_schema()
-    user_token = request.headers.get("x-forwarded-access-token", "")
 
     if not catalog or not schema:
         raise HTTPException(status_code=400, detail="No catalog/schema configured.")
 
     def _create():
-        from server.db import execute_query
-        tok = _db_user_token.set(user_token)
+        w = get_workspace_client()  # SP M2M — has unity-catalog scope
         try:
-            execute_query(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`", no_cache=True)
-            # Verify — same silent-success risk as CREATE CATALOG.
-            rows = execute_query(f"SHOW SCHEMAS IN `{catalog}` LIKE '{schema}'", no_cache=True)
-            if not rows:
-                return {
-                    "ok": False, "schema": f"{catalog}.{schema}",
-                    "message": (
-                        f"Could not create schema `{catalog}.{schema}`. "
-                        "Check that the service principal has CREATE SCHEMA on the catalog."
-                    ),
-                }
-            logger.info(f"Schema `{catalog}`.`{schema}` verified after creation")
+            w.schemas.create(name=schema, catalog_name=catalog)
+            logger.info(f"Schema `{catalog}`.`{schema}` created via SDK as SP")
+        except Exception as e:
+            msg = _clean_sdk_error(str(e))
+            lower = msg.lower()
+            if any(kw in lower for kw in ("already exists", "already_exists", "already exist")):
+                logger.info(f"Schema `{catalog}`.`{schema}` already exists — ok")
+            else:
+                logger.warning(f"ensure-schema SDK create failed: {msg}")
+                return {"ok": False, "schema": f"{catalog}.{schema}", "message": f"Could not create schema: {msg}"}
+
+        # Verify via SDK get() — avoids SHOW SCHEMAS LIKE underscore wildcard bug.
+        try:
+            w.schemas.get(f"{catalog}.{schema}")
+            logger.info(f"Schema `{catalog}`.`{schema}` verified")
             return {"ok": True, "schema": f"{catalog}.{schema}",
                     "message": f"Schema `{catalog}.{schema}` is ready."}
         except Exception as e:
             msg = _clean_sdk_error(str(e))
-            logger.warning(f"ensure-schema failed for `{catalog}.{schema}`: {msg}")
-            return {"ok": False, "schema": f"{catalog}.{schema}", "message": msg}
-        finally:
-            _db_user_token.reset(tok)
+            logger.warning(f"ensure-schema verify failed: {msg}")
+            return {"ok": False, "schema": f"{catalog}.{schema}", "message": f"Could not verify schema: {msg}"}
 
     loop = _asyncio.get_running_loop()
     return await loop.run_in_executor(None, _create)

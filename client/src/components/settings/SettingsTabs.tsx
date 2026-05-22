@@ -2,16 +2,16 @@ import type { TabVisibility } from "../SettingsDialog";
 
 const TAB_LABELS: Record<keyof TabVisibility, { label: string; color: string }> = {
   dbu: { label: "$DBU Spend", color: "#FF3621" },
-  infra: { label: "Cloud Costs", color: "#FF3621" },
-  kpis: { label: "Platform KPIs & Trends", color: "#FF3621" },
-  aiml: { label: "AI/ML", color: "#FF3621" },
   sql: { label: "Query", color: "#FF3621" },
+  aiml: { label: "AI/ML", color: "#FF3621" },
   apps: { label: "Apps", color: "#FF3621" },
   tagging: { label: "Tagging", color: "#FF3621" },
   "use-cases": { label: "Use Cases", color: "#FF3621" },
   alerts: { label: "Alerts", color: "#FF3621" },
   "users-groups": { label: "Users", color: "#FF3621" },
   forecasting: { label: "Forecasting", color: "#FF3621" },
+  kpis: { label: "Platform KPIs & Trends", color: "#FF3621" },
+  infra: { label: "Cloud Costs", color: "#FF3621" },
 };
 
 interface SettingsTabsProps {

@@ -30,7 +30,7 @@ interface ExportDialogProps {
   tabVisibility: TabVisibility;
 }
 
-// Map export sections to the tab that owns them
+// Map export sections to the tab that owns them — order matches tab layout
 const sectionToTab: Record<keyof ExportSections, keyof TabVisibility | null> = {
   summary: "dbu",
   products: "dbu",
@@ -39,35 +39,34 @@ const sectionToTab: Record<keyof ExportSections, keyof TabVisibility | null> = {
   anomalies: "dbu",
   pipelines: "dbu",
   interactive: "dbu",
-  awsCosts: "infra",
-  platformKPIs: "kpis",
-  aiml: "aiml",
   query360: "sql",
+  aiml: "aiml",
   apps: "apps",
   tagging: "tagging",
   users: "users-groups",
   useCases: "use-cases",
   alerts: "alerts",
+  platformKPIs: "kpis",
+  awsCosts: "infra",
 };
 
-// Ordered to match tab layout: DBU Spend, Infrastructure, Platform KPIs, AI/ML, Query 360, Tagging
 const sectionLabels: Record<keyof ExportSections, { label: string; description: string }> = {
   summary: { label: "Executive Summary", description: "Total DBUs, spend, and key metrics" },
   products: { label: "Product Breakdown", description: "Spend by product category" },
   workspaces: { label: "Workspace Breakdown", description: "Top workspaces by spend" },
   skus: { label: "SKU Breakdown", description: "Spend by SKU/billing type" },
+  anomalies: { label: "Spend Anomalies", description: "Day-over-day spend changes" },
   pipelines: { label: "Jobs & Pipelines", description: "Top jobs and SDP pipelines" },
   interactive: { label: "Interactive Compute", description: "Notebook and cluster usage" },
-  awsCosts: { label: "Cloud Costs", description: "Estimated cloud infrastructure costs" },
-  platformKPIs: { label: "Platform KPIs & Trends", description: "Platform-wide metrics and trends" },
-  anomalies: { label: "Spend Anomalies", description: "Day-over-day spend changes" },
+  query360: { label: "Query", description: "SQL warehouse efficiency and query costs" },
   aiml: { label: "AI/ML", description: "FMAPI providers and inference endpoints" },
   apps: { label: "Apps", description: "Databricks Apps compute costs and per-app breakdown" },
-  query360: { label: "Query", description: "SQL warehouse efficiency and query costs" },
   tagging: { label: "Tagging", description: "Tag coverage and untagged resources" },
   users: { label: "Users", description: "Top users by spend and product breakdown" },
   useCases: { label: "Use Cases", description: "Use case spend attribution and go-live tracking" },
   alerts: { label: "Alerts", description: "Cost anomaly alerts and thresholds" },
+  platformKPIs: { label: "Platform KPIs & Trends", description: "Platform-wide metrics and trends" },
+  awsCosts: { label: "Cloud Costs", description: "Estimated cloud infrastructure costs" },
 };
 
 export function ExportDialog({ isOpen, onClose, onExport, tabVisibility }: ExportDialogProps) {

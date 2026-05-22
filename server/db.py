@@ -116,8 +116,8 @@ def get_catalog_schema() -> tuple[str, str]:
                 return cat, sch
     except Exception:
         pass
-    catalog = os.getenv("COST_OBS_CATALOG", "main")
-    schema = os.getenv("COST_OBS_SCHEMA", "cost_obs")
+    catalog = os.getenv("COST_OBS_CATALOG", "")
+    schema = os.getenv("COST_OBS_SCHEMA", "")
     return catalog, schema
 
 
@@ -180,8 +180,8 @@ def get_catalog_schema_info() -> dict:
                 return {"catalog": cat, "schema": sch, "source": "override"}
     except Exception:
         pass
-    catalog = os.getenv("COST_OBS_CATALOG", "main")
-    schema = os.getenv("COST_OBS_SCHEMA", "cost_obs")
+    catalog = os.getenv("COST_OBS_CATALOG", "")
+    schema = os.getenv("COST_OBS_SCHEMA", "")
     return {"catalog": catalog, "schema": schema, "source": "env"}
 
 

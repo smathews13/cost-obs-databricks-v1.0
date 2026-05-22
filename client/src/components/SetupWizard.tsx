@@ -178,8 +178,11 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         if (configRes.ok) {
           const cfg = await configRes.json();
           setConfig(cfg);
-          setCatalogInput(cfg?.storage_location?.catalog || "");
-          setSchemaInput(cfg?.storage_location?.schema || "");
+          const rawCatalog = cfg?.storage_location?.catalog || "";
+          const rawSchema = cfg?.storage_location?.schema || "";
+          // Never pre-fill with the hardcoded defaults — force the customer to choose
+          setCatalogInput(rawCatalog === "main" ? "" : rawCatalog);
+          setSchemaInput(rawSchema === "cost_obs" ? "" : rawSchema);
         }
         if (cloudRes.ok) setCloud(await cloudRes.json());
       } catch (e) {

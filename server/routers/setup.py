@@ -257,6 +257,28 @@ async def get_setup_status() -> dict[str, Any]:
             "task": _create_task_state.copy(),
         }
 
+    # Short-circuit: if the local flag is absent (e.g. container restart wiped
+    # .settings/) but DBFS records a previous completion, restore the local file
+    # and return "ready" without hitting the SQL warehouse (which may be cold).
+    if not os.path.exists(SETUP_DONE_FILE):
+        from server.db import read_dbfs_setup_complete
+        if read_dbfs_setup_complete():
+            try:
+                import datetime as _dt
+                os.makedirs(SETTINGS_DIR, exist_ok=True)
+                with open(SETUP_DONE_FILE, "w") as _f:
+                    json.dump({"completed_at": _dt.datetime.utcnow().isoformat(),
+                               "restored_from_dbfs": True}, _f)
+                logger.info("setup_done.json restored from DBFS flag (container restart)")
+            except Exception as _e:
+                logger.warning(f"Could not restore setup_done.json: {_e}")
+            return {
+                "catalog": catalog, "schema": schema,
+                "tables": {}, "all_tables_exist": False, "missing_tables": [],
+                "status": "ready", "tables_building": True,
+                "task": _create_task_state.copy(),
+            }
+
     loop = _asyncio.get_running_loop()
     tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
 
@@ -359,6 +381,11 @@ async def mark_setup_complete(background_tasks: BackgroundTasks) -> dict[str, An
     except Exception as e:
         logger.error(f"Failed to write setup_done.json: {e}")
         return {"ok": False, "error": str(e)}
+
+    # Persist to DBFS so the flag survives container restarts (Databricks Apps
+    # recreates the container from scratch on every stop/start, wiping .settings/).
+    from server.db import write_dbfs_setup_complete
+    write_dbfs_setup_complete()
 
     # Kick off the initial MV build in the background — the catalog/schema were
     # just created so no data exists yet.  Failures are non-fatal: the dashboard

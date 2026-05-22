@@ -194,11 +194,10 @@ function Dashboard() {
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>([]);
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
   // true = show wizard, false = show dashboard.
-  // Start immediately from localStorage — no loading spinner.
-  // The background status check corrects this if the server disagrees.
-  const [showSetupWizard, setShowSetupWizard] = useState<boolean>(
-    localStorage.getItem("coc-setup-complete") !== "true"
-  );
+  // Default to false — the status check flips it to true only if setup is genuinely
+  // needed. Starting false prevents the wizard from flashing on container restart
+  // (where .settings/ is wiped but the DBFS flag returns "ready" within ~2 s).
+  const [showSetupWizard, setShowSetupWizard] = useState<boolean>(false);
   // Set when user closes wizard without completing — shows the incomplete banner on dashboard.
   const [setupIncomplete, setSetupIncomplete] = useState(false);
   // Stored so onLaunchWizard can abort the in-flight status check and prevent it from

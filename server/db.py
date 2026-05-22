@@ -188,6 +188,45 @@ def _write_dbfs_catalog_override(catalog: str, schema: str) -> None:
         logger.warning("Could not write DBFS catalog override (non-fatal): %s", e)
 
 
+def _read_dbfs_settings() -> dict:
+    """Read the raw DBFS settings JSON. Returns {} on any error."""
+    try:
+        import base64
+        w = get_workspace_client()
+        resp = w.api_client.do("GET", "/api/2.0/dbfs/read",
+                               query={"path": _DBFS_OVERRIDE_PATH, "length": 8192})
+        raw = resp.get("data", "")
+        if raw:
+            return json.loads(base64.b64decode(raw).decode("utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def write_dbfs_setup_complete() -> None:
+    """Set setup_complete=True in the DBFS settings JSON. Best-effort, non-fatal.
+
+    Called when the setup wizard finishes.  The flag survives container restarts
+    (Databricks Apps recreates the container on every stop/start, wiping .settings/).
+    """
+    try:
+        import base64
+        existing = _read_dbfs_settings()
+        existing["setup_complete"] = True
+        w = get_workspace_client()
+        content = base64.b64encode(json.dumps(existing).encode()).decode("ascii")
+        w.api_client.do("POST", "/api/2.0/dbfs/put",
+                        body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True})
+        logger.info("DBFS setup_complete flag written")
+    except Exception as e:
+        logger.warning("Could not write DBFS setup_complete flag (non-fatal): %s", e)
+
+
+def read_dbfs_setup_complete() -> bool:
+    """Return True if a previous wizard run set setup_complete in DBFS."""
+    return bool(_read_dbfs_settings().get("setup_complete"))
+
+
 def get_catalog_schema() -> tuple[str, str]:
     """Return the catalog and schema for cost observability tables.
 

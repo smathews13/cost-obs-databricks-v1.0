@@ -592,47 +592,6 @@ def startup_tasks():
     # Step 3: Pre-warm cache (billing - fast queries first)
     prewarm_cache_sync()
 
-    # Step 4: Create default cost monitoring alerts
-    # Use a file lock so only one uvicorn worker runs this — all workers share
-    # the same filesystem, so fcntl.flock prevents the race that creates duplicates.
-    try:
-        import fcntl
-        from server.alert_manager import create_default_cost_alerts
-        lock_path = "/tmp/cost-obs-alert-setup.lock"
-        with open(lock_path, "w") as lock_file:
-            try:
-                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                logger.info("Setting up default cost monitoring alerts...")
-                results = create_default_cost_alerts(
-                    spike_threshold_percent=20.0,
-                    daily_threshold_amount=50000.0,
-                    workspace_threshold_amount=10000.0
-                )
-                logger.info(
-                    f"Alert setup complete: {len(results['created'])} created, "
-                    f"{len(results['skipped'])} skipped, {len(results['errors'])} errors"
-                )
-            except BlockingIOError:
-                logger.info("Alert setup already running in another worker — skipping")
-            finally:
-                fcntl.flock(lock_file, fcntl.LOCK_UN)
-    except Exception as e:
-        logger.warning(f"Alert setup failed (non-fatal): {e}")
-
-    # Step 5: Create default example use case
-    try:
-        from server.routers.use_cases import create_default_use_case
-        logger.info("Setting up default example use case...")
-        uc_result = create_default_use_case()
-        if uc_result["created"]:
-            logger.info("Default use case created successfully")
-        elif uc_result["skipped"]:
-            logger.info("Default use case already exists, skipped")
-        elif uc_result["error"]:
-            logger.warning(f"Default use case creation failed: {uc_result['error']}")
-    except Exception as e:
-        logger.warning(f"Use case setup failed (non-fatal): {e}")
-
     # Step 6: Pre-warm permissions check (warms SDK auth + caches result for wizard)
     try:
         from server.routers.permissions import _check_permissions_sync

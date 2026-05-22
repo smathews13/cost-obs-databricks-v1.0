@@ -431,30 +431,19 @@ async def get_tables_status(request: Request):
     }
 
     def check_table(table_name: str, fqn: str, table_type: str) -> dict:
-        # Pin the user token in this thread so execute_query uses user auth,
-        # not the SP fallback (which may lack SELECT on freshly-created tables).
-        tok = _user_token.set(_captured_token) if _captured_token else None
+        # Force SP auth — SP owns all app tables so it always has SELECT.
+        # User token lacks the sql OAuth scope in Databricks Apps, causing
+        # "Error during request to server" when used for warehouse queries.
+        tok = _user_token.set("")
         try:
             return _check_table_inner(table_name, fqn, table_type)
         finally:
-            if tok is not None:
-                _user_token.reset(tok)
+            _user_token.reset(tok)
 
     def _get_table_owner(fqn: str) -> str | None:
         plain = fqn.replace("`", "")
-        # Try user OAuth token directly — bypass _auth_mode lock
-        if _captured_token:
-            try:
-                import os as _os
-                from databricks.sdk import WorkspaceClient as _WC
-                host = _os.getenv("DATABRICKS_HOST", "")
-                if host:
-                    info = _WC(host=host, token=_captured_token, auth_type="pat").tables.get(plain)
-                    logger.debug(f"[owner] user client {plain} -> {info.owner!r}")
-                    if info.owner is not None:
-                        return info.owner or None
-            except Exception as e:
-                logger.debug(f"[owner] user client {plain} failed: {e}")
+        # Use SP client only — user token lacks unity-catalog scope in Apps,
+        # so the user SDK call always fails and just adds latency.
         try:
             from server.db import get_workspace_client
             info = get_workspace_client().tables.get(plain)

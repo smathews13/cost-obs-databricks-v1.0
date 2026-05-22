@@ -481,7 +481,13 @@ def _strip_host_scheme(host: str) -> str:
 def _is_scope_error(exc: Exception) -> bool:
     """Return True if exception indicates the token lacks the 'sql' OAuth scope."""
     msg = str(exc).lower()
-    return "required scopes" in msg or "does not have required scopes" in msg
+    return (
+        "required scopes" in msg
+        or "does not have required scopes" in msg
+        # Databricks SQL HTTP connector returns this when the bearer token
+        # lacks the 'sql' OAuth scope — not a network error, a scope rejection.
+        or "error during request to server" in msg
+    )
 
 
 def _is_permission_error(exc: Exception) -> bool:

@@ -331,11 +331,13 @@ async def get_setup_status() -> dict[str, Any]:
 
 
 @router.post("/complete")
-async def mark_setup_complete() -> dict[str, Any]:
-    """Write setup_done.json to mark wizard completion for this deployment.
+async def mark_setup_complete(background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Write setup_done.json and kick off the initial MV build in the background.
 
     Called by the frontend when the user clicks 'Complete' in the setup wizard.
     Without this file, every fresh git redeploy will show the wizard.
+    The background rebuild creates all materialized views so the dashboard has
+    data immediately after setup — no manual Rebuild click required.
     """
     try:
         os.makedirs(SETTINGS_DIR, exist_ok=True)
@@ -343,10 +345,22 @@ async def mark_setup_complete() -> dict[str, Any]:
             import time as _time
             json.dump({"completed_at": _time.time()}, f)
         logger.info("Setup wizard marked complete — setup_done.json written")
-        return {"ok": True}
     except Exception as e:
         logger.error(f"Failed to write setup_done.json: {e}")
         return {"ok": False, "error": str(e)}
+
+    # Kick off the initial MV build in the background — the catalog/schema were
+    # just created so no data exists yet.  Failures are non-fatal: the dashboard
+    # falls back to direct system-table queries until the build completes.
+    try:
+        catalog, schema = get_catalog_schema()
+        if catalog and schema:
+            background_tasks.add_task(_refresh_tables_task, catalog, schema)
+            logger.info(f"Initial MV build queued for {catalog}.{schema}")
+    except Exception as e:
+        logger.warning(f"Could not queue initial MV build (non-fatal): {e}")
+
+    return {"ok": True}
 
 
 @router.post("/reset-bootstrap")

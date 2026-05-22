@@ -478,6 +478,9 @@ function Dashboard() {
   useQuery({ queryKey: ["cloud-provider"], queryFn: async () => { const r = await fetch("/api/settings/cloud-provider"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 30 * 60 * 1000 });
   useQuery({ queryKey: ["cloud-connections"], queryFn: async () => { const r = await fetch("/api/settings/cloud-connections"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
   useQuery({ queryKey: ["settings-account-prices"], queryFn: async () => { const r = await fetch("/api/settings/account-prices"); return r.ok ? r.json() : { available: false, prices: [], source: null, count: 0 }; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["settings-catalog"], queryFn: async () => { const r = await fetch("/api/settings/catalog"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["settings-auth-status"], queryFn: async () => { const r = await fetch("/api/settings/auth-status"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["settings-tables-status"], queryFn: async () => { const r = await fetch("/api/settings/tables"); return r.ok ? r.json() : null; }, staleTime: 10 * 60 * 1000 });
 
   // Memoize infra data transformations to avoid re-creating arrays on every render
   const infraViewData = useMemo(() => infraCosts ? {

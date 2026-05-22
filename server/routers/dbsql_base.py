@@ -51,7 +51,7 @@ def _build_queries(table_name: str) -> dict[str, str]:
             SELECT
               CAST(MIN(start_time) AS DATE) as earliest_date,
               CAST(MAX(start_time) AS DATE) as latest_date,
-              COUNT(*) as total_rows
+              1 as total_rows
             FROM {{catalog}}.{{schema}}.{table_name}
         """,
         "by_source": f"""

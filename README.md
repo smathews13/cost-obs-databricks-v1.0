@@ -16,71 +16,108 @@ Built on FastAPI + React, deployed as a [Databricks App](https://docs.databricks
 
 ---
 
+## What's changed in the new deployment model
+
+- **Setup is simpler.** The SQL warehouse is bound as an Apps resource and injected as `DATABRICKS_WAREHOUSE_ID`. Workspace scoping is controlled with `COST_OBS_WORKSPACES`. Customers no longer need to select a warehouse or change workspace scope inside the app UI.
+
+- **Fake zeros are gone.** If a required grant is missing, the app shows that the affected metric is unavailable and points to the fix — instead of rendering a misleading $0.00 value.
+
+- **Setup experience is consistent across tabs.** Permissions, config, and readiness share the same underlying state so customers do not see one tab report healthy while another shows stale errors after a grant or rebuild.
+
+- **Diagnostics surface actionable next steps.** Instead of raw error details, the app maps failures to specific actions — **Grant SQL**, **Rebuild**, or **Configure** — so customers can move directly to the fix.
+
+**Deploy from Git** is the recommended deployment path. The app's first-run flow is built around an environment check, permissions check, and table creation step.
+
+---
+
 ## Deployment
 
-### Prerequisites
+### Setup Requirements
 
-Before deploying, confirm the following are in place:
+#### Required
 
-| Requirement | Why |
+| Requirement | Notes |
 |---|---|
-| **A running Serverless Pro SQL Warehouse** | **Required before deploying.** The app cannot create a warehouse on your behalf (the service principal lacks that permission by default). Create one in **SQL → SQL Warehouses → Create Warehouse** before running the setup wizard. |
-| **Workspace Admin** (at minimum) | Required to grant the app's service principal `SELECT` on system tables |
-| **Unity Catalog enabled** | All billing data is in `system.*` tables under UC — the app will not function without it |
-| **System tables enabled** | Contact your Databricks account team if `system.billing.usage` is not accessible in your workspace |
-| **Databricks Apps enabled** | Available on Premium plan and above |
-| **Deploy from Git preview** *(recommended)* | Enables deploying directly from this GitHub repo. Enable in **Settings → Workspace Previews → "Deploy Databricks apps from Git repositories (Beta)"** |
+| **Databricks workspace with Apps enabled** | Deploy from Git is available in supported workspaces with Databricks Apps enabled |
+| **Unity Catalog enabled** | Required — the app reads from UC system tables and stores app-managed tables in UC |
+| **Access to core system tables** | At minimum: `system.billing.usage` and `system.billing.list_prices` |
+| **SQL warehouse** | A warehouse must be bound to the app. The recommended path is a SQL warehouse resource bound as `sql-warehouse` so the app receives `DATABRICKS_WAREHOUSE_ID` automatically |
+| **Workspace Admin role** | Needed to create the app and, if required, remediate warehouse access |
+| **Metastore Admin role, or access to one** | Needed to run the required Unity Catalog system table grants during setup |
 
-> The setup wizard will show all available warehouses in a picker. In rare cases (typically Azure) where no warehouses appear, it will display the exact `GRANT USE ON WAREHOUSE` statement to run as a workspace admin.
+#### Recommended warehouse
 
-### Deploy from Git
+Use a **Serverless SQL warehouse**. The app is designed to read through a bound warehouse resource — add a `sql-warehouse` resource in app configuration rather than relying on manual runtime switching.
 
-Deploy directly from this repository using Databricks Apps' built-in Git integration. No local clone or file sync required.
+A **Medium** warehouse is a sensible starting point for initial table creation and normal dashboard usage. If you use Pro or Classic instead, expect slower startup and rebuild times.
 
-> **Enable the Deploy from Git preview first**
-> If you don't see a **Git repository** option when creating an app, enable the beta feature:
-> 1. Sign in as a workspace admin
-> 2. Go to **Settings → Workspace Previews**
-> 3. Find **"Deploy Databricks apps from Git repositories (Beta)"** and toggle it **ON**
+#### Optional system tables
 
-#### Step 1 — Create the app
+These are not required for the initial deployment, but they unlock additional parts of the app:
 
-1. In your Databricks workspace, go to **Apps → Create App**
-2. Choose **Git repository** as the source
-3. Enter the repo URL: `https://github.com/smathews13/cost-obs-databricks`
-4. Give the app a name and click **Create**
+| Optional access | What it enables |
+|---|---|
+| `system.query.history` | SQL Warehousing views, query attribution, and warehouse rightsizing |
+| `system.compute.clusters` | Cluster metadata and compute-oriented breakdowns |
+| `system.lakeflow.*` | Job and pipeline name resolution and workflow KPIs |
+| `system.serving.served_entities` | Model serving and AI/ML enrichment |
+| `system.access.workspaces_latest` | Human-readable workspace names |
 
-#### Step 2 — Add a SQL warehouse resource
+---
 
-Before deploying, add a warehouse resource in the app configuration:
+### Step 1 — Create the app from Git
 
-1. In the app settings, go to **Configure → Resources → Add resource**
-2. Choose **SQL warehouse** and set the permission to **CAN USE**
-3. Select your Serverless Pro warehouse
+1. In your Databricks workspace, open **Apps**
+2. Click **Create app**
+3. Select **Git repository** as the source
+4. Enter the repository URL: `https://github.com/smathews13/cost-obs-databricks`
+5. Use the `main` branch
+6. Give the app a name such as `cost-observability`
+7. Click **Create**
 
-This binds the warehouse to the app so no environment variables are needed for it.
+If you do not see the **Git repository** option, enable the **Deploy Databricks apps from Git repositories** preview in your workspace first (Settings → Workspace Previews).
 
-#### Step 3 — Deploy
+---
 
-1. Click **Deploy**
-2. Set the git reference: **Branch:** `main`, **Reference type:** `Branch`
-3. Click **Deploy** — no environment variables required
+### Step 2 — Bind the SQL warehouse resource and add SQL scope
 
-Or click the **Deploy to Databricks** button at the top of this README.
+Bind a SQL warehouse resource in the Apps UI so the warehouse ID is injected automatically. This is the recommended pattern for Databricks Apps and avoids manual warehouse wiring.
 
-### Environment Variables
+1. Open the app's **Settings** page (three-dot menu on the app card)
+2. In **Resources**, click **Add resource**
+3. Choose **SQL warehouse**
+4. Select the warehouse you want the app to use
+5. Set the permission to **Can use**
+6. Leave the resource key as `sql-warehouse`
+7. Under **User authorization**, click **Add scope** and add the `sql` scope
+8. Save the configuration
 
-**No environment variables are required to deploy.** The setup wizard configures the catalog and schema, and Databricks Apps injects OAuth credentials and the workspace host automatically. The wizard saves your catalog/schema to DBFS so it persists across future git redeploys — the wizard will not re-appear after a redeploy unless you explicitly trigger it.
+---
+
+### Step 3 — Review environment variables
+
+The app keeps the initial deployment as simple as possible. For most customers, only these three variables are relevant. They are set at deploy time and are not intended to be changed inside the app UI.
+
+> The SQL warehouse, workspace scope, and table location are configured once and held constant. If you need to change them, delete the app and recreate it.
+
+| Variable | Default | Change if… |
+|---|---|---|
+| `COST_OBS_CATALOG` | Set by setup wizard | You want to pre-configure the catalog instead of choosing it in the setup wizard |
+| `COST_OBS_SCHEMA` | Set by setup wizard | You want to pre-configure the schema name |
+| `COST_OBS_WORKSPACES` | All workspaces | You want to scope the app to a comma-separated list of workspace IDs |
+
+Keep the first deployment minimal. Add optional cloud-cost or advanced integrations only after the base app is healthy.
 
 <details>
-<summary>Optional environment variable overrides</summary>
+<summary>All environment variable overrides</summary>
 
 | Variable | Default | Description |
 |---|---|---|
 | `DATABRICKS_HOST` | Auto-detected | Override the workspace URL if not picked up automatically |
 | `DATABRICKS_HTTP_PATH` | Auto-detected from resource binding | Point to an existing warehouse, or omit to use the bound resource |
-| `COST_OBS_CATALOG` | Set by setup wizard | Override the Unity Catalog catalog for materialized views. Must be a dedicated, non-default catalog. When set, takes precedence over the wizard value. |
-| `COST_OBS_SCHEMA` | Set by setup wizard | Override the schema name. When set, takes precedence over the wizard value. |
+| `COST_OBS_CATALOG` | Set by setup wizard | Unity Catalog catalog for app-managed tables. When set, takes precedence over the wizard value |
+| `COST_OBS_SCHEMA` | Set by setup wizard | Schema name for app-managed tables. When set, takes precedence over the wizard value |
+| `COST_OBS_WORKSPACES` | All workspaces | Comma-separated workspace IDs to scope the dashboard |
 | `GENIE_SPACE_ID` | — | Genie Space ID for AI cost chat |
 | `AZURE_SUBSCRIPTION_ID` | — | Azure subscription ID (shown in account banner on Azure) |
 | `SMTP_HOST` / `SMTP_*` | — | Email alert configuration |
@@ -91,53 +128,71 @@ Or click the **Deploy to Databricks** button at the top of this README.
 
 </details>
 
-### First-Run Setup Wizard
+---
 
-On first deploy (or after a redeploy to a new workspace), the app launches a 6-step setup wizard. After completing the wizard once, the configuration persists across git redeploys — you'll go straight to the dashboard on subsequent deploys.
+### Step 4 — Deploy
 
-#### Step 1 — Environment
+1. Click **Deploy**
+2. Wait for the app status to show **Running**
+3. Open the app URL
 
-Confirms your workspace host, cloud provider (AWS/Azure/GCP), authenticated identity, and SQL warehouse selection.
+The deployment installs dependencies, starts the backend, and serves the frontend. Once the app is running, the first-run setup flow begins.
 
-**SQL Warehouse:** If you added a `sql-warehouse` resource in the app configuration (recommended), the warehouse is auto-detected and this step confirms it. Otherwise, a searchable warehouse picker is shown. If no warehouses are visible, the step displays the exact `GRANT` statement to run as a workspace admin.
+---
 
-#### Step 2 — Storage
+### Step 5 — Complete first-run setup
 
-Choose the Unity Catalog **catalog** and **schema** where the app will create its 6 pre-aggregated billing tables.
+On first open, the app checks the environment, validates permissions, and creates the app-managed tables.
 
-- Pick any non-default catalog (the wizard will create it if it doesn't exist)
-- The schema is created inside that catalog
-- The app's service principal is automatically granted the necessary privileges
-- **You** (the installing user) are automatically granted `USE CATALOG`, `USE SCHEMA`, `SELECT`, and `MANAGE` on both the catalog and schema — so you can browse the tables in the UC browser and re-grant the service principal on future redeploys
+#### 5a — Confirm readiness
 
-#### Step 3 — Permissions
+The app shows whether the warehouse, core system tables, and optional feature dependencies are ready. If the app reports a missing dependency, remediate it before proceeding.
 
-Checks access to the required system tables. The wizard automatically attempts to grant the service principal all necessary permissions.
+#### 5b — Complete the Setup Wizard
 
-If any permissions are still missing after the auto-grant, the wizard shows the exact SQL to run:
+The built-in Setup Wizard handles grants and table creation on first run. You do not need to navigate into Settings manually for initial setup.
 
-```sql
-GRANT USE CATALOG ON CATALOG system TO `<service-principal>`;
-GRANT USE SCHEMA ON SCHEMA system.billing TO `<service-principal>`;
-GRANT SELECT ON TABLE system.billing.usage TO `<service-principal>`;
--- (plus any others shown as missing)
-```
+- **Grants:** The wizard attempts the required grants automatically using the permissions of the logged-in user. Click the grant button, then click **Re-check** to confirm they applied. If the automatic grant fails due to insufficient privileges, the wizard displays the SQL to copy and run manually as the appropriate admin.
 
-Click **Re-check** after running any manual grants.
+- **Table build:** Once grants pass, the wizard prompts you to build the pre-aggregated tables used by the dashboard. Click **Build**. This runs in the background on your warehouse and typically takes 3–8 minutes.
 
-#### Step 4 — Create Tables
+- **Workspace filter:** If `COST_OBS_WORKSPACES` was not set at deploy time, the wizard prompts you to choose workspace scope before completion. If workspace IDs were set as an environment variable, this step is skipped.
 
-Kicks off creation of 6 pre-aggregated Delta tables from your billing history. Progress is shown in real time. This typically takes 2–5 minutes depending on data volume and warehouse warmup.
+If you need to re-apply grants or rebuild tables later, use **Settings → Permissions** and **Settings → Config**. These are the ongoing management surfaces after initial setup.
 
-#### Step 5 — Workspaces
+---
 
-Optionally filter the dashboard to a subset of workspaces. Useful for large multi-workspace accounts where you only need visibility into specific environments.
+### Step 6 — Verify the deployment
 
-#### Step 6 — Complete
+After setup completes, confirm:
 
-Click **Go to Dashboard**. The user who completes setup is automatically added as an app admin.
+- The main billing views load
+- Readiness is green for core dependencies
+- Optional areas only show as unavailable if their supporting system tables were not granted
+- No dashboard tile is blocked by a missing warehouse or system table grant
 
-The wizard can be re-launched at any time from **Settings → Re-run Setup Wizard**.
+If anything is degraded, go to **Settings → Permissions** or **Settings → Config** to identify whether the issue is warehouse access, missing system table grants, missing app-managed tables, or a schema mismatch.
+
+---
+
+### Minimum access for end users
+
+This deployment path uses the **app service principal** for SQL execution. End users do not need an OAuth consent flow for normal app usage.
+
+Use **Settings → Permissions** to manage who can administer or view the app.
+
+---
+
+### Troubleshooting
+
+| Symptom | Likely cause | Recommended action |
+|---|---|---|
+| Warehouse access failure after deploy | Warehouse resource missing, wrong warehouse selected, or access drift | Verify the bound SQL warehouse resource; rerun the warehouse-related remediation SQL if prompted |
+| Billing tabs show no data | Core system table grants not applied | Run the required runtime grants from **Settings → Permissions**, then click **Re-check** |
+| Optional tabs are unavailable | Optional system tables (`system.query.history`, `system.compute.clusters`, etc.) were not granted | Grant the optional dependencies you want to enable, then re-check readiness |
+| Rebuild required or schema mismatch | App-managed tables are missing or out of sync | Rebuild from **Settings → Config** |
+| Deploy from Git option not visible | Workspace preview not enabled | Enable the Git deployment preview in **Settings → Workspace Previews** |
+| Data looks stale | App-managed tables have not been refreshed recently | Refresh from **Settings → Config → Rebuild** |
 
 ---
 
@@ -148,8 +203,6 @@ The following workspace previews unlock additional functionality. Enable any tha
 ### Deploy from Git (Beta)
 
 Enables deploying this app directly from GitHub — no file uploads or local tooling required. This is the recommended deployment path.
-
-**To enable:**
 
 1. Sign in as a workspace admin
 2. Go to **Settings → Workspace Previews**
@@ -244,8 +297,7 @@ This system table is a private preview. Contact your Databricks account team to 
 | Feature | Description |
 |---|---|
 | **General** | Date range selection and display preferences |
-| **Configuration** | Warehouse, catalog, schema, and Genie Space configuration; table status and rebuild |
-| **Connections** | Shows the default Databricks workspace environment (cloud provider + host) |
+| **Configuration** | Table status and rebuild |
 | **Permissions** | System table access checks and service principal grant management |
 | **User Permissions** | Admin-only management of who has admin vs. read-only access to the app |
 | **Account Pricing** | Toggle between standard list prices and negotiated account prices |
@@ -280,7 +332,7 @@ This system table is a private preview. Contact your Databricks account team to 
                       │   │  system.lakeflow.*           │ │
                       │   │  system.serving.*            │ │
                       │   │  system.access.*             │ │
-                      │   │  6 Materialized Views (MV)   │ │
+                      │   │  6 app-managed Delta tables  │ │
                       │   └──────────────────────────────┘ │
                       │         Databricks                 │
                       └────────────────────────────────────┘
@@ -296,7 +348,7 @@ This system table is a private preview. Contact your Databricks account team to 
 
 ### Authentication
 
-All dashboard queries run as the app's **service principal** (SP) using M2M OAuth. The SP is automatically granted access to the required system tables during the setup wizard's Permissions step.
+All dashboard queries run as the app's **service principal** (SP) using M2M OAuth. The SP is automatically granted access to the required system tables during the setup wizard's Permissions step. End users do not need an OAuth consent flow for normal app usage.
 
 The catalog and schema created during setup are owned by the SP. The installing user receives `USE CATALOG`, `USE SCHEMA`, `SELECT`, and `MANAGE` grants automatically — giving them full visibility in the Unity Catalog browser and the ability to re-grant the SP on future redeploys.
 
@@ -318,7 +370,7 @@ All billing and compute data is **account-level** — queries run against Unity 
 | `system.serving.served_entities` | ML endpoint metadata |
 | `system.access.workspaces_latest` | Workspace name resolution |
 
-### Materialized Views
+### App-Managed Tables
 
 The setup wizard creates **6 pre-aggregated Delta tables** in the Unity Catalog location you configure. These are the only persistent objects the app creates in your environment.
 
@@ -331,29 +383,21 @@ The setup wizard creates **6 pre-aggregated Delta tables** in the Unity Catalog 
 | `daily_query_stats` | Query count, rows read, compute time per day | ~365 |
 | `dbsql_cost_per_query` | Per-query cost attribution for the last 90 days | ~90k–900k |
 
-Tables are created automatically when the setup wizard completes — no manual action required. The dashboard works immediately using direct system table queries while the background build runs (typically 2–5 minutes), then switches to the pre-aggregated tables automatically.
+Tables are built automatically when the setup wizard completes. The dashboard works immediately using direct system table queries while the background build runs (typically 3–8 minutes), then switches to the pre-aggregated tables automatically.
 
 ### Keeping Tables Fresh
 
-Tables are **not** automatically refreshed on a schedule. Refresh whenever you want to pull in the latest billing data (recommended: once a day or before sharing reports).
+Tables are **not** automatically refreshed on a schedule. Refresh whenever you want to pull in the latest billing data.
 
-To refresh: go to **Settings → Configuration → Rebuild**. This rebuilds all 6 tables from the latest `system.*` data. The refresh runs in the background and typically takes 2–5 minutes. Progress is shown in real time.
+To refresh: go to **Settings → Config → Rebuild**. This rebuilds all 6 tables from the latest `system.*` data and typically takes 3–8 minutes. Progress is shown in real time.
 
 Tables can be dropped and recreated at any time with no data loss — all source data lives in `system.*` tables managed by Databricks.
-
-### Redeploy Behavior
-
-On git redeploy to the same app:
-
-- The setup wizard **does not re-appear** — the catalog/schema is persisted in DBFS and auto-detected
-- Existing tables are left in place; no rebuild is triggered unless you click **Rebuild** in Settings
-- The service principal retains its grants (same SP across redeploys on the same app)
 
 ### Performance Optimizations
 
 | Optimization | Detail |
 |---|---|
-| **Materialized Views** | Pre-aggregated Delta tables for sub-second dashboard loads |
+| **Pre-aggregated Tables** | 6 Delta tables for sub-second dashboard loads |
 | **Parallel Query Execution** | `ThreadPoolExecutor` (10 workers) runs 6–8 queries concurrently per bundle endpoint |
 | **4-Hour Query Cache** | `TTLCache` with 500 entries — cost data changes at most once per day |
 | **SDK Call Caching** | Pipeline names, group membership, and app registry cached for 1 hour |
@@ -396,7 +440,7 @@ DATABRICKS_HOST=https://your-workspace.cloud.databricks.com \
 DATABRICKS_TOKEN=dapi... \
 DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/your-id \
 COST_OBS_CATALOG=my_catalog \
-COST_OBS_SCHEMA=cost_obs_app \
+COST_OBS_SCHEMA=cost_obs \
 uvicorn server.app:app --host 0.0.0.0 --port 8000 --reload
 
 # Frontend (port 5173, separate terminal)

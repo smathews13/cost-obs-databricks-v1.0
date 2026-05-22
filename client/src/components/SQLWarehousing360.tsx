@@ -342,12 +342,15 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
   const summary = queryData?.summary;
   const sourceTypes = queryData?.timeseries?.source_types || [];
-  const hasQueryData = queryData?.available;
+  // Only treat query data as unavailable once a response has actually arrived.
+  // While queryData is undefined the tab is still loading — don't flash the
+  // "not available" banner prematurely.
+  const hasQueryData = queryData != null ? queryData.available : undefined;
 
   return (
     <div className="space-y-6">
       {/* Query-level Cost Attribution */}
-      {!hasQueryData ? (
+      {hasQueryData === false ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
           <div className="flex items-start gap-3">
             <svg className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -800,7 +803,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
           {/* Query Source Breakdown — full width */}
           <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
               <h3 className="mb-4 text-lg font-semibold text-gray-900">Query Source Breakdown</h3>
-              {queryData.by_source?.sources && queryData.by_source.sources.length > 0 ? (
+              {queryData?.by_source?.sources && queryData.by_source.sources.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">

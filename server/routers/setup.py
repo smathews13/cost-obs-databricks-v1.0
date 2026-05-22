@@ -770,6 +770,15 @@ def _refresh_tables_task(catalog: str, schema: str):
     try:
         results = refresh_materialized_views(catalog, schema)
         logger.info(f"Table refresh completed: {results}")
+        # Invalidate the billing module's MV availability cache so the next KPI
+        # request re-detects the now-existing tables instead of serving zeros for
+        # up to 5 minutes (the cache TTL).
+        try:
+            from server.routers.billing import _mv_cache
+            _mv_cache["available"] = None
+            _mv_cache["checked_at"] = 0
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Table refresh failed: {e}")
 

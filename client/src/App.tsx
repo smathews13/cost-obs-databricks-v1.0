@@ -480,7 +480,10 @@ function Dashboard() {
   useQuery({ queryKey: ["settings-account-prices"], queryFn: async () => { const r = await fetch("/api/settings/account-prices"); return r.ok ? r.json() : { available: false, prices: [], source: null, count: 0 }; }, staleTime: 5 * 60 * 1000 });
   useQuery({ queryKey: ["settings-catalog"], queryFn: async () => { const r = await fetch("/api/settings/catalog"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
   useQuery({ queryKey: ["settings-auth-status"], queryFn: async () => { const r = await fetch("/api/settings/auth-status"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
-  useQuery({ queryKey: ["settings-tables-status"], queryFn: async () => { const r = await fetch("/api/settings/tables"); return r.ok ? r.json() : null; }, staleTime: 10 * 60 * 1000 });
+  // settings-tables-status is NOT pre-fetched here — the check runs SQL queries
+  // against every app table and can return stale false-negatives if it fires before
+  // the background MV build completes. It fetches on demand when the user opens
+  // Settings → Config and clicks Status.
 
   // Memoize infra data transformations to avoid re-creating arrays on every render
   const infraViewData = useMemo(() => infraCosts ? {

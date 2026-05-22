@@ -446,10 +446,15 @@ export function SettingsConfig({
                       const missing = t.exists === false && !t.optional;
                       const notConfigured = t.exists === false && t.optional;
                       const unknown = t.exists === null;
+                      // Don't show red ✗ while a re-check is in progress — the cached
+                      // result may be stale. Show neutral ? until the fetch settles.
+                      const showNeutral = tablesFetching;
                       return (
-                        <tr key={t.name} className={missing ? "bg-red-50" : stale ? "bg-amber-50" : ""}>
+                        <tr key={t.name} className={!showNeutral && missing ? "bg-red-50" : stale ? "bg-amber-50" : ""}>
                           <td className="px-3 py-2 font-mono text-gray-700 flex items-center gap-1.5">
-                            {missing ? (
+                            {showNeutral ? (
+                              <span className="text-gray-300">?</span>
+                            ) : missing ? (
                               <span className="text-red-400">✗</span>
                             ) : notConfigured ? (
                               <span className="text-gray-300">–</span>

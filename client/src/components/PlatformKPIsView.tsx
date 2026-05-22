@@ -262,8 +262,8 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <KPICard
             title="Total Queries Executed"
-            value={formatNumber(data.total_queries)}
-            subtitle={`${data.unique_query_users} unique users`}
+            value={isLoading ? "—" : formatNumber(data.total_queries)}
+            subtitle={isLoading ? "" : `${data.unique_query_users} unique users`}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
             onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_queries", "Total Queries Executed") : undefined}
@@ -276,7 +276,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
 
           <KPICard
             title="Rows Processed"
-            value={formatNumber(data.total_rows_read)}
+            value={isLoading ? "—" : formatNumber(data.total_rows_read)}
             subtitle="Total data scanned"
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
@@ -290,7 +290,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
 
           <KPICard
             title="Data Processed"
-            value={formatBytes(data.total_bytes_read)}
+            value={isLoading ? "—" : formatBytes(data.total_bytes_read)}
             subtitle="Total throughput"
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
@@ -304,7 +304,7 @@ export function PlatformKPIsView({ data, isLoading, spendAnomalies, anomaliesLoa
 
           <KPICard
             title="Compute Time"
-            value={formatDurationSeconds(data.total_compute_seconds)}
+            value={isLoading ? "—" : formatDurationSeconds(data.total_compute_seconds)}
             subtitle="Total processing time"
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}

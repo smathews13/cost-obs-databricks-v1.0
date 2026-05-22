@@ -153,6 +153,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [creating, setCreating] = useState(false);
   const [tablesJustCreated, setTablesJustCreated] = useState(false);
   const [storageSaving, setStorageSaving] = useState(false);
+  const [storageSaved, setStorageSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preflightResult, setPreflightResult] = useState<{ ok: boolean; status: string; message: string } | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
@@ -204,6 +205,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   useEffect(() => {
     return () => { if (grantVerifyRef.current) clearInterval(grantVerifyRef.current); };
   }, []);
+
+  useEffect(() => { setStorageSaved(false); }, [step]);
 
   const loadReadiness = useCallback(async (forceRefresh = false) => {
     setLoading(true);
@@ -576,29 +579,40 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                   if (!cat || !sch) return;
                   setStorageSaving(true);
                   setError(null);
+                  let saved = false;
                   try {
                     const res = await fetch("/api/settings/catalog", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ catalog: cat, schema: sch }),
+                      signal: AbortSignal.timeout(10000),
                     });
                     if (!res.ok) {
                       const body = await res.json().catch(() => ({}));
                       setError(body.detail || `Failed to save storage location (HTTP ${res.status})`);
                       return;
                     }
-                  } catch (e) {
-                    setError(`Failed to save storage location: ${e}`);
+                    saved = true;
+                  } catch (e: unknown) {
+                    const msg = e instanceof Error && e.name === "TimeoutError"
+                      ? "Save timed out — server may be starting up. Try again."
+                      : `Failed to save: ${e}`;
+                    setError(msg);
                     return;
                   } finally {
                     setStorageSaving(false);
                   }
-                  goNext();
+                  if (saved) {
+                    setStorageSaved(true);
+                    await new Promise(r => setTimeout(r, 700));
+                    goNext();
+                  }
                 }}
                 disabled={!catalogInput.trim() || !schemaInput.trim() || storageSaving}
                 className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
+                style={storageSaved ? { backgroundColor: '#16a34a' } : undefined}
               >
-                {storageSaving ? "Saving…" : "Next"}
+                {storageSaved ? "Saved ✓" : storageSaving ? "Saving…" : "Next"}
               </button>
             ) : step === "permissions" ? (
               <button
@@ -1032,13 +1046,14 @@ function InfoRow({ label, value, status, loading }: { label: string; value: stri
     <div className="flex items-center gap-4 rounded-lg bg-gray-50 px-4 py-2.5">
       <span className="shrink-0 text-sm font-medium text-gray-500">{label}</span>
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-        <span
-          className={`truncate text-right text-sm font-medium ${loading ? "text-gray-400 italic" : "text-gray-900"}`}
-          title={value}
-        >{value}</span>
-        {status === "ok" && <span className="shrink-0 h-2 w-2 rounded-full bg-green-500" />}
-        {status === "warn" && <span className="shrink-0 h-2 w-2 rounded-full bg-amber-500" />}
-        {status === "error" && <span className="shrink-0 h-2 w-2 rounded-full bg-red-500" />}
+        {loading ? (
+          <div className="h-3.5 w-36 animate-pulse rounded bg-gray-200" />
+        ) : (
+          <span className="truncate text-right text-sm font-medium text-gray-900" title={value}>{value}</span>
+        )}
+        {!loading && status === "ok" && <span className="shrink-0 h-2 w-2 rounded-full bg-green-500" />}
+        {!loading && status === "warn" && <span className="shrink-0 h-2 w-2 rounded-full bg-amber-500" />}
+        {!loading && status === "error" && <span className="shrink-0 h-2 w-2 rounded-full bg-red-500" />}
       </div>
     </div>
   );

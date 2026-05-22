@@ -547,8 +547,7 @@ async def get_tables_status(request: Request):
     if perm_errors and len(perm_errors) >= len(tasks) // 2:
         auth_error = (
             "The app service principal lacks permission to read these tables. "
-            "Open the app as a workspace admin (with SQL scope) so queries run under your credentials, "
-            "or run dba_deploy.sh to grant the required Unity Catalog permissions."
+            "Open the Setup wizard and run the Permissions step to grant the SP access to the required system tables and app catalog."
         )
 
     # Read MV refresh log (atomic write guarantees no partial read)

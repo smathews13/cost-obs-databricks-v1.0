@@ -296,6 +296,9 @@ def _get_git_sha() -> str:
         return os.getenv("COMMIT_SHA", "")
 
 
+_warehouse_cache: dict | None = None  # in-process cache; cleared on server restart
+
+
 @router.get("/config")
 async def get_app_config():
     """Return current app configuration. Warehouse name fetched from SDK; other fields are instant from env vars."""
@@ -326,24 +329,30 @@ async def get_app_config():
     )
 
     if warehouse_id:
-        def _fetch_warehouse():
+        global _warehouse_cache
+        if _warehouse_cache and _warehouse_cache.get("_id") == warehouse_id:
+            warehouse.update({k: v for k, v in _warehouse_cache.items() if k != "_id"})
+        else:
+            def _fetch_warehouse():
+                try:
+                    from server.db import get_workspace_client
+                    w = get_workspace_client()
+                    wh = w.warehouses.get(warehouse_id)
+                    return {
+                        "name": wh.name or None,
+                        "size": wh.cluster_size or None,
+                        "state": str(wh.state.value) if wh.state else "UNKNOWN",
+                    }
+                except Exception:
+                    return {}
+            loop = _asyncio.get_running_loop()
             try:
-                from server.db import get_workspace_client
-                w = get_workspace_client()
-                wh = w.warehouses.get(warehouse_id)
-                return {
-                    "name": wh.name or None,
-                    "size": wh.cluster_size or None,
-                    "state": str(wh.state.value) if wh.state else "UNKNOWN",
-                }
+                detail = await _asyncio.wait_for(loop.run_in_executor(None, _fetch_warehouse), timeout=10)
+                if detail:
+                    _warehouse_cache = {"_id": warehouse_id, **detail}
+                warehouse.update(detail)
             except Exception:
-                return {}
-        loop = _asyncio.get_running_loop()
-        try:
-            detail = await _asyncio.wait_for(loop.run_in_executor(None, _fetch_warehouse), timeout=10)
-            warehouse.update(detail)
-        except Exception:
-            pass
+                pass
 
     # Identity: SP client ID from env var (no current_user.me() call)
     sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")

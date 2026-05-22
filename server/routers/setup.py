@@ -235,21 +235,6 @@ async def get_setup_status() -> dict[str, Any]:
                 "task": _create_task_state.copy(),
             }
 
-    # setup_done.json absent → wizard has not completed on this deployment.
-    # Return setup_required regardless of table existence. This fires on every
-    # fresh git redeploy because .settings/ is wiped by Databricks Apps.
-    if not os.path.exists(SETUP_DONE_FILE):
-        catalog, schema = get_catalog_schema()
-        return {
-            "catalog": catalog,
-            "schema": schema,
-            "tables": {},
-            "all_tables_exist": False,
-            "missing_tables": [],
-            "status": "setup_required",
-            "task": _create_task_state.copy(),
-        }
-
     catalog, schema = get_catalog_schema()
 
     # No catalog configured — wizard must run first.
@@ -266,6 +251,32 @@ async def get_setup_status() -> dict[str, Any]:
 
     loop = _asyncio.get_running_loop()
     tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
+
+    # setup_done.json absent (wiped on every git redeploy).
+    # Auto-heal: if core tables already exist, recreate the file so the dashboard
+    # loads immediately instead of forcing the wizard again.
+    if not os.path.exists(SETUP_DONE_FILE):
+        core_ok = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
+        if core_ok:
+            try:
+                import datetime as _dt, json as _json
+                os.makedirs(SETTINGS_DIR, exist_ok=True)
+                with open(SETUP_DONE_FILE, "w") as f:
+                    _json.dump({"completed_at": _dt.datetime.utcnow().isoformat(), "auto_healed": True}, f)
+                logger.info("setup_done.json auto-healed on redeploy — tables already exist")
+            except Exception as e:
+                logger.warning(f"Could not auto-heal setup_done.json: {e}")
+        else:
+            missing_t = [name for name, exists in tables.items() if not exists]
+            return {
+                "catalog": catalog,
+                "schema": schema,
+                "tables": tables,
+                "all_tables_exist": False,
+                "missing_tables": missing_t,
+                "status": "setup_required",
+                "task": _create_task_state.copy(),
+            }
 
     # Core billing tables gate the "ready" state — without them the dashboard has nothing to show.
     core_exist = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
@@ -859,6 +870,79 @@ async def bootstrap_admin(request: Request) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Bootstrap admin failed: {e}")
         return {"status": "error", "message": str(e)}
+
+
+# ============================================================================
+# Catalog creation (storage step — must succeed before permissions step)
+# ============================================================================
+
+
+@router.post("/ensure-catalog")
+async def ensure_catalog(request: Request) -> dict[str, Any]:
+    """Create the target catalog if it doesn't already exist.
+
+    Runs as the calling user (their forwarded token) so the CREATE CATALOG
+    uses their metastore-admin privileges, not the SP.
+    Called by the Storage step immediately after saving catalog/schema config.
+    """
+    import asyncio as _asyncio
+
+    catalog, _ = get_catalog_schema()
+    user_token = request.headers.get("x-forwarded-access-token", "")
+
+    if not catalog:
+        raise HTTPException(status_code=400, detail="No catalog configured.")
+
+    def _create():
+        from server.db import execute_query
+        tok = _db_user_token.set(user_token)
+        try:
+            execute_query(f"CREATE CATALOG IF NOT EXISTS `{catalog}`", no_cache=True)
+            logger.info(f"Catalog `{catalog}` ensured (created or already existed)")
+            return {"ok": True, "catalog": catalog, "message": f"Catalog `{catalog}` is ready."}
+        except Exception as e:
+            msg = _clean_sdk_error(str(e))
+            logger.warning(f"ensure-catalog failed for `{catalog}`: {msg}")
+            return {"ok": False, "catalog": catalog, "message": msg}
+        finally:
+            _db_user_token.reset(tok)
+
+    loop = _asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _create)
+
+
+@router.post("/ensure-schema")
+async def ensure_schema(request: Request) -> dict[str, Any]:
+    """Create the target schema if it doesn't already exist.
+
+    Runs as the calling user (their forwarded token).
+    Called by the Storage step after ensure-catalog succeeds.
+    """
+    import asyncio as _asyncio
+
+    catalog, schema = get_catalog_schema()
+    user_token = request.headers.get("x-forwarded-access-token", "")
+
+    if not catalog or not schema:
+        raise HTTPException(status_code=400, detail="No catalog/schema configured.")
+
+    def _create():
+        from server.db import execute_query
+        tok = _db_user_token.set(user_token)
+        try:
+            execute_query(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`", no_cache=True)
+            logger.info(f"Schema `{catalog}`.`{schema}` ensured (created or already existed)")
+            return {"ok": True, "schema": f"{catalog}.{schema}",
+                    "message": f"Schema `{catalog}.{schema}` is ready."}
+        except Exception as e:
+            msg = _clean_sdk_error(str(e))
+            logger.warning(f"ensure-schema failed for `{catalog}.{schema}`: {msg}")
+            return {"ok": False, "schema": f"{catalog}.{schema}", "message": msg}
+        finally:
+            _db_user_token.reset(tok)
+
+    loop = _asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _create)
 
 
 # ============================================================================
@@ -1597,37 +1681,38 @@ async def list_workspaces() -> dict:
 async def preflight_catalog_endpoint(request: Request) -> dict:
     """Check the configured catalog exists before table creation.
 
-    Uses the calling user's OAuth token (not the SP) so the check succeeds for
-    any catalog visible to the admin user regardless of SP privilege state.
-    SP access to the catalog is applied during the pre-creation grants in
-    _create_tables_task before create_materialized_views runs.
+    Uses SP credentials + SHOW CATALOGS SQL so we avoid the unity-catalog OAuth
+    scope requirement (forwarded user tokens from Databricks Apps don't carry it).
+    Distinguishes "catalog missing" from "SP has no USE privilege" by error text.
     """
     import asyncio as _asyncio
-    from databricks.sdk import WorkspaceClient
 
-    catalog, _ = get_catalog_schema()
-    user_token = request.headers.get("x-forwarded-access-token", "")
-    host = os.getenv("DATABRICKS_HOST", "")
+    catalog, schema = get_catalog_schema()
 
     def _check():
         if not catalog:
             return {"ok": False, "status": "invalid_config",
                     "message": "No catalog configured — return to the Storage step."}
         try:
-            if user_token and host:
-                w = WorkspaceClient(host=host, token=user_token, auth_type="pat")
-            else:
-                w = get_workspace_client()
+            w = get_workspace_client()
             w.catalogs.get(catalog)
             return {"ok": True, "status": "ready", "message": f"Catalog `{catalog}` is accessible."}
         except Exception as e:
             msg = _clean_sdk_error(str(e))
-            if any(kw in msg.lower() for kw in ("not found", "does not exist", "404", "catalog_not_found")):
+            msg_lower = msg.lower()
+            # "not found" / "does not exist" / CATALOG_NOT_FOUND → catalog genuinely absent
+            if any(kw in msg_lower for kw in ("not found", "does not exist", "404", "catalog_not_found")):
                 return {
                     "ok": False,
                     "status": "catalog_missing",
                     "message": f"Catalog `{catalog}` does not exist. Create it in Unity Catalog before continuing.",
                 }
+            # SP has no USE CATALOG yet — grants haven't landed or weren't applied.
+            # Treat this as OK for preflight; the pre-creation grant in _create_tables_task
+            # will apply USE CATALOG before create_materialized_views runs.
+            if any(kw in msg_lower for kw in ("permission", "privilege", "unauthorized", "forbidden", "403", "insufficient")):
+                return {"ok": True, "status": "ready",
+                        "message": f"Catalog `{catalog}` exists (SP permissions will be applied at build time)."}
             return {
                 "ok": False,
                 "status": "catalog_check_failed",

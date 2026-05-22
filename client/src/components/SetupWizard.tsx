@@ -152,8 +152,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [tablesJustCreated, setTablesJustCreated] = useState(false);
-  const [storageSaving, setStorageSaving] = useState(false);
-  const [storageSaved, setStorageSaved] = useState(false);
+  const [storagePhase, setStoragePhase] = useState<'idle' | 'saving' | 'creating-catalog' | 'creating-schema' | 'done' | 'error'>('idle');
+  const [storageChecks, setStorageChecks] = useState<{ config: boolean | null; catalog: boolean | null; schema: boolean | null }>({ config: null, catalog: null, schema: null });
   const [error, setError] = useState<string | null>(null);
   const [preflightResult, setPreflightResult] = useState<{ ok: boolean; status: string; message: string } | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
@@ -206,7 +206,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     return () => { if (grantVerifyRef.current) clearInterval(grantVerifyRef.current); };
   }, []);
 
-  useEffect(() => { setStorageSaved(false); }, [step]);
+  useEffect(() => {
+    setStoragePhase('idle');
+    setStorageChecks({ config: null, catalog: null, schema: null });
+  }, [step]);
 
   const loadReadiness = useCallback(async (forceRefresh = false) => {
     setLoading(true);
@@ -466,6 +469,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               schema={schemaInput}
               onCatalogChange={setCatalogInput}
               onSchemaChange={setSchemaInput}
+              phase={storagePhase}
+              checks={storageChecks}
             />
           )}
 
@@ -572,56 +577,108 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
                 </button>
               )
             ) : step === "storage-location" ? (
-              <button
-                onClick={async () => {
-                  const cat = catalogInput.trim();
-                  const sch = schemaInput.trim();
-                  if (!cat || !sch) return;
-                  setStorageSaving(true);
-                  setError(null);
-                  let saved = false;
-                  try {
-                    const res = await fetch("/api/settings/catalog", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ catalog: cat, schema: sch }),
-                      signal: AbortSignal.timeout(45000),
-                    });
-                    if (!res.ok) {
-                      const body = await res.json().catch(() => ({}));
-                      setError(body.detail || `Failed to save storage location (HTTP ${res.status})`);
+              storagePhase === "done" ? (
+                <button
+                  onClick={goNext}
+                  className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors"
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    const cat = catalogInput.trim();
+                    const sch = schemaInput.trim();
+                    if (!cat || !sch) return;
+                    setError(null);
+
+                    // Step 1: Save config
+                    setStoragePhase("saving");
+                    setStorageChecks({ config: null, catalog: null, schema: null });
+                    try {
+                      const res = await fetch("/api/settings/catalog", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ catalog: cat, schema: sch }),
+                        signal: AbortSignal.timeout(45000),
+                      });
+                      if (!res.ok) {
+                        const body = await res.json().catch(() => ({}));
+                        setError(body.detail || `Failed to save (HTTP ${res.status})`);
+                        setStorageChecks(c => ({ ...c, config: false }));
+                        setStoragePhase("error");
+                        return;
+                      }
+                      setStorageChecks(c => ({ ...c, config: true }));
+                    } catch (e: unknown) {
+                      setError(e instanceof Error && e.name === "TimeoutError"
+                        ? "Server is starting up — wait a moment and try again."
+                        : `Failed to save: ${e}`);
+                      setStorageChecks(c => ({ ...c, config: false }));
+                      setStoragePhase("error");
                       return;
                     }
-                    saved = true;
-                  } catch (e: unknown) {
-                    const msg = e instanceof Error && e.name === "TimeoutError"
-                      ? "Server is taking too long to respond. The app may still be starting — wait a moment and try again."
-                      : `Failed to save: ${e}`;
-                    setError(msg);
-                    return;
-                  } finally {
-                    setStorageSaving(false);
-                  }
-                  if (saved) {
-                    setStorageSaved(true);
-                    await new Promise(r => setTimeout(r, 700));
-                    goNext();
-                  }
-                }}
-                disabled={!catalogInput.trim() || !schemaInput.trim() || storageSaving}
-                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
-                style={storageSaved ? { backgroundColor: '#16a34a' } : undefined}
-              >
-                {storageSaved ? "Saved ✓" : storageSaving ? (
-                  <span className="flex items-center gap-2">
-                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                    </svg>
-                    Saving…
-                  </span>
-                ) : "Next"}
-              </button>
+
+                    // Step 2: Create catalog
+                    setStoragePhase("creating-catalog");
+                    try {
+                      const res = await fetch("/api/setup/ensure-catalog", {
+                        method: "POST",
+                        signal: AbortSignal.timeout(45000),
+                      });
+                      const body = await res.json().catch(() => ({}));
+                      if (!res.ok || body.ok === false) {
+                        setError(body.message || body.detail || `Could not create catalog \`${cat}\``);
+                        setStorageChecks(c => ({ ...c, catalog: false }));
+                        setStoragePhase("error");
+                        return;
+                      }
+                      setStorageChecks(c => ({ ...c, catalog: true }));
+                    } catch (e: unknown) {
+                      setError(`Could not create catalog: ${e}`);
+                      setStorageChecks(c => ({ ...c, catalog: false }));
+                      setStoragePhase("error");
+                      return;
+                    }
+
+                    // Step 3: Create schema
+                    setStoragePhase("creating-schema");
+                    try {
+                      const res = await fetch("/api/setup/ensure-schema", {
+                        method: "POST",
+                        signal: AbortSignal.timeout(45000),
+                      });
+                      const body = await res.json().catch(() => ({}));
+                      if (!res.ok || body.ok === false) {
+                        setError(body.message || body.detail || `Could not create schema \`${cat}.${sch}\``);
+                        setStorageChecks(c => ({ ...c, schema: false }));
+                        setStoragePhase("error");
+                        return;
+                      }
+                      setStorageChecks(c => ({ ...c, schema: true }));
+                    } catch (e: unknown) {
+                      setError(`Could not create schema: ${e}`);
+                      setStorageChecks(c => ({ ...c, schema: false }));
+                      setStoragePhase("error");
+                      return;
+                    }
+
+                    setStoragePhase("done");
+                  }}
+                  disabled={!catalogInput.trim() || !schemaInput.trim() || (storagePhase !== "idle" && storagePhase !== "error")}
+                  className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
+                >
+                  {storagePhase !== "idle" && storagePhase !== "error" ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                      </svg>
+                      Working…
+                    </span>
+                  ) : storagePhase === "error" ? "Retry" : "Save & Continue"}
+                </button>
+              )
             ) : step === "permissions" ? (
               <button
                 onClick={goNext}
@@ -696,34 +753,76 @@ function WelcomeStep({ config, cloud, loading }: { config: ConfigData | null; cl
   );
 }
 
+function StorageCheckRow({ label, state }: { label: string; state: "pending" | "running" | "done" | "error" }) {
+  return (
+    <div className="flex items-center gap-2.5 text-sm">
+      {state === "running" ? (
+        <svg className="h-4 w-4 shrink-0 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+        </svg>
+      ) : state === "done" ? (
+        <svg className="h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+        </svg>
+      ) : state === "error" ? (
+        <svg className="h-4 w-4 shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      ) : (
+        <div className="h-4 w-4 shrink-0 rounded-full border-2 border-gray-300" />
+      )}
+      <span className={state === "error" ? "text-red-600" : state === "done" ? "text-gray-800 font-medium" : "text-gray-500"}>{label}</span>
+    </div>
+  );
+}
+
 function StorageLocationStep({
   catalog,
   schema,
   onCatalogChange,
   onSchemaChange,
+  phase,
+  checks,
 }: {
   catalog: string;
   schema: string;
   onCatalogChange: (v: string) => void;
   onSchemaChange: (v: string) => void;
+  phase: string;
+  checks: { config: boolean | null; catalog: boolean | null; schema: boolean | null };
 }) {
+  const locked = phase !== "idle" && phase !== "error";
+
+  const rowState = (
+    checkVal: boolean | null,
+    activePhase: string,
+  ): "pending" | "running" | "done" | "error" => {
+    if (phase === activePhase) return "running";
+    if (checkVal === true) return "done";
+    if (checkVal === false) return "error";
+    return "pending";
+  };
+
+  const showProgress = phase !== "idle";
+
   return (
     <div className="space-y-5">
       <p className="text-sm text-gray-600">
-        Choose where the app will store its pre-aggregated cost tables. The service principal
-        needs <span className="font-mono text-xs">USE CATALOG</span> and{" "}
-        <span className="font-mono text-xs">CREATE SCHEMA</span> privileges on the target catalog.
+        Choose where the app will store its pre-aggregated cost tables.
+        The catalog and schema will be created for you if they don't already exist.
       </p>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
+      <div className={`rounded-lg border p-4 space-y-4 ${locked ? "border-gray-100 bg-gray-50" : "border-gray-200 bg-white"}`}>
         <div className="space-y-1.5">
           <label className="block text-xs font-medium text-gray-700">Catalog</label>
           <input
             type="text"
             value={catalog}
             onChange={(e) => onCatalogChange(e.target.value)}
+            disabled={locked}
             placeholder="e.g. my_catalog"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:bg-gray-100 disabled:text-gray-500"
           />
         </div>
         <div className="space-y-1.5">
@@ -732,16 +831,29 @@ function StorageLocationStep({
             type="text"
             value={schema}
             onChange={(e) => onSchemaChange(e.target.value)}
+            disabled={locked}
             placeholder="e.g. cost_obs_app"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:bg-gray-100 disabled:text-gray-500"
           />
         </div>
       </div>
 
-      <p className="text-xs text-gray-500">
-        The schema will be created automatically if it doesn't exist. Tables will be placed
-        at <span className="font-mono">{catalog || "…"}.{schema || "…"}</span>.
-      </p>
+      {showProgress ? (
+        <div className="space-y-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+          <StorageCheckRow label="Saving configuration" state={rowState(checks.config, "saving")} />
+          {(checks.catalog !== null || phase === "creating-catalog" || phase === "creating-schema" || phase === "done" || phase === "error") && (
+            <StorageCheckRow label={`Creating catalog \`${catalog}\``} state={rowState(checks.catalog, "creating-catalog")} />
+          )}
+          {(checks.schema !== null || phase === "creating-schema" || phase === "done" || (phase === "error" && checks.catalog === true)) && (
+            <StorageCheckRow label={`Creating schema \`${catalog}.${schema}\``} state={rowState(checks.schema, "creating-schema")} />
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500">
+          Tables will be placed at{" "}
+          <span className="font-mono">{catalog || "…"}.{schema || "…"}</span>.
+        </p>
+      )}
     </div>
   );
 }

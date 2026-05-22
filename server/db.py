@@ -100,6 +100,10 @@ _CATALOG_OVERRIDE_FILE = os.path.join(
     os.path.dirname(__file__), "..", ".settings", "catalog_override.json"
 )
 
+# DBFS path for catalog/schema — survives git redeploys unlike .settings/.
+# Written alongside the local file; read as fallback when local file is absent.
+_DBFS_OVERRIDE_PATH = "/databricks/cost-obs-app/catalog_override.json"
+
 # Locations that are forbidden as app storage targets. main.cost_obs is the old
 # hardcoded default that shipped in app.yaml — it must never be auto-created.
 _FORBIDDEN_STORAGE_LOCATIONS: frozenset[tuple[str, str]] = frozenset({
@@ -132,19 +136,71 @@ def validate_app_storage_target(catalog: str, schema: str) -> None:
         )
 
 
+def _read_dbfs_catalog_override() -> tuple[str, str]:
+    """Read catalog/schema from DBFS. Best-effort — returns ("", "") on any error.
+
+    On a successful read, also writes the value back to the local .settings/ file
+    so subsequent calls within the same process use the fast local path instead of
+    hitting the DBFS API on every request.
+    """
+    try:
+        import base64
+        w = get_workspace_client()
+        resp = w.api_client.do(
+            "GET", "/api/2.0/dbfs/read",
+            query={"path": _DBFS_OVERRIDE_PATH, "length": 4096},
+        )
+        raw = resp.get("data", "")
+        if not raw:
+            return "", ""
+        data = json.loads(base64.b64decode(raw).decode("utf-8"))
+        cat = data.get("catalog", "").strip()
+        sch = data.get("schema", "").strip()
+        if cat and sch and (cat.lower(), sch.lower()) not in _FORBIDDEN_STORAGE_LOCATIONS:
+            # Restore local file so this process doesn't hit DBFS on every call
+            try:
+                os.makedirs(os.path.dirname(_CATALOG_OVERRIDE_FILE), exist_ok=True)
+                with open(_CATALOG_OVERRIDE_FILE, "w") as f:
+                    json.dump({"catalog": cat, "schema": sch}, f)
+                logger.info("Restored local catalog override from DBFS: %s.%s", cat, sch)
+            except Exception:
+                pass
+            return cat, sch
+    except Exception:
+        pass
+    return "", ""
+
+
+def _write_dbfs_catalog_override(catalog: str, schema: str) -> None:
+    """Write catalog/schema to DBFS. Best-effort, non-fatal."""
+    try:
+        import base64
+        w = get_workspace_client()
+        content_b64 = base64.b64encode(
+            json.dumps({"catalog": catalog, "schema": schema}).encode("utf-8")
+        ).decode("ascii")
+        w.api_client.do(
+            "POST", "/api/2.0/dbfs/put",
+            body={"path": _DBFS_OVERRIDE_PATH, "contents": content_b64, "overwrite": True},
+        )
+        logger.info("DBFS catalog override saved: %s.%s", catalog, schema)
+    except Exception as e:
+        logger.warning("Could not write DBFS catalog override (non-fatal): %s", e)
+
+
 def get_catalog_schema() -> tuple[str, str]:
     """Return the catalog and schema for cost observability tables.
 
-    Priority: COST_OBS_CATALOG/COST_OBS_SCHEMA env vars → wizard override file.
-    Env vars always win so a deliberate app configuration cannot be silently
-    overridden by a stale .settings/catalog_override.json from a previous run.
+    Priority:
+      1. COST_OBS_CATALOG/COST_OBS_SCHEMA env vars (set in Databricks Apps UI — always win)
+      2. .settings/catalog_override.json (local file written by wizard, wiped on git redeploy)
+      3. DBFS /databricks/cost-obs-app/catalog_override.json (survives git redeploys)
 
     Returns ("", "") when no location is configured (setup wizard not yet run).
-    Never returns a forbidden location — logs CRITICAL and returns ("", "") instead
-    so that callers which cannot raise can still detect the misconfiguration.
+    Never returns a forbidden location — logs CRITICAL and returns ("", "") instead.
     Use validate_app_storage_target() at write-path boundaries to raise explicitly.
     """
-    # Env vars are the authoritative source — set in the Databricks Apps UI
+    # 1. Env vars are authoritative — set in the Databricks Apps UI
     catalog = os.getenv("COST_OBS_CATALOG", "").strip()
     schema = os.getenv("COST_OBS_SCHEMA", "").strip()
     if catalog and schema:
@@ -157,7 +213,8 @@ def get_catalog_schema() -> tuple[str, str]:
             )
             return "", ""
         return catalog, schema
-    # Fall back to wizard override file (written during setup when env vars not yet set)
+
+    # 2. Local override file (written by wizard during setup)
     try:
         if os.path.exists(_CATALOG_OVERRIDE_FILE):
             with open(_CATALOG_OVERRIDE_FILE) as f:
@@ -174,18 +231,24 @@ def get_catalog_schema() -> tuple[str, str]:
                     return cat, sch
     except Exception:
         pass
-    return catalog, schema
+
+    # 3. DBFS fallback — survives git redeploys that wipe .settings/
+    return _read_dbfs_catalog_override()
 
 
 def save_catalog_schema(catalog: str, schema: str) -> None:
-    """Persist a catalog/schema override (written from the Setup Wizard)."""
+    """Persist a catalog/schema override (written from the Setup Wizard).
+
+    Writes to both the local .settings/ file (fast) and DBFS (survives redeploys).
+    """
     catalog = catalog.strip()
     schema = schema.strip()
     validate_app_storage_target(catalog, schema)
     os.makedirs(os.path.dirname(_CATALOG_OVERRIDE_FILE), exist_ok=True)
     with open(_CATALOG_OVERRIDE_FILE, "w") as f:
         json.dump({"catalog": catalog, "schema": schema}, f)
-    logger.info("Catalog override saved: %s.%s", catalog, schema)
+    logger.info("Catalog override saved locally: %s.%s", catalog, schema)
+    _write_dbfs_catalog_override(catalog, schema)
 
 
 # ── MV table name overrides ─────────────────────────────────────────────────

@@ -379,6 +379,66 @@ async def grant_sp_system_access(request: Request) -> dict[str, Any]:
     return result
 
 
+def _execute_as_sp(sql: str) -> list[dict]:
+    """Execute a query as the SP — explicitly clears the user token from context."""
+    from server.db import execute_query, _user_token
+    tok = _user_token.set("")
+    try:
+        return execute_query(sql, no_cache=True) or []
+    finally:
+        _user_token.reset(tok)
+
+
+def _preflight_catalog_check(catalog: str) -> dict:
+    """Verify the target catalog exists using the UC SDK (no warehouse needed).
+
+    Returns {"ok": bool, "status": str, "message": str}.
+    Statuses: invalid_config | catalog_missing | catalog_check_failed | ready
+    """
+    if not catalog:
+        return {
+            "ok": False,
+            "status": "invalid_config",
+            "message": "No catalog configured — return to the Storage step.",
+        }
+    try:
+        w = get_workspace_client()
+        w.catalogs.get(catalog)
+        return {"ok": True, "status": "ready", "message": f"Catalog `{catalog}` is accessible."}
+    except Exception as e:
+        msg = str(e)
+        if any(kw in msg.lower() for kw in ("not found", "does not exist", "404", "catalog_not_found")):
+            return {
+                "ok": False,
+                "status": "catalog_missing",
+                "message": (
+                    f"Catalog `{catalog}` does not exist. "
+                    "Create it in Unity Catalog before continuing."
+                ),
+            }
+        return {
+            "ok": False,
+            "status": "catalog_check_failed",
+            "message": f"Could not verify catalog `{catalog}`: {msg}",
+        }
+
+
+def _verify_built_objects_as_sp(catalog: str, schema: str) -> dict:
+    """Probe every MV table with SELECT 1 as the SP to confirm UC grants propagated.
+
+    Returns {"ok": bool, "failed": list[str], "errors": dict[str, str]}
+    """
+    failed: list[str] = []
+    errors: dict[str, str] = {}
+    for table in _MV_TABLES:
+        try:
+            _execute_as_sp(f"SELECT 1 FROM `{catalog}`.`{schema}`.`{table}` LIMIT 1")
+        except Exception as e:
+            failed.append(table)
+            errors[table] = str(e)
+    return {"ok": len(failed) == 0, "failed": failed, "errors": errors}
+
+
 @router.post("/create-tables")
 async def create_tables(
     request: Request,
@@ -434,45 +494,80 @@ async def create_tables(
 
 
 def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
-    """Background task to create tables (wizard path).
+    """Background task: three-phase table creation.
 
-    Runs entirely as the SP — OAuth is not used for data operations.
-    The permissions step must have already granted the SP CREATE SCHEMA on the app
-    catalog and SELECT on all required system tables before this runs.
-
-    user_token is retained only for the post-creation re-grant so schema-level
-    privileges (USE SCHEMA, CREATE TABLE, SELECT) are recorded after the schema exists.
-    Any error — catalog, schema, or any individual table — blocks completion.
+    Phase 1 — Preflight: catalog existence check via SDK (no warehouse needed).
+    Phase 2 — Build: create_materialized_views as SP + post-create SP grants.
+    Phase 3 — Verify: SELECT 1 probe on every MV table as SP with retry backoff
+      to tolerate UC grant propagation delay (typically 10-60s after PATCH returns).
+    Only marks "done" after Phase 3 passes.
     """
+    import time as _time
+
     logger.info(f"Starting background table creation for {catalog}.{schema}")
     try:
-        # All data operations run as SP — no user token in context.
+        # Phase 1: Preflight — catalog must exist before touching the warehouse.
+        preflight = _preflight_catalog_check(catalog)
+        if not preflight["ok"]:
+            _create_task_state["status"] = "error"
+            _create_task_state["error"] = preflight["message"]
+            logger.error(f"Preflight failed: {preflight['message']}")
+            return
+
+        # Phase 2: Build — no user token in context; all queries run as SP.
         results = create_materialized_views(catalog, schema)
         logger.info(f"Table creation completed: {results}")
 
-        # Any error key (catalog, schema, or table name) blocks task completion.
-        # "catalog"/"schema" keys mean infra setup failed before tables were attempted.
         all_errors = {
             k: v for k, v in results.items()
             if k != "__mv_timings__" and isinstance(v, str) and v.startswith("error:")
         }
-
         if all_errors:
             first_error = next(iter(all_errors.values()))
             _create_task_state["status"] = "error"
             _create_task_state["error"] = first_error.replace("error: ", "", 1)
-        else:
+            return
+
+        # Re-apply SP grants now that the schema exists. Schema-level privileges
+        # (USE SCHEMA, CREATE TABLE, SELECT) silently no-op when schema is absent,
+        # so running after creation ensures they are actually recorded in UC.
+        grant_tok = _db_user_token.set(user_token) if user_token else None
+        try:
+            _grant_sp_schema_access(catalog, schema)
+        finally:
+            if grant_tok is not None:
+                _db_user_token.reset(grant_tok)
+
+        # Phase 3: Verify with retry backoff for grant propagation.
+        # Cumulative delays: 0 + 10 + 20 + 30 = 60s max wait.
+        retry_delays = [0, 10, 20, 30]
+        last_verify: dict = {}
+        for delay in retry_delays:
+            if delay > 0:
+                _time.sleep(delay)
+            last_verify = _verify_built_objects_as_sp(catalog, schema)
+            logger.info(
+                f"SP verification (delay +{delay}s): ok={last_verify['ok']} "
+                f"failed={last_verify.get('failed', [])}"
+            )
+            if last_verify["ok"]:
+                break
+
+        if last_verify.get("ok"):
             _create_task_state["status"] = "done"
             _create_task_state["error"] = None
-            # Re-apply SP grants now that the schema exists. Schema-level privileges
-            # (USE SCHEMA, CREATE TABLE, SELECT) silently no-op when schema is absent,
-            # so running after creation ensures they are actually recorded in UC.
-            grant_tok = _db_user_token.set(user_token) if user_token else None
-            try:
-                _grant_sp_schema_access(catalog, schema)
-            finally:
-                if grant_tok is not None:
-                    _db_user_token.reset(grant_tok)
+        else:
+            failed = last_verify.get("failed", [])
+            errors_map = last_verify.get("errors", {})
+            first_fail = failed[0] if failed else "unknown"
+            first_err = errors_map.get(first_fail, "SP cannot read table")
+            _create_task_state["status"] = "error"
+            _create_task_state["error"] = (
+                f"SP verification failed on `{first_fail}`: {first_err}. "
+                "Grant propagation may be delayed — retry table creation in 1-2 minutes."
+            )
+            logger.error(f"Phase 3 verification failed: {_create_task_state['error']}")
+
     except Exception as e:
         _create_task_state["status"] = "error"
         _create_task_state["error"] = str(e)
@@ -1449,6 +1544,20 @@ async def list_workspaces() -> dict:
     except Exception as e:
         logger.warning("list-workspaces failed: %s", e)
         return {"workspaces": [], "error": str(e)}
+
+
+@router.get("/preflight-catalog")
+async def preflight_catalog_endpoint() -> dict:
+    """Check the configured catalog exists before table creation.
+
+    Called by the setup wizard when advancing to the Create Tables step.
+    Uses the UC SDK (no warehouse needed) so it returns quickly regardless
+    of whether the warehouse is running.
+    """
+    import asyncio as _asyncio
+    catalog, _ = get_catalog_schema()
+    loop = _asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _preflight_catalog_check, catalog)
 
 
 @router.get("/workspace-filter")

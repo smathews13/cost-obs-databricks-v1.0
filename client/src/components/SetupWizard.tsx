@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { ReadinessChecks, normalizeReadinessResult } from "./settings/ReadinessChecks";
 import type { ReadinessResult } from "./settings/ReadinessChecks";
@@ -154,6 +154,11 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [tablesJustCreated, setTablesJustCreated] = useState(false);
   const [storageSaving, setStorageSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preflightResult, setPreflightResult] = useState<{ ok: boolean; status: string; message: string } | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [verifyingGrants, setVerifyingGrants] = useState(false);
+  const [grantVerifyElapsed, setGrantVerifyElapsed] = useState(0);
+  const grantVerifyRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   // Storage location step state
   const [catalogInput, setCatalogInput] = useState("");
@@ -196,6 +201,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     loadData();
   }, []);
 
+  useEffect(() => {
+    return () => { if (grantVerifyRef.current) clearInterval(grantVerifyRef.current); };
+  }, []);
+
   const loadReadiness = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setReadinessError(null);
@@ -211,6 +220,20 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     }
   }, []);
 
+  const loadPreflight = useCallback(async () => {
+    setPreflightLoading(true);
+    setPreflightResult(null);
+    try {
+      const res = await fetch("/api/setup/preflight-catalog");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setPreflightResult(await res.json());
+    } catch (e) {
+      setPreflightResult({ ok: false, status: "catalog_check_failed", message: `Preflight check failed: ${e}` });
+    } finally {
+      setPreflightLoading(false);
+    }
+  }, []);
+
   const handleAutoGrant = useCallback(async () => {
     setGrantRunning(true);
     setGrantResult(null);
@@ -222,12 +245,39 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         ? `${body.applied ?? 0} grant(s) applied for ${body.sp_client_id ?? "SP"}.`
         : (body.errors?.[0] ?? body.detail ?? "Grant run completed with errors — check server logs.");
       setGrantResult({ ok, message, errors: body.errors });
-      if (ok) setTimeout(() => loadReadiness(true), 800);
-    } catch {
-      setGrantResult({ ok: false, message: "Network error running grants." });
-    } finally {
-      setGrantRunning(false);
+    if (ok) {
+      setVerifyingGrants(true);
+      setGrantVerifyElapsed(0);
+      const verifyStart = Date.now();
+      if (grantVerifyRef.current) clearInterval(grantVerifyRef.current);
+      grantVerifyRef.current = setInterval(async () => {
+        const elapsed = Math.round((Date.now() - verifyStart) / 1000);
+        setGrantVerifyElapsed(elapsed);
+        if (elapsed >= 90) {
+          clearInterval(grantVerifyRef.current!);
+          grantVerifyRef.current = undefined;
+          setVerifyingGrants(false);
+          loadReadiness(true);
+          return;
+        }
+        try {
+          const r = await fetch("/api/setup/readiness?refresh=true");
+          if (!r.ok) return;
+          const data = normalizeReadinessResult(await r.json());
+          if (data) setReadiness(data);
+          if (data?.overall === "ready" || data?.overall === "core_ready") {
+            clearInterval(grantVerifyRef.current!);
+            grantVerifyRef.current = undefined;
+            setVerifyingGrants(false);
+          }
+        } catch { /* ignore transient polling errors */ }
+      }, 5000);
     }
+  } catch {
+    setGrantResult({ ok: false, message: "Network error running grants." });
+  } finally {
+    setGrantRunning(false);
+  }
   }, [loadReadiness]);
 
   const pollSetupStatus = useCallback(async () => {
@@ -334,7 +384,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
       const next = STEPS[idx + 1];
       setStep(next);
       if (next === "permissions") loadReadiness();
-      if (next === "create-tables") pollSetupStatus();
+      if (next === "create-tables") { pollSetupStatus(); loadPreflight(); }
       if (next === "workspace-filter") loadWorkspaces();
     }
   };
@@ -425,6 +475,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               onAutoGrant={handleAutoGrant}
               autoGrantRunning={grantRunning}
               autoGrantResult={grantResult}
+              verifyingGrants={verifyingGrants}
+              grantVerifyElapsed={grantVerifyElapsed}
             />
           )}
 
@@ -433,6 +485,9 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               setupStatus={setupStatus}
               creating={creating}
               tablesJustCreated={tablesJustCreated}
+              preflightResult={preflightResult}
+              preflightLoading={preflightLoading}
+              onRecheck={loadPreflight}
             />
           )}
 
@@ -507,7 +562,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               ) : (
                 <button
                   onClick={handleCreateTables}
-                  className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors"
+                  disabled={preflightLoading || !preflightResult?.ok}
+                  className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50"
                 >
                   Create Tables
                 </button>
@@ -547,7 +603,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             ) : step === "permissions" ? (
               <button
                 onClick={goNext}
-                disabled={loading || readiness == null || (readiness.overall !== "ready" && readiness.overall !== "core_ready")}
+                disabled={loading || verifyingGrants || readiness == null || (readiness.overall !== "ready" && readiness.overall !== "core_ready")}
                 className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
@@ -676,6 +732,8 @@ interface WizardPermissionsStepProps {
   onAutoGrant: () => Promise<void>;
   autoGrantRunning: boolean;
   autoGrantResult: { ok: boolean; message: string; errors?: string[] } | null;
+  verifyingGrants: boolean;
+  grantVerifyElapsed: number;
 }
 
 function WizardPermissionsStep({
@@ -686,6 +744,8 @@ function WizardPermissionsStep({
   onAutoGrant,
   autoGrantRunning,
   autoGrantResult,
+  verifyingGrants,
+  grantVerifyElapsed,
 }: WizardPermissionsStepProps) {
   const coreReady = readiness != null &&
     (readiness.overall === "ready" || readiness.overall === "core_ready");
@@ -696,7 +756,13 @@ function WizardPermissionsStep({
         Verifying the app's service principal has access to required Databricks system tables.
         Core tables (billing) must pass before you can continue.
       </p>
-      {!loading && coreReady && (
+      {verifyingGrants && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 flex items-center gap-2">
+          <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
+          <span className="text-sm text-blue-700">Verifying SP access… ({grantVerifyElapsed}s)</span>
+        </div>
+      )}
+      {!loading && !verifyingGrants && coreReady && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">
           Core access confirmed — you can proceed to Create Tables.
         </div>
@@ -714,11 +780,36 @@ function WizardPermissionsStep({
   );
 }
 
-function CreateTablesStep({ setupStatus, creating, tablesJustCreated }: {
+function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightResult, preflightLoading, onRecheck }: {
   setupStatus: SetupStatus | null;
   creating: boolean;
   tablesJustCreated: boolean;
+  preflightResult: { ok: boolean; status: string; message: string } | null;
+  preflightLoading: boolean;
+  onRecheck: () => void;
 }) {
+  if (preflightLoading) {
+    return <LoadingSpinner text="Checking catalog access…" />;
+  }
+
+  if (preflightResult && !preflightResult.ok) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-sm font-medium text-red-800 mb-1">Catalog not accessible</p>
+          <p className="text-sm text-red-700">{preflightResult.message}</p>
+        </div>
+        <button
+          onClick={onRecheck}
+          className="text-sm font-medium hover:underline"
+          style={{ color: '#FF3621' }}
+        >
+          Re-check catalog
+        </button>
+      </div>
+    );
+  }
+
   if (creating) {
     return (
       <div className="space-y-4">

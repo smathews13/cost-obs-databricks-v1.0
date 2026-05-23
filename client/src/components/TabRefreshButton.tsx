@@ -40,9 +40,9 @@ export function TabRefreshButton({ onRefresh }: TabRefreshButtonProps) {
 
       {showTooltip && !spinning && (
         <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg">
-          <p className="text-xs font-medium text-gray-700">Refresh tab data</p>
+          <p className="text-xs font-medium text-gray-700">Refresh all tabs</p>
           <p className="mt-0.5 text-xs text-gray-500">
-            Clears the cache and reloads all visuals and tables on this tab with the latest data from Databricks.
+            Cancels pending queries, clears all caches, and reloads every tab with the latest data from Databricks.
           </p>
           {/* Tooltip arrow */}
           <div className="absolute -top-1.5 right-3 h-3 w-3 rotate-45 border-l border-t border-gray-200 bg-white" />

@@ -177,7 +177,7 @@ export function ExportDialog({ isOpen, onClose, onExport, tabVisibility }: Expor
             </div>
             {format === "csv" && (
               <p className="mt-2 text-xs text-gray-500">
-                Downloads a single CSV file with each selected section as a table.
+                Downloads a multi-sheet Excel workbook (.xls) — one sheet per app tab — with active workspace and date filters applied.
               </p>
             )}
           </div>

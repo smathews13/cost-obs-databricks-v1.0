@@ -205,30 +205,12 @@ function Dashboard() {
   const setupStatusAbortRef = useRef<AbortController | null>(null);
   const rqClient = useQueryClient();
 
-  // Per-tab query key prefixes — used by the refresh button to invalidate only
-  // the queries relevant to the currently visible tab.
-  const TAB_QUERY_KEYS: Record<ViewTab, string[][]> = {
-    "dbu":          [["billing", "dashboard-bundle-fast"]],
-    "infra":        [["billing", "infra-bundle"], ["aws-actual", "dashboard-bundle"], ["billing", "aws-costs"]],
-    "kpis":         [["billing", "kpis-bundle"], ["billing", "spend-anomalies"]],
-    "aiml":         [["aiml", "dashboard-bundle"]],
-    "apps":         [["apps", "dashboard-bundle"]],
-    "tagging":      [["tagging", "dashboard-bundle"]],
-    "sql":          [["dbsql", "dashboard-bundle"], ["billing", "sql-breakdown"]],
-    "users-groups": [["users-groups"]],
-    "use-cases":    [["use-cases"], ["use-cases-summary"], ["monthly-consumption"]],
-    "alerts":       [["alerts"]],
-    "forecasting":  [["billing", "dashboard-bundle-fast"]],
-    "contract":     [["contract-burndown"]],
-  };
-
   const handleTabRefresh = async () => {
-    // Clear server-side cache for this tab first, then invalidate React Query cache
-    fetch(`/api/cache/clear?tab=${activeTab}`, { method: "POST" }).catch(() => {});
-    const keys = TAB_QUERY_KEYS[activeTab] ?? [];
-    for (const key of keys) {
-      await rqClient.invalidateQueries({ queryKey: key });
-    }
+    // Cancel every in-flight query first so nothing hangs during the refresh
+    await rqClient.cancelQueries();
+    // Clear ALL server-side Delta + in-process caches, then refetch everything
+    fetch("/api/cache/clear", { method: "POST" }).catch(() => {});
+    await rqClient.invalidateQueries();
   };
 
   // On every load, verify setup status with the server.
@@ -533,6 +515,11 @@ function Dashboard() {
   } : undefined, [infraCostsTimeseries]);
 
   const handleExport = (sections: ExportSections, format: ExportFormat) => {
+    const wsNameMap = workspaces?.workspaces?.reduce((m: Record<string, string>, w: any) => { m[w.workspace_id] = w.workspace_name || w.workspace_id; return m; }, {} as Record<string, string>) ?? {};
+    const workspaceFilter = _wsIds?.length
+      ? { ids: _wsIds, names: _wsIds.map((id: string) => wsNameMap[id] || id) }
+      : { ids: [] };
+
     if (format === "csv") {
       generateCostCSV(
         {
@@ -547,16 +534,18 @@ function Dashboard() {
           tagging: taggingData,
           users: usersGroupsData,
           alerts: alertsData,
+          query360: dbsqlData,
         },
         sections,
-        { start: dateRange.startDate, end: dateRange.endDate }
+        { start: dateRange.startDate, end: dateRange.endDate },
+        workspaceFilter
       );
       return;
     }
-    handleExportPDF(sections);
+    handleExportPDF(sections, workspaceFilter);
   };
 
-  const handleExportPDF = (sections: ExportSections) => {
+  const handleExportPDF = (sections: ExportSections, workspaceFilter?: { ids: string[]; names?: string[] }) => {
     generateCostReport(
       {
         summary,
@@ -600,6 +589,7 @@ function Dashboard() {
           start: dateRange.startDate,
           end: dateRange.endDate,
         },
+        workspaceFilter,
       },
       sections
     );
@@ -768,7 +758,7 @@ function Dashboard() {
       <AccountPricingBanner />
       <SpGrantsBanner onOpenSettings={() => setShowSettings(true)} />
 
-      <header className="bg-white shadow">
+      <header className="sticky top-0 z-30 bg-white shadow">
         <div className="mx-auto max-w-7xl px-4 pt-8 pb-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-3 items-center gap-4">
             <div>
@@ -1116,7 +1106,6 @@ function Dashboard() {
       <SettingsDialog
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        onLaunchWizard={() => { setupStatusAbortRef.current?.abort(); setShowSettings(false); setShowSetupWizard(true); }}
         tabVisibility={tabVisibility}
         appSettings={appSettings}
         onTabVisibilityChange={(v) => {

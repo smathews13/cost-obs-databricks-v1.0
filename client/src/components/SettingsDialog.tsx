@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
+import { SetupWizard } from "./SetupWizard";
 
 export interface TabVisibility {
   dbu: boolean;
@@ -119,11 +120,10 @@ interface SettingsDialogProps {
   onSettingsChange: (settings: AppSettings) => void;
   tabVisibility: TabVisibility;
   appSettings: AppSettings;
-  onLaunchWizard: () => void;
 }
 
-export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings, onLaunchWizard }: SettingsDialogProps) {
-  const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "accuracy-checks" | "permissions" | "debugger">("general");
+export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings }: SettingsDialogProps) {
+  const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "accuracy-checks" | "permissions" | "debugger" | "setup">("general");
   const [localVisibility, setLocalVisibility] = useState<TabVisibility>(tabVisibility);
   const [localSettings, setLocalSettings] = useState<AppSettings>(appSettings);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -214,7 +214,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
   return createPortal(
     <div className="animate-backdrop fixed inset-0 z-50 overflow-y-auto bg-black/30" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="flex min-h-full items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div className="animate-dialog relative flex h-[40rem] w-full max-w-6xl flex-col rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="animate-dialog relative flex h-[40rem] w-full max-w-6xl flex-col rounded-lg bg-white shadow-xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div className="shrink-0 border-b border-gray-200 px-6 py-4">
             <div className="flex items-center justify-between">
@@ -275,18 +275,16 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                   Debugger
                 </button>
                 <button
-                  onClick={async () => {
-                    await fetch("/api/setup/rerun", { method: "POST" }).catch(() => {});
-                    localStorage.removeItem("coc-setup-complete");
-                    onClose();
-                    onLaunchWizard();
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50"
+                  onClick={() => setActiveSection("setup")}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    activeSection === "setup" ? "text-white" : "text-gray-600 hover:bg-gray-100"
+                  }`}
+                  style={activeSection === "setup" ? { backgroundColor: '#1B3139' } : {}}
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Re-run Setup Wizard
+                  Setup
                 </button>
               </div>
               <div className="relative group">
@@ -358,6 +356,9 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 }, 50);
               }} />
             )}
+            {activeSection === "setup" && (
+              <SetupWizard embedded onComplete={onClose} />
+            )}
           </div>
 
           {/* Footer */}
@@ -384,7 +385,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 Save Settings
               </button>
             )}
-            {(activeSection === "accuracy-checks" || activeSection === "permissions" || activeSection === "debugger") && (
+            {(activeSection === "accuracy-checks" || activeSection === "permissions" || activeSection === "debugger" || activeSection === "setup") && (
               <button
                 onClick={onClose}
                 className="btn-brand inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors"

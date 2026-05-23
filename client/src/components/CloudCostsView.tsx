@@ -1291,7 +1291,19 @@ export function CloudCostsView({
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Cloud Costs</h1>
-          <p className="text-sm text-gray-500">Estimated cloud infrastructure costs and cluster analytics</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm text-gray-500">Estimated cloud infrastructure costs and cluster analytics</p>
+            {workspaceIds && workspaceIds.length > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-xs font-medium text-green-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                {workspaceIds.length === 1
+                  ? (workspaceNameMap?.[workspaceIds[0]] || workspaceIds[0])
+                  : `${workspaceIds.length} workspaces`} · workspace filter applied
+              </span>
+            ) : (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Account-wide</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1905,8 +1917,9 @@ export function CloudCostsView({
               </tr>
             </tfoot>
           </table>
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
+        </div>
+        {totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
               <p className="text-sm text-gray-700">
                 Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
                 <span className="font-medium">{Math.min(endIndex, sortedClusters.length)}</span> of{" "}
@@ -1964,7 +1977,6 @@ export function CloudCostsView({
               </div>
             </div>
           )}
-        </div>
       </div>
 
       {/* Preload logos so they're instant when the modal opens */}

@@ -183,7 +183,7 @@ export function SettingsConfig({
               </svg>
               <h4 className="text-sm font-semibold text-gray-900">SQL Warehouse</h4>
               {appConfig?.warehouse?.source === "app_resource" && (
-                <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-medium text-blue-700" title="Set via DATABRICKS_WAREHOUSE_ID app resource binding in app.yaml">App resource binding</span>
+                <span className="inline-flex items-center rounded-full bg-gray-100 border border-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600" title="Set via DATABRICKS_WAREHOUSE_ID app resource binding in app.yaml">App resource binding</span>
               )}
               {appConfig?.warehouse?.source === "http_path" && (
                 <span className="inline-flex items-center rounded-full bg-gray-100 border border-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600" title="Set via DATABRICKS_HTTP_PATH env var">DATABRICKS_HTTP_PATH</span>
@@ -200,8 +200,8 @@ export function SettingsConfig({
                     <span className="text-sm font-medium text-gray-900">{appConfig.warehouse.name || appConfig.warehouse.id}</span>
                     <span className="text-xs text-gray-500">({appConfig.warehouse.size || "—"}) · {appConfig.warehouse.state}</span>
                   </div>
-                  <span className="shrink-0 rounded px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: '#FF362120', color: '#FF3621' }}>
-                    Active
+                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Active
                   </span>
                 </div>
               ) : (
@@ -279,7 +279,7 @@ export function SettingsConfig({
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-gray-500 w-10 shrink-0">Catalog</span>
-                    <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
+                    <span className="rounded-md bg-gray-100 border border-gray-200 px-2 py-0.5 text-xs font-mono font-medium text-gray-700">
                       {catalogInfo?.catalog ?? appConfig?.storage_location?.catalog ?? "—"}
                     </span>
                     {appConfig?.storage_location?.catalog_source === "env_var" && (
@@ -288,7 +288,7 @@ export function SettingsConfig({
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-gray-500 w-10 shrink-0">Schema</span>
-                    <span className="rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-xs font-mono font-medium text-orange-800">
+                    <span className="rounded-md bg-gray-100 border border-gray-200 px-2 py-0.5 text-xs font-mono font-medium text-gray-700">
                       {catalogInfo?.schema ?? appConfig?.storage_location?.schema ?? "—"}
                     </span>
                     {appConfig?.storage_location?.schema_source === "env_var" && (
@@ -469,7 +469,7 @@ export function SettingsConfig({
                           <td className="px-3 py-2 text-gray-500">
                             {t.table_type ? (
                               <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                t.table_type === "Materialized View" ? "bg-blue-50 text-blue-600" :
+                                t.table_type === "Materialized View" ? "bg-gray-100 text-gray-600" :
                                 t.table_type === "Telemetry" ? "bg-gray-100 text-gray-600" :
                                 "bg-gray-100 text-gray-500"
                               }`}>

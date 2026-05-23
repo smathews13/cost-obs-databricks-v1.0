@@ -87,6 +87,7 @@ export interface ExportData {
   useCases: UseCaseSummaryExport | undefined;
   alerts: RecentAlertsExport | undefined;
   dateRange: { start: string; end: string };
+  workspaceFilter?: { ids: string[]; names?: string[] };
 }
 
 export function generateCostReport(data: ExportData, sections?: ExportSections) {
@@ -154,7 +155,12 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
     yPos,
     { align: "center" }
   );
-  yPos += 15;
+  yPos += 5;
+  const wfLabel = data.workspaceFilter?.ids?.length
+    ? `Workspace filter: ${data.workspaceFilter.names?.length ? data.workspaceFilter.names.join(", ") : data.workspaceFilter.ids.join(", ")}`
+    : "Workspace filter: All workspaces (account-wide)";
+  doc.text(wfLabel, pageWidth / 2, yPos, { align: "center" });
+  yPos += 10;
 
   // Executive Summary
   if (includeSections.summary && data.summary) {

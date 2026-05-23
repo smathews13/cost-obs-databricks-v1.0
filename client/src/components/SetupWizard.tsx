@@ -6,6 +6,7 @@ import type { ReadinessResult } from "./settings/ReadinessChecks";
 interface SetupWizardProps {
   onComplete: () => void;
   onClose?: () => void;
+  embedded?: boolean;
 }
 
 interface ConfigData {
@@ -141,7 +142,7 @@ function PermissionErrorBlock({ error, onGranted }: { error: string; onGranted: 
   );
 }
 
-export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
+export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps) {
   const [step, setStep] = useState<WizardStep>("welcome");
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [cloud, setCloud] = useState<CloudData | null>(null);
@@ -414,11 +415,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
 
   const currentIdx = STEPS.indexOf(step);
 
-  return createPortal(
-    <div className="animate-backdrop fixed inset-0 z-50 overflow-y-auto bg-black/50">
-      <div className="flex min-h-full items-center justify-center p-4">
-      <div className="animate-dialog mx-4 w-full max-w-2xl rounded-xl bg-white shadow-2xl">
-        {/* Header */}
+  const wizardInner = (
+    <>
+        {/* Header — hidden in embedded mode (already inside App Settings dialog) */}
+        {!embedded && (
         <div className="relative rounded-t-xl px-8 py-6" style={{ backgroundColor: '#1B3139' }}>
           {onClose && (
             <button
@@ -433,6 +433,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
           <h2 className="text-xl font-bold text-white">Cost Observability & Control Setup</h2>
           <p className="mt-1 text-sm text-white/70">Configure your environment to get started</p>
         </div>
+        )}
 
         {/* Step indicator */}
         <div className="flex items-start border-b px-6 py-3" style={{ borderColor: '#E5E5E5' }}>
@@ -724,7 +725,19 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             )}
           </div>
         </div>
-      </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="flex flex-col overflow-y-auto">{wizardInner}</div>;
+  }
+
+  return createPortal(
+    <div className="animate-backdrop fixed inset-0 z-50 overflow-y-auto bg-black/50">
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className="animate-dialog mx-4 w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+          {wizardInner}
+        </div>
       </div>
     </div>,
     document.body

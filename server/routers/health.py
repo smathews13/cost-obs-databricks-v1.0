@@ -218,6 +218,8 @@ async def clear_cache(tab: str | None = None) -> dict[str, Any]:
 
     DELTA_TAB_PATTERNS: dict[str, str] = {
         "dbu":          "billing:",
+        "kpis":         "billing:",
+        "infra":        "billing:",
         "aiml":         "aiml:",
         "apps":         "apps:",
         "tagging":      "tagging:",

@@ -319,8 +319,11 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
       // is written (post-wizard), so it is NOT a reliable success signal here.
       // Use next_poll_ms hint from server (5s during active build, 30s idle).
       let pollTimeout: ReturnType<typeof setTimeout>;
+      let pollCancelled = false;
       const schedulePoll = async () => {
+        if (pollCancelled) return;
         const status = await pollSetupStatus();
+        if (pollCancelled) return;
         const taskStatus = status?.task?.status;
         if (taskStatus === "done") {
           setCreating(false);
@@ -338,6 +341,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
 
       // Safety timeout after 10 minutes
       setTimeout(() => {
+        pollCancelled = true;
         clearTimeout(pollTimeout);
         setCreating(false);
         setError("Table creation is taking longer than expected. Check /api/setup/status for progress.");

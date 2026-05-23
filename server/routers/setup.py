@@ -429,6 +429,7 @@ async def rerun_setup() -> dict[str, Any]:
     _create_task_state["error"] = None
     _create_task_state["started_at"] = None
     _create_task_state["elapsed_seconds"] = None
+    _create_task_state["table_progress"] = {}
 
     return {"ok": True}
 

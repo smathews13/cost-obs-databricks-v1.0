@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from server.db import execute_query, execute_queries_parallel, get_catalog_schema, get_host_url, get_workspace_client
+from server.db import execute_query, execute_queries_parallel, get_catalog_schema, get_host_url, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
 from server.queries import (
     ACCOUNT_INFO,
     AWS_COST_BY_INSTANCE_TYPE,
@@ -776,6 +776,12 @@ async def get_infra_bundle(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+
+    # Delta cross-worker cache
+    _dkey = bundle_cache_key("billing:infra-bundle", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
+
     _ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     # Billing-based summary query — matches KPI trend drill-downs exactly
@@ -906,7 +912,7 @@ async def get_infra_bundle(
                 "days_in_range": int(bs.get("days_in_range") or 0),
             }
 
-        return {
+        _resp = {
             "infra_costs": {
                 "cloud": cloud,
                 "cloud_display_name": get_cloud_display_name(cloud),
@@ -927,6 +933,8 @@ async def get_infra_bundle(
                 "end_date": params["end_date"],
             },
         }
+        delta_cache_put(_dkey, "billing:infra-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+        return _resp
     except Exception as e:
         logger.error(f"Infra bundle error: {e}")
         host = get_host_url()
@@ -1251,6 +1259,11 @@ async def get_dashboard_bundle_fast(
 
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
 
+    # Delta cross-worker cache — check before running any warehouse queries
+    _dkey = bundle_cache_key("billing:dashboard-bundle-fast", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
+
     # Build workspace filter — dropdown selection overrides env/file config.
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
     mv_ws = _mv_ws_clause(id_list)
@@ -1337,6 +1350,7 @@ async def get_dashboard_bundle_fast(
             if accurate_count > 0:
                 response["summary"]["workspace_count"] = accurate_count
 
+    delta_cache_put(_dkey, "billing:dashboard-bundle-fast", response, ttl_seconds=600 if id_list else 1800)
     return response
 
 
@@ -1993,6 +2007,12 @@ async def get_kpis_bundle(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+
+    # Delta cross-worker cache
+    _dkey = bundle_cache_key("billing:kpis-bundle", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
+
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     # Determine which KPI query to run
@@ -2117,7 +2137,7 @@ async def get_kpis_bundle(
             "change_percent": float(row.get("change_percent") or 0),
         })
 
-    return {
+    _kpis_resp = {
         "kpis": kpis_response,
         "anomalies": {
             "anomalies": anomalies,
@@ -2125,6 +2145,8 @@ async def get_kpis_bundle(
             "end_date": params["end_date"],
         },
     }
+    delta_cache_put(_dkey, "billing:kpis-bundle", _kpis_resp, ttl_seconds=600 if id_list else 1800)
+    return _kpis_resp
 
 
 @router.get("/kpi-trend")

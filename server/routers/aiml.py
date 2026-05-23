@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from server.db import execute_query, execute_queries_parallel
+from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
 
 
@@ -867,6 +867,11 @@ async def get_aiml_dashboard_bundle(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+
+    _dkey = bundle_cache_key("aiml:dashboard-bundle", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
+
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     def _ws(sql: str) -> str:
@@ -1016,7 +1021,7 @@ async def get_aiml_dashboard_bundle(
         for r in agent_bricks_data
     ]
 
-    return {
+    _resp = {
         "summary": summary,
         "providers": {"providers": providers, "total_spend": providers_total},
         "endpoints": {"endpoints": endpoints, "total_spend": endpoints_total},
@@ -1028,3 +1033,5 @@ async def get_aiml_dashboard_bundle(
         "start_date": params["start_date"],
         "end_date": params["end_date"],
     }
+    delta_cache_put(_dkey, "aiml:dashboard-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+    return _resp

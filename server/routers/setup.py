@@ -30,7 +30,7 @@ GENIE_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "genie_settings.json")
 SETUP_DONE_FILE = os.path.join(SETTINGS_DIR, "setup_done.json")
 
 # Simple in-process state for the background create-tables task
-_create_task_state: dict = {"status": "idle", "error": None, "started_at": None, "elapsed_seconds": None}  # idle | running | done | error
+_create_task_state: dict = {"status": "idle", "error": None, "started_at": None, "elapsed_seconds": None, "table_progress": {}}  # idle | running | done | error
 
 # Core billing tables — must exist for the dashboard to be functional.
 # Used by get_setup_status to gate the "ready" state.
@@ -241,6 +241,7 @@ async def get_setup_status() -> dict[str, Any]:
                 "missing_tables": [],
                 "status": "initializing",
                 "task": _create_task_state.copy(),
+                "next_poll_ms": 5000,
             }
 
     catalog, schema = get_catalog_schema()
@@ -255,6 +256,7 @@ async def get_setup_status() -> dict[str, Any]:
             "missing_tables": [],
             "status": "setup_required",
             "task": _create_task_state.copy(),
+            "next_poll_ms": 30000,
         }
 
     # Short-circuit: if the local flag is absent (e.g. container restart wiped
@@ -277,6 +279,7 @@ async def get_setup_status() -> dict[str, Any]:
                 "tables": {}, "all_tables_exist": False, "missing_tables": [],
                 "status": "ready", "tables_building": True,
                 "task": _create_task_state.copy(),
+                "next_poll_ms": 30000,
             }
 
     loop = _asyncio.get_running_loop()
@@ -312,6 +315,7 @@ async def get_setup_status() -> dict[str, Any]:
                 "missing_tables": missing,
                 "status": "setup_required",
                 "task": _create_task_state.copy(),
+                "next_poll_ms": 30000,
             }
 
     if not core_exist:
@@ -328,6 +332,7 @@ async def get_setup_status() -> dict[str, Any]:
             "status": "ready",
             "tables_building": True,
             "task": _create_task_state.copy(),
+            "next_poll_ms": 5000,
         }
 
     # Tables exist — but if a user OAuth token is present, re-run SP grants in the
@@ -360,6 +365,7 @@ async def get_setup_status() -> dict[str, Any]:
         "missing_tables": missing,
         "status": "ready",
         "task": _create_task_state.copy(),
+        "next_poll_ms": 30000,
     }
 
 
@@ -652,6 +658,7 @@ async def create_tables(
         _create_task_state["error"] = None
         _create_task_state["started_at"] = _time.monotonic()
         _create_task_state["elapsed_seconds"] = 0
+        _create_task_state["table_progress"] = {t: "pending" for t in _MV_TABLES}
         # Read the raw header token directly — _auth_mode may have been locked to "sp"
         # (e.g. after a scope error on a previous request), which forces _db_user_token
         # to "" even when x-forwarded-access-token IS present in the request.
@@ -738,7 +745,9 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
             )
 
         # Phase 2: Build — no user token in context; all queries run as SP.
-        results = create_materialized_views(catalog, schema)
+        def _on_table_event(table_name: str, event: str) -> None:
+            _create_task_state["table_progress"][table_name] = event
+        results = create_materialized_views(catalog, schema, on_table_event=_on_table_event)
         logger.info(f"Table creation completed: {results}")
 
         all_errors = {
@@ -834,8 +843,11 @@ async def refresh_tables(
 def _refresh_tables_task(catalog: str, schema: str):
     """Background task to refresh tables."""
     logger.info(f"Starting background table refresh for {catalog}.{schema}")
+    _create_task_state["table_progress"] = {t: "pending" for t in _MV_TABLES}
+    def _on_table_event(table_name: str, event: str) -> None:
+        _create_task_state["table_progress"][table_name] = event
     try:
-        results = refresh_materialized_views(catalog, schema)
+        results = refresh_materialized_views(catalog, schema, on_table_event=_on_table_event)
         logger.info(f"Table refresh completed: {results}")
         # Invalidate the billing module's MV availability cache so the next KPI
         # request re-detects the now-existing tables instead of serving zeros for

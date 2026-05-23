@@ -13,6 +13,7 @@ These tables should be refreshed daily via a scheduled job.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import date, timedelta
 
 from server.db import execute_query, get_catalog_schema, get_connection
@@ -28,7 +29,7 @@ COMMENT 'Pre-aggregated cost observability tables for fast dashboard queries'
 
 # Daily usage summary table - replaces BILLING_SUMMARY
 CREATE_DAILY_USAGE_SUMMARY = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.daily_usage_summary AS
+CREATE OR REPLACE TABLE {catalog}.{schema}.daily_usage_summary CLUSTER BY (usage_date, workspace_id) AS
 WITH usage_with_price AS (
   SELECT
     u.usage_date,
@@ -59,7 +60,7 @@ ORDER BY usage_date, workspace_id
 
 # Daily product breakdown table - replaces BILLING_BY_PRODUCT_FAST
 CREATE_DAILY_PRODUCT_BREAKDOWN = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.daily_product_breakdown AS
+CREATE OR REPLACE TABLE {catalog}.{schema}.daily_product_breakdown CLUSTER BY (usage_date, workspace_id) AS
 WITH usage_with_price AS (
   SELECT
     u.usage_date,
@@ -107,7 +108,7 @@ ORDER BY usage_date, workspace_id, product_category
 
 # Daily workspace breakdown table - replaces BILLING_BY_WORKSPACE
 CREATE_DAILY_WORKSPACE_BREAKDOWN = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.daily_workspace_breakdown AS
+CREATE OR REPLACE TABLE {catalog}.{schema}.daily_workspace_breakdown CLUSTER BY (usage_date, workspace_id) AS
 WITH usage_with_price AS (
   SELECT
     u.usage_date,
@@ -139,7 +140,7 @@ ORDER BY uwp.usage_date, uwp.workspace_id
 
 # SQL tool attribution (Genie vs DBSQL) - expensive query, pre-computed daily
 CREATE_SQL_TOOL_ATTRIBUTION = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.sql_tool_attribution AS
+CREATE OR REPLACE TABLE {catalog}.{schema}.sql_tool_attribution CLUSTER BY (usage_date, workspace_id) AS
 WITH sql_query_work AS (
   SELECT
     CASE
@@ -206,7 +207,7 @@ LEFT JOIN sql_usage s ON q.usage_date = s.usage_date AND q.workspace_id = s.work
 """
 
 CREATE_QUERY_STATS = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.daily_query_stats AS
+CREATE OR REPLACE TABLE {catalog}.{schema}.daily_query_stats CLUSTER BY (usage_date, workspace_id) AS
 SELECT
   DATE(start_time) as usage_date,
   workspace_id,
@@ -225,7 +226,7 @@ ORDER BY usage_date, workspace_id
 # DBSQL Cost Per Query Materialized View (Simplified Current Implementation)
 # Based on: https://github.com/databrickslabs/sandbox/tree/main/dbsql/cost_per_query/PrPr
 CREATE_DBSQL_COST_PER_QUERY = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.dbsql_cost_per_query AS
+CREATE OR REPLACE TABLE {catalog}.{schema}.dbsql_cost_per_query CLUSTER BY (query_date, workspace_id) AS
 WITH
 -- Get hourly DBU usage per warehouse from billing
 warehouse_hourly_usage AS (
@@ -367,7 +368,8 @@ SELECT
     WHEN query_source_type = 'SQL QUERY' AND query_source_id IS NOT NULL THEN
       CONCAT('https://DATABRICKS_HOST/editor/queries/', query_source_id)
     ELSE NULL
-  END AS url_helper
+  END AS url_helper,
+  DATE(start_time) AS query_date
 FROM query_costs
 WHERE query_attributed_dollars_estimation > 0
    OR query_attributed_dbus_estimation > 0
@@ -811,7 +813,482 @@ GROUP BY qq.statement_id
 """
 
 
-def create_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180) -> dict:
+# Step 3: Refresh-state tracking table
+CREATE_MV_REFRESH_STATE = """
+CREATE TABLE IF NOT EXISTS `{catalog}`.`{schema}`.`app_mv_refresh_state` (
+  table_name STRING NOT NULL,
+  last_refresh_at TIMESTAMP,
+  last_source_watermark DATE,
+  reprocess_window_days INT,
+  refresh_count BIGINT
+)
+CLUSTER BY (table_name)
+"""
+
+# Step 4: Per-table incremental refresh configuration
+_TABLE_REFRESH_CONFIG: dict[str, dict] = {
+    "daily_usage_summary": {
+        "reprocess_days": 14,
+        "pk": ["usage_date", "workspace_id"],
+        "source_date_col": "usage_date",
+        "overlap_days": 0,
+    },
+    "daily_product_breakdown": {
+        "reprocess_days": 14,
+        "pk": ["usage_date", "workspace_id", "product_category"],
+        "source_date_col": "usage_date",
+        "overlap_days": 0,
+    },
+    "daily_workspace_breakdown": {
+        "reprocess_days": 14,
+        "pk": ["usage_date", "workspace_id"],
+        "source_date_col": "usage_date",
+        "overlap_days": 0,
+    },
+    "sql_tool_attribution": {
+        "reprocess_days": 7,
+        "pk": ["usage_date", "workspace_id", "warehouse_id", "sql_product"],
+        "source_date_col": "usage_date",
+        "overlap_days": 0,
+    },
+    "daily_query_stats": {
+        "reprocess_days": 7,
+        "pk": ["usage_date", "workspace_id"],
+        "source_date_col": "usage_date",
+        "overlap_days": 0,
+    },
+    "dbsql_cost_per_query": {
+        "reprocess_days": 5,
+        "pk": ["statement_id"],
+        "source_date_col": "query_date",
+        "overlap_days": 1,
+    },
+}
+
+_OPTIMIZE_EVERY_N_REFRESHES = 12
+
+# Step 6: MERGE templates for incremental refresh
+
+MERGE_DAILY_USAGE_SUMMARY = """
+MERGE INTO `{catalog}`.`{schema}`.`daily_usage_summary` AS tgt
+USING (
+  WITH usage_with_price AS (
+    SELECT
+      u.usage_date,
+      u.workspace_id,
+      u.sku_name,
+      u.billing_origin_product,
+      u.usage_quantity,
+      COALESCE(p.pricing.default, 0) as price_per_dbu,
+      COALESCE(p.pricing.effective_list.default, p.pricing.default, 0) as effective_price_per_dbu
+    FROM system.billing.usage u
+    LEFT JOIN system.billing.list_prices p
+      ON u.sku_name = p.sku_name
+      AND u.cloud = p.cloud
+      AND p.price_end_time IS NULL
+    WHERE u.usage_date >= DATE('{reprocess_start}')
+      AND u.usage_date <= CURRENT_DATE()
+      AND u.usage_quantity > 0
+  )
+  SELECT
+    usage_date,
+    workspace_id,
+    SUM(usage_quantity) as total_dbus,
+    SUM(usage_quantity * price_per_dbu) as total_spend,
+    SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend
+  FROM usage_with_price
+  GROUP BY usage_date, workspace_id
+) AS src
+ON tgt.usage_date = src.usage_date AND tgt.workspace_id = src.workspace_id
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED BY TARGET THEN INSERT *
+"""
+
+MERGE_DAILY_PRODUCT_BREAKDOWN = """
+MERGE INTO `{catalog}`.`{schema}`.`daily_product_breakdown` AS tgt
+USING (
+  WITH usage_with_price AS (
+    SELECT
+      u.usage_date,
+      u.workspace_id,
+      u.sku_name,
+      u.billing_origin_product,
+      u.usage_quantity,
+      u.usage_metadata,
+      COALESCE(p.pricing.default, 0) as price_per_dbu,
+      COALESCE(p.pricing.effective_list.default, p.pricing.default, 0) as effective_price_per_dbu,
+      CASE
+        WHEN u.billing_origin_product = 'SQL' THEN 'SQL'
+        WHEN u.billing_origin_product = 'DLT' OR u.usage_metadata.dlt_pipeline_id IS NOT NULL THEN 'ETL - Streaming'
+        WHEN u.billing_origin_product = 'JOBS' THEN 'ETL - Batch'
+        WHEN u.sku_name LIKE '%ALL_PURPOSE%' THEN 'Interactive'
+        WHEN u.billing_origin_product = 'SERVING' OR u.billing_origin_product = 'MODEL_SERVING'
+             OR u.sku_name LIKE '%SERVING%' OR u.sku_name LIKE '%INFERENCE%'
+             OR u.sku_name LIKE '%PROVISIONED_THROUGHPUT%' THEN 'Model Serving'
+        WHEN u.sku_name LIKE '%VECTOR_SEARCH%' THEN 'Vector Search'
+        WHEN u.sku_name LIKE '%FOUNDATION_MODEL%' OR u.sku_name LIKE '%FINE_TUNING%' THEN 'Fine-Tuning'
+        WHEN u.sku_name LIKE '%AI_BI%' OR u.sku_name LIKE '%AI_QUERY%'
+             OR u.sku_name LIKE '%AI_FUNCTIONS%' THEN 'AI Functions'
+        WHEN u.sku_name LIKE '%SERVERLESS%' AND u.billing_origin_product NOT IN ('JOBS', 'SQL', 'DLT') THEN 'Serverless'
+        ELSE 'Other'
+      END as product_category
+    FROM system.billing.usage u
+    LEFT JOIN system.billing.list_prices p
+      ON u.sku_name = p.sku_name
+      AND u.cloud = p.cloud
+      AND p.price_end_time IS NULL
+    WHERE u.usage_date >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+      AND u.usage_date >= DATE('{reprocess_start}')
+      AND u.usage_quantity > 0
+  )
+  SELECT
+    usage_date,
+    workspace_id,
+    product_category,
+    SUM(usage_quantity) as total_dbus,
+    SUM(usage_quantity * price_per_dbu) as total_spend,
+    SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend
+  FROM usage_with_price
+  GROUP BY usage_date, workspace_id, product_category
+) AS src
+ON tgt.usage_date = src.usage_date AND tgt.workspace_id = src.workspace_id AND tgt.product_category = src.product_category
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED BY TARGET THEN INSERT *
+"""
+
+MERGE_DAILY_WORKSPACE_BREAKDOWN = """
+MERGE INTO `{catalog}`.`{schema}`.`daily_workspace_breakdown` AS tgt
+USING (
+  WITH usage_with_price AS (
+    SELECT
+      u.usage_date,
+      u.workspace_id,
+      u.sku_name,
+      u.usage_quantity,
+      COALESCE(p.pricing.default, 0) as price_per_dbu,
+      COALESCE(p.pricing.effective_list.default, p.pricing.default, 0) as effective_price_per_dbu
+    FROM system.billing.usage u
+    LEFT JOIN system.billing.list_prices p
+      ON u.sku_name = p.sku_name
+      AND u.cloud = p.cloud
+      AND p.price_end_time IS NULL
+    WHERE u.usage_date >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+      AND u.usage_date >= DATE('{reprocess_start}')
+      AND u.usage_quantity > 0
+  )
+  SELECT
+    uwp.usage_date,
+    uwp.workspace_id,
+    ws.workspace_name,
+    SUM(uwp.usage_quantity) as total_dbus,
+    SUM(uwp.usage_quantity * uwp.price_per_dbu) as total_spend,
+    SUM(uwp.usage_quantity * uwp.effective_price_per_dbu) as effective_list_spend
+  FROM usage_with_price uwp
+  LEFT JOIN system.access.workspaces_latest ws ON uwp.workspace_id = ws.workspace_id
+  GROUP BY uwp.usage_date, uwp.workspace_id, ws.workspace_name
+) AS src
+ON tgt.usage_date = src.usage_date AND tgt.workspace_id = src.workspace_id
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED BY TARGET THEN INSERT *
+"""
+
+MERGE_SQL_TOOL_ATTRIBUTION = """
+MERGE INTO `{catalog}`.`{schema}`.`sql_tool_attribution` AS tgt
+USING (
+  WITH sql_query_work AS (
+    SELECT
+      CASE
+        WHEN client_application LIKE '%Genie%' THEN 'Genie'
+        ELSE 'DBSQL'
+      END AS sql_product,
+      DATE(start_time) AS usage_date,
+      workspace_id,
+      compute.warehouse_id AS warehouse_id,
+      SUM(total_task_duration_ms) AS work_ms
+    FROM system.query.history
+    WHERE executed_as_user_id IS NOT NULL
+      AND compute.warehouse_id IS NOT NULL
+      AND DATE(start_time) >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+      AND DATE(start_time) >= DATE('{reprocess_start}')
+    GROUP BY 1, 2, 3, 4
+  ),
+  sql_usage AS (
+    SELECT
+      u.usage_date,
+      u.workspace_id,
+      u.usage_metadata.warehouse_id as warehouse_id,
+      SUM(u.usage_quantity) as total_dbus,
+      SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) as total_spend,
+      SUM(u.usage_quantity * COALESCE(p.pricing.effective_list.default, p.pricing.default, 0)) as effective_list_spend
+    FROM system.billing.usage u
+    LEFT JOIN system.billing.list_prices p
+      ON u.sku_name = p.sku_name
+      AND u.cloud = p.cloud
+      AND p.price_end_time IS NULL
+    WHERE u.billing_origin_product = 'SQL'
+      AND u.usage_date >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+      AND u.usage_date >= DATE('{reprocess_start}')
+      AND u.usage_quantity > 0
+    GROUP BY 1, 2, 3
+  ),
+  warehouse_totals AS (
+    SELECT
+      usage_date,
+      workspace_id,
+      warehouse_id,
+      SUM(work_ms) as total_work_ms
+    FROM sql_query_work
+    GROUP BY usage_date, workspace_id, warehouse_id
+  )
+  SELECT
+    q.sql_product,
+    q.usage_date,
+    q.workspace_id,
+    q.warehouse_id,
+    CASE
+      WHEN w.total_work_ms > 0 THEN (q.work_ms / w.total_work_ms) * s.total_dbus
+      ELSE 0
+    END as attributed_dbus,
+    CASE
+      WHEN w.total_work_ms > 0 THEN (q.work_ms / w.total_work_ms) * s.total_spend
+      ELSE 0
+    END as attributed_spend,
+    CASE
+      WHEN w.total_work_ms > 0 THEN (q.work_ms / w.total_work_ms) * s.effective_list_spend
+      ELSE 0
+    END as attributed_effective_list_spend
+  FROM sql_query_work q
+  JOIN warehouse_totals w ON q.usage_date = w.usage_date AND q.workspace_id = w.workspace_id AND q.warehouse_id = w.warehouse_id
+  LEFT JOIN sql_usage s ON q.usage_date = s.usage_date AND q.workspace_id = s.workspace_id AND q.warehouse_id = s.warehouse_id
+) AS src
+ON tgt.usage_date = src.usage_date AND tgt.workspace_id = src.workspace_id AND tgt.warehouse_id = src.warehouse_id AND tgt.sql_product = src.sql_product
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED BY TARGET THEN INSERT *
+"""
+
+MERGE_QUERY_STATS = """
+MERGE INTO `{catalog}`.`{schema}`.`daily_query_stats` AS tgt
+USING (
+  SELECT
+    DATE(start_time) as usage_date,
+    workspace_id,
+    COUNT(*) as total_queries,
+    COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) as unique_query_users,
+    SUM(COALESCE(read_rows, 0)) as total_rows_read,
+    SUM(COALESCE(read_bytes, 0)) as total_bytes_read,
+    SUM(COALESCE(total_task_duration_ms, 0)) / 1000.0 as total_compute_seconds
+  FROM system.query.history
+  WHERE DATE(start_time) >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+    AND DATE(start_time) >= DATE('{reprocess_start}')
+  GROUP BY DATE(start_time), workspace_id
+) AS src
+ON tgt.usage_date = src.usage_date AND tgt.workspace_id = src.workspace_id
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED BY TARGET THEN INSERT *
+"""
+
+MERGE_DBSQL_COST_PER_QUERY = """
+MERGE INTO `{catalog}`.`{schema}`.`dbsql_cost_per_query` AS tgt
+USING (
+  WITH
+  warehouse_hourly_usage AS (
+    SELECT
+      DATE_TRUNC('hour', u.usage_start_time) AS hour_bucket,
+      u.usage_metadata.warehouse_id AS warehouse_id,
+      SUM(u.usage_quantity) AS hourly_dbus,
+      SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS hourly_dollars,
+      SUM(u.usage_quantity * COALESCE(p.pricing.effective_list.default, p.pricing.default, 0)) AS hourly_dollars_effective
+    FROM system.billing.usage u
+    LEFT JOIN system.billing.list_prices p
+      ON u.sku_name = p.sku_name
+      AND u.cloud = p.cloud
+      AND p.price_end_time IS NULL
+    WHERE u.billing_origin_product = 'SQL'
+      AND u.usage_metadata.warehouse_id IS NOT NULL
+      AND u.usage_start_time >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+      AND u.usage_start_time >= DATE('{reprocess_start}') - INTERVAL 1 DAY
+    GROUP BY 1, 2
+  ),
+  queries_with_details AS (
+    SELECT
+      q.statement_id,
+      q.statement_text,
+      COALESCE(q.executed_by, q.executed_as_user_id) AS executed_by,
+      q.compute.warehouse_id AS warehouse_id,
+      q.workspace_id,
+      q.start_time,
+      q.end_time,
+      (UNIX_TIMESTAMP(q.end_time) - UNIX_TIMESTAMP(q.start_time)) AS duration_seconds,
+      q.total_task_duration_ms,
+      q.client_application,
+      CASE
+        WHEN q.client_application LIKE '%genie%' OR q.client_application LIKE '%Genie%' THEN 'GENIE SPACE'
+        WHEN q.client_application LIKE '%dashboard%' OR q.client_application LIKE '%Dashboard%' THEN
+          CASE
+            WHEN q.client_application LIKE '%lakeview%' OR q.client_application LIKE '%aibi%' THEN 'AI/BI DASHBOARD'
+            ELSE 'LEGACY DASHBOARD'
+          END
+        WHEN q.client_application LIKE '%notebook%' OR q.client_application LIKE '%Notebook%' THEN 'NOTEBOOK'
+        WHEN q.client_application LIKE '%job%' OR q.client_application LIKE '%Job%' OR q.statement_type = 'JOB' THEN 'JOB'
+        WHEN q.client_application LIKE '%alert%' OR q.client_application LIKE '%Alert%' THEN 'ALERT'
+        WHEN q.client_application LIKE '%sql-editor%' OR q.client_application LIKE '%SQL Editor%' THEN 'SQL QUERY'
+        ELSE 'SQL QUERY'
+      END AS query_source_type,
+      CASE
+        WHEN q.client_application LIKE '%genie%' THEN REGEXP_EXTRACT(q.client_application, 'genie[/-]([a-zA-Z0-9-]+)', 1)
+        WHEN q.client_application LIKE '%dashboard%' THEN REGEXP_EXTRACT(q.client_application, 'dashboard[/-]([a-zA-Z0-9-]+)', 1)
+        ELSE NULL
+      END AS query_source_id
+    FROM system.query.history q
+    WHERE q.compute.warehouse_id IS NOT NULL
+      AND q.start_time >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+      AND q.start_time >= DATE('{reprocess_start}') - INTERVAL 1 DAY
+      AND q.statement_type != 'CANCEL'
+      AND (q.executed_by IS NOT NULL OR q.executed_as_user_id IS NOT NULL)
+  ),
+  warehouse_hourly_work AS (
+    SELECT
+      DATE_TRUNC('hour', start_time) AS hour_bucket,
+      warehouse_id,
+      SUM(COALESCE(total_task_duration_ms, duration_seconds * 1000)) AS total_work_ms
+    FROM queries_with_details
+    GROUP BY 1, 2
+  ),
+  query_costs AS (
+    SELECT
+      q.statement_id,
+      q.statement_text,
+      q.executed_by,
+      q.warehouse_id,
+      q.workspace_id,
+      q.start_time,
+      q.end_time,
+      q.duration_seconds,
+      q.client_application,
+      q.query_source_type,
+      q.query_source_id,
+      q.total_task_duration_ms,
+      DATE_TRUNC('hour', q.start_time) AS query_hour,
+      CASE
+        WHEN w.total_work_ms > 0 THEN
+          (COALESCE(q.total_task_duration_ms, q.duration_seconds * 1000) / w.total_work_ms) * h.hourly_dbus
+        ELSE 0
+      END AS query_attributed_dbus_estimation,
+      CASE
+        WHEN w.total_work_ms > 0 THEN
+          (COALESCE(q.total_task_duration_ms, q.duration_seconds * 1000) / w.total_work_ms) * h.hourly_dollars
+        ELSE 0
+      END AS query_attributed_dollars_estimation,
+      CASE
+        WHEN w.total_work_ms > 0 THEN
+          (COALESCE(q.total_task_duration_ms, q.duration_seconds * 1000) / w.total_work_ms) * h.hourly_dollars_effective
+        ELSE 0
+      END AS query_attributed_dollars_effective
+    FROM queries_with_details q
+    LEFT JOIN warehouse_hourly_work w
+      ON DATE_TRUNC('hour', q.start_time) = w.hour_bucket
+      AND q.warehouse_id = w.warehouse_id
+    LEFT JOIN warehouse_hourly_usage h
+      ON DATE_TRUNC('hour', q.start_time) = h.hour_bucket
+      AND q.warehouse_id = h.warehouse_id
+  )
+  SELECT
+    statement_id,
+    query_source_id,
+    query_source_type,
+    client_application,
+    executed_by,
+    warehouse_id,
+    statement_text,
+    CAST(workspace_id AS STRING) AS workspace_id,
+    start_time,
+    end_time,
+    duration_seconds,
+    query_attributed_dollars_estimation,
+    query_attributed_dbus_estimation,
+    CONCAT(
+      'https://DATABRICKS_HOST/sql/history?o=',
+      CAST(workspace_id AS STRING),
+      '&queryId=',
+      statement_id,
+      '&queryStartTimeMs=',
+      CAST(UNIX_TIMESTAMP(start_time) * 1000 AS BIGINT)
+    ) AS query_profile_url,
+    CASE
+      WHEN query_source_type = 'GENIE SPACE' AND query_source_id IS NOT NULL THEN
+        CONCAT('https://DATABRICKS_HOST/genie/rooms/', query_source_id)
+      WHEN query_source_type = 'AI/BI DASHBOARD' AND query_source_id IS NOT NULL THEN
+        CONCAT('https://DATABRICKS_HOST/sql/dashboardsv3/', query_source_id)
+      WHEN query_source_type = 'LEGACY DASHBOARD' AND query_source_id IS NOT NULL THEN
+        CONCAT('https://DATABRICKS_HOST/sql/dashboards/', query_source_id)
+      WHEN query_source_type = 'SQL QUERY' AND query_source_id IS NOT NULL THEN
+        CONCAT('https://DATABRICKS_HOST/editor/queries/', query_source_id)
+      ELSE NULL
+    END AS url_helper,
+    DATE(start_time) AS query_date
+  FROM query_costs
+  WHERE query_attributed_dollars_estimation > 0
+     OR query_attributed_dbus_estimation > 0
+     OR duration_seconds > 0
+  ORDER BY start_time DESC
+) AS src
+ON tgt.statement_id = src.statement_id
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED BY TARGET THEN INSERT *
+"""
+
+
+# Step 5: Helper functions for incremental refresh
+
+def _ensure_refresh_state_table(catalog: str, schema: str) -> None:
+    """Create app_mv_refresh_state tracking table if it doesn't exist."""
+    try:
+        execute_query(CREATE_MV_REFRESH_STATE.format(catalog=catalog, schema=schema))
+    except Exception as e:
+        logger.warning("Could not create app_mv_refresh_state (non-fatal): %s", e)
+
+
+def _get_refresh_state(catalog: str, schema: str, table_name: str) -> dict | None:
+    """Return current refresh state for a table, or None if no state exists."""
+    try:
+        rows = execute_query(
+            f"SELECT last_source_watermark, refresh_count "
+            f"FROM `{catalog}`.`{schema}`.`app_mv_refresh_state` "
+            f"WHERE table_name = '{table_name}' LIMIT 1"
+        )
+        if rows:
+            return {
+                "watermark": rows[0].get("last_source_watermark"),
+                "refresh_count": int(rows[0].get("refresh_count") or 0),
+            }
+    except Exception:
+        pass
+    return None
+
+
+def _update_refresh_state(catalog: str, schema: str, table_name: str, refresh_count: int) -> None:
+    """Upsert refresh state after a successful table refresh."""
+    try:
+        cfg = _TABLE_REFRESH_CONFIG.get(table_name, {})
+        reprocess_days = cfg.get("reprocess_days", 14)
+        execute_query(
+            f"""MERGE INTO `{catalog}`.`{schema}`.`app_mv_refresh_state` AS tgt
+            USING (SELECT
+                '{table_name}' AS table_name,
+                CURRENT_TIMESTAMP() AS last_refresh_at,
+                CURRENT_DATE() AS last_source_watermark,
+                {reprocess_days} AS reprocess_window_days,
+                {refresh_count} AS refresh_count
+            ) AS src
+            ON tgt.table_name = src.table_name
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED BY TARGET THEN INSERT *"""
+        )
+    except Exception as e:
+        logger.warning("Could not update refresh state for %s (non-fatal): %s", table_name, e)
+
+
+def create_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None) -> dict:
     """Create all materialized view tables.
 
     Args:
@@ -939,6 +1416,12 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
             results["schema"] = f"error: {err_str}"
         return results  # Can't continue without schema
 
+    # Ensure incremental refresh state table exists (non-fatal if it fails)
+    try:
+        _ensure_refresh_state_table(catalog, schema)
+    except Exception as _rse:
+        logger.warning("_ensure_refresh_state_table failed (non-fatal): %s", _rse)
+
     # List of tables to create
     tables = [
         ("daily_usage_summary", CREATE_DAILY_USAGE_SUMMARY),
@@ -955,16 +1438,71 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
     import time as _time
 
     def _create_table(table_name: str, create_sql: str) -> tuple[str, str, float]:
+        from datetime import timedelta as _td
         t0 = _time.monotonic()
+        if on_table_event:
+            on_table_event(table_name, "running")
         try:
-            logger.info(f"Creating table {catalog}.{schema}.{table_name}...")
+            logger.info(f"Refreshing table {catalog}.{schema}.{table_name}...")
+            cfg = _TABLE_REFRESH_CONFIG.get(table_name, {})
+            state = _get_refresh_state(catalog, schema, table_name)
+
+            if state and state.get("watermark"):
+                # Incremental path: MERGE reprocess window
+                reprocess_days = cfg.get("reprocess_days", 14)
+                overlap_days = cfg.get("overlap_days", 0)
+                reprocess_start = date.today() - _td(days=reprocess_days + overlap_days)
+
+                merge_sql_map = {
+                    "daily_usage_summary": MERGE_DAILY_USAGE_SUMMARY,
+                    "daily_product_breakdown": MERGE_DAILY_PRODUCT_BREAKDOWN,
+                    "daily_workspace_breakdown": MERGE_DAILY_WORKSPACE_BREAKDOWN,
+                    "sql_tool_attribution": MERGE_SQL_TOOL_ATTRIBUTION,
+                    "daily_query_stats": MERGE_QUERY_STATS,
+                    "dbsql_cost_per_query": MERGE_DBSQL_COST_PER_QUERY,
+                }
+                merge_sql = merge_sql_map.get(table_name)
+
+                if merge_sql:
+                    try:
+                        execute_query(merge_sql.format(
+                            catalog=catalog, schema=schema,
+                            reprocess_start=str(reprocess_start),
+                            billing_lookback_days=lookback_days,
+                        ))
+                        new_count = state["refresh_count"] + 1
+                        _update_refresh_state(catalog, schema, table_name, new_count)
+
+                        # Periodic OPTIMIZE
+                        if new_count % _OPTIMIZE_EVERY_N_REFRESHES == 0:
+                            try:
+                                logger.info(f"Running OPTIMIZE on {table_name} (refresh #{new_count})")
+                                execute_query(f"OPTIMIZE `{catalog}`.`{schema}`.`{table_name}`")
+                            except Exception as opt_e:
+                                logger.warning("OPTIMIZE %s failed (non-fatal): %s", table_name, opt_e)
+
+                        elapsed = _time.monotonic() - t0
+                        logger.info(f"✓ {table_name} incremental refresh done in {elapsed:.1f}s (window: {reprocess_start})")
+                        if on_table_event:
+                            on_table_event(table_name, "done")
+                        return table_name, "refreshed", elapsed
+                    except Exception as merge_e:
+                        logger.warning(f"Incremental MERGE failed for {table_name}, falling back to full rebuild: {merge_e}")
+                        # fall through to full rebuild below
+
+            # Full rebuild path (bootstrap or fallback)
             execute_query(create_sql.format(catalog=catalog, schema=schema, billing_lookback_days=lookback_days))
+            _update_refresh_state(catalog, schema, table_name, 1)
             elapsed = _time.monotonic() - t0
-            logger.info(f"✓ {table_name} created successfully in {elapsed:.1f}s")
+            logger.info(f"✓ {table_name} full rebuild done in {elapsed:.1f}s")
+            if on_table_event:
+                on_table_event(table_name, "done")
             return table_name, "created", elapsed
         except Exception as e:
             elapsed = _time.monotonic() - t0
-            logger.error(f"✗ Failed to create {table_name}: {e}")
+            logger.error(f"✗ Failed to refresh {table_name}: {e}")
+            if on_table_event:
+                on_table_event(table_name, "error")
             return table_name, f"error: {e}", elapsed
 
     mv_timings: dict[str, float] = {}
@@ -980,9 +1518,9 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
     return results
 
 
-def refresh_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180) -> dict:
+def refresh_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None) -> dict:
     """Refresh all materialized view tables (same as create - full refresh)."""
-    return create_materialized_views(catalog, schema, lookback_days=lookback_days)
+    return create_materialized_views(catalog, schema, lookback_days=lookback_days, on_table_event=on_table_event)
 
 
 def drop_materialized_views(catalog: str | None = None, schema: str | None = None) -> dict:

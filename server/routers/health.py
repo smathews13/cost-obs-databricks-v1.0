@@ -55,6 +55,58 @@ async def detailed_health_check() -> dict[str, Any]:
     return checks
 
 
+@router.get("/health/sql-warehouse")
+async def get_sql_warehouse_status() -> dict[str, Any]:
+    """Check if the SQL warehouse is warm, starting, or unavailable.
+
+    Decision order:
+    1. Warehouse REST API state (no SQL connection needed, instant)
+    2. SQL SELECT 1 probe with 5s timeout (fallback if REST unavailable)
+
+    Returns:
+        status: "warm" | "warming_up" | "unavailable"
+        state:  raw warehouse state string (or None if API unavailable)
+        latency_ms: SQL probe latency in ms (only set when probe was used)
+        warehouse_id: warehouse ID being checked (or None if not configured)
+    """
+    import os
+    import time as _time
+
+    http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
+    warehouse_id = http_path.split("/")[-1] if http_path and "/" in http_path else None
+
+    # ── 1. Try warehouse REST API state ──────────────────────────────────────
+    if warehouse_id:
+        try:
+            from server.db import get_workspace_client
+            wh = get_workspace_client().warehouses.get(warehouse_id)
+            raw_state = str(wh.state.value) if wh.state else "UNKNOWN"
+            warming_states = {"STOPPED", "STOPPING", "STARTING", "DELETING", "DELETED"}
+            if raw_state.upper() in warming_states:
+                return {"status": "warming_up", "state": raw_state, "latency_ms": None, "warehouse_id": warehouse_id}
+            if raw_state.upper() == "RUNNING":
+                return {"status": "warm", "state": raw_state, "latency_ms": None, "warehouse_id": warehouse_id}
+        except Exception as e:
+            logger.debug("Warehouse REST check failed, trying SQL probe: %s", e)
+
+    # ── 2. SQL probe fallback ─────────────────────────────────────────────────
+    try:
+        from server.db import execute_query
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        t0 = _time.monotonic()
+
+        def _probe():
+            execute_query("SELECT 1 AS probe", no_cache=True)
+
+        await asyncio.wait_for(loop.run_in_executor(None, _probe), timeout=5.0)
+        latency_ms = round((_time.monotonic() - t0) * 1000, 1)
+        return {"status": "warm", "state": None, "latency_ms": latency_ms, "warehouse_id": warehouse_id}
+    except Exception:
+        return {"status": "warming_up", "state": None, "latency_ms": None, "warehouse_id": warehouse_id}
+
+
 async def _check_database() -> dict[str, Any]:
     """Test database connectivity."""
     try:
@@ -149,7 +201,7 @@ async def clear_cache(tab: str | None = None) -> dict[str, Any]:
       alerts       → clears alerts queries
       (none)       → clears entire cache
     """
-    from server.db import clear_query_cache
+    from server.db import clear_query_cache, delta_cache_invalidate
 
     TAB_PATTERNS: dict[str, list[str]] = {
         "dbu":          ["dashboard-bundle-fast"],
@@ -164,13 +216,25 @@ async def clear_cache(tab: str | None = None) -> dict[str, Any]:
         "alerts":       ["alerts"],
     }
 
+    DELTA_TAB_PATTERNS: dict[str, str] = {
+        "dbu":          "billing:",
+        "aiml":         "aiml:",
+        "apps":         "apps:",
+        "tagging":      "tagging:",
+        "sql":          "dbsql:",
+        "users-groups": "users:",
+    }
+
     if tab and tab in TAB_PATTERNS:
         cleared = 0
         for pattern in TAB_PATTERNS[tab]:
             cleared += clear_query_cache(pattern)
+        if tab in DELTA_TAB_PATTERNS:
+            delta_cache_invalidate(DELTA_TAB_PATTERNS[tab])
         return {"status": "ok", "tab": tab, "cleared": cleared}
     else:
         cleared = clear_query_cache()
+        delta_cache_invalidate()
         return {"status": "ok", "tab": "all", "cleared": cleared}
 
 

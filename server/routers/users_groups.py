@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
-from server.db import execute_query, execute_queries_parallel, get_workspace_client
+from server.db import execute_query, execute_queries_parallel, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
 from server.email_service import send_alert_email
 
@@ -439,6 +439,9 @@ async def get_users_groups_bundle(
 
     params = {"start_date": start_date, "end_date": end_date}
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    _dkey = bundle_cache_key("users:dashboard-bundle", start_date, end_date, id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     def _ws(sql: str) -> str:
@@ -558,7 +561,7 @@ async def get_users_groups_bundle(
         for r in growth_rows
     ]
 
-    return {
+    _resp = {
         "summary": summary,
         "top_users": top_users,
         "timeseries": timeseries,
@@ -568,6 +571,8 @@ async def get_users_groups_bundle(
         "start_date": start_date,
         "end_date": end_date,
     }
+    delta_cache_put(_dkey, "users:dashboard-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+    return _resp
 
 
 @router.get("/user-growth")

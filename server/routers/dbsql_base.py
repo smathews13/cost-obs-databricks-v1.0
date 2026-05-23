@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from server.db import execute_query, get_catalog_schema, get_host_url
+from server.db import execute_query, get_catalog_schema, get_host_url, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
 
 logger = logging.getLogger(__name__)
@@ -599,6 +599,11 @@ def create_dbsql_router(table_name: str) -> APIRouter:
                 "end_date": end_date,
             }
 
+        id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+        _dkey = bundle_cache_key(f"dbsql:{table_name}:dashboard-bundle", start_date, end_date, id_list)
+        if (_dcached := delta_cache_get(_dkey)) is not None:
+            return _dcached
+
         summary, by_source, by_user, by_warehouse, top_queries, timeseries, wh_type_ts = await asyncio.gather(
             get_summary(start_date, end_date, workspace_ids),
             get_by_source(start_date, end_date, workspace_ids),
@@ -609,7 +614,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             get_warehouse_type_timeseries(start_date, end_date),
         )
 
-        return {
+        _resp = {
             "available": True,
             "summary": summary,
             "by_source": by_source,
@@ -621,6 +626,8 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             "start_date": start_date,
             "end_date": end_date,
         }
+        delta_cache_put(_dkey, f"dbsql:{table_name}:dashboard-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+        return _resp
 
     # Expose check_mv_status for prpr-specific endpoints
     router.check_mv_status = check_mv_status  # type: ignore[attr-defined]

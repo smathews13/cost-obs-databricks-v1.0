@@ -27,7 +27,8 @@ interface SetupStatus {
   all_tables_exist: boolean;
   missing_tables: string[];
   status: "ready" | "setup_required";
-  task?: { status: string; error: string | null };
+  task?: { status: string; error: string | null; table_progress?: Record<string, string> };
+  next_poll_ms?: number;
 }
 
 type WizardStep = "welcome" | "storage-location" | "permissions" | "create-tables" | "workspace-filter" | "complete";
@@ -316,24 +317,28 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
       // Poll for completion — use task.status as the authority.
       // The status endpoint returns all_tables_exist=false until setup_done.json
       // is written (post-wizard), so it is NOT a reliable success signal here.
-      const poll = setInterval(async () => {
+      // Use next_poll_ms hint from server (5s during active build, 30s idle).
+      let pollTimeout: ReturnType<typeof setTimeout>;
+      const schedulePoll = async () => {
         const status = await pollSetupStatus();
         const taskStatus = status?.task?.status;
         if (taskStatus === "done") {
-          clearInterval(poll);
           setCreating(false);
           setTablesJustCreated(true);
         } else if (taskStatus === "error") {
-          clearInterval(poll);
           setCreating(false);
           const detail = status?.task?.error || "Table creation failed — check server logs for details.";
           setError(`Table creation failed: ${detail}`);
+        } else {
+          const delay = status?.next_poll_ms ?? 5000;
+          pollTimeout = setTimeout(schedulePoll, delay);
         }
-      }, 2000);
+      };
+      pollTimeout = setTimeout(schedulePoll, 2000);
 
       // Safety timeout after 10 minutes
       setTimeout(() => {
-        clearInterval(poll);
+        clearTimeout(pollTimeout);
         setCreating(false);
         setError("Table creation is taking longer than expected. Check /api/setup/status for progress.");
       }, 600000);
@@ -978,19 +983,26 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
   }
 
   if (creating) {
+    const tableProgress = setupStatus?.task?.table_progress ?? {};
+    const progressEntries = Object.entries(tableProgress);
     return (
       <div className="space-y-4">
         <LoadingSpinner text="Creating materialized views... This may take a few minutes." />
-        {setupStatus && (
+        {progressEntries.length > 0 && (
           <div className="space-y-1">
-            {Object.entries(setupStatus.tables).map(([table, exists]) => (
+            {progressEntries.map(([table, state]) => (
               <div key={table} className="flex items-center gap-2 px-3 py-1 text-sm">
-                {exists ? (
+                {state === "done" ? (
                   <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                ) : state === "running" ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-[#FF3621]" />
+                ) : state === "error" ? (
+                  <svg className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 ) : (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500" />
+                  <div className="h-4 w-4 rounded-full border-2 border-gray-200" />
                 )}
-                <span className="font-mono text-xs">{table}</span>
+                <span className="font-mono text-xs text-gray-700">{table}</span>
+                {state === "running" && <span className="text-xs text-gray-500">building…</span>}
               </div>
             ))}
           </div>

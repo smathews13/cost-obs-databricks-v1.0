@@ -348,6 +348,16 @@ function Dashboard() {
 
   const { applyPricing, multiplier: pricingMultiplier } = usePricing();
 
+  // Central warehouse warming poller — single source of truth for warehouse state.
+  // Polls every 5s while warming_up, backs off to 60s once warm.
+  const { data: warehouseStatus } = useQuery<{ status: "warm" | "warming_up" | "unavailable"; state?: string }>({
+    queryKey: ["health", "sql-warehouse"],
+    queryFn: () => fetch("/api/health/sql-warehouse").then(r => r.ok ? r.json() : { status: "warm" }),
+    refetchInterval: (query) => query.state.data?.status === "warming_up" ? 5000 : 60000,
+    staleTime: 0,
+  });
+  const warehouseWarming = warehouseStatus?.status === "warming_up";
+
   // Fast bundle for quick initial load (uses materialized views)
   const { data: bundle, isLoading: bundleLoading } = useDashboardBundleFast(dateRange, selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined);
 
@@ -404,7 +414,6 @@ function Dashboard() {
   }, [bundle?.timeseries, pricingMultiplier, applyPricing]);
 
   // Active tab flags — drive lazy loading when a workspace filter is active
-  const isDbuTab = activeTab === "dbu";
   const isInfraTab = activeTab === "infra";
   const isAimlTab = activeTab === "aiml";
   const isAppsTab = activeTab === "apps";
@@ -417,8 +426,8 @@ function Dashboard() {
   const hasWsFilter = !!_wsIds;
 
   // DBU tab sub-queries: pipelines, interactive, SKU are account-wide → always preload.
-  // sqlBreakdown supports workspace filter → gate on tab when filter active.
-  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, !hasWsFilter || isDbuTab);
+  // sqlBreakdown: secondary fetch — starts as soon as primary bundle returns (not tab-gated).
+  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, !!bundle);
   const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, _wsIds, true);
   const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, _wsIds, true);
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, _wsIds, true);
@@ -627,6 +636,16 @@ function Dashboard() {
           >
             Resume Setup
           </button>
+        </div>
+      )}
+
+      {/* Warehouse warming banner */}
+      {warehouseWarming && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b bg-blue-50 border-blue-200">
+          <div className="h-3 w-3 animate-pulse rounded-full bg-blue-400" />
+          <span className="text-xs font-medium text-blue-800">
+            SQL Warehouse is starting up — dashboard data will load shortly.
+          </span>
         </div>
       )}
 

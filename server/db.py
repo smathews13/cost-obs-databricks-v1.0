@@ -389,6 +389,147 @@ def clear_query_cache(pattern: str | None = None) -> int:
         logger.info(f"Cleared {len(keys_to_clear)} cache entries matching '{pattern}'")
         return len(keys_to_clear)
 
+
+# ── Delta shared response cache ───────────────────────────────────────────────
+# Cross-worker cache for expensive bundle payloads.  The per-process TTLCache
+# above is not shared across FastAPI workers, so every worker re-computes the
+# same expensive bundle on cache miss.  Storing results in a small Delta table
+# lets any worker's computation be reused by all others.
+#
+# TTL policy (set by callers):
+#   account-wide bundles (no ws filter): 1800s (30 min)
+#   workspace-scoped bundles:             600s (10 min)
+
+_CREATE_RESPONSE_CACHE_TABLE = """
+CREATE TABLE IF NOT EXISTS `{catalog}`.`{schema}`.`app_response_cache` (
+  cache_key    STRING NOT NULL,
+  endpoint     STRING,
+  payload_json STRING,
+  computed_at  TIMESTAMP,
+  expires_at   TIMESTAMP
+)
+CLUSTER BY (cache_key)
+"""
+
+_response_cache_table_ready: bool = False
+
+
+def _ensure_response_cache_table() -> bool:
+    """Create app_response_cache if it doesn't exist. Returns False on any error."""
+    global _response_cache_table_ready
+    if _response_cache_table_ready:
+        return True
+    try:
+        cat, sch = get_catalog_schema()
+        if not cat or not sch:
+            return False
+        tok = _user_token.set("")  # always as SP — app-owned table
+        try:
+            execute_query(
+                _CREATE_RESPONSE_CACHE_TABLE.format(catalog=cat, schema=sch),
+                no_cache=True,
+            )
+        finally:
+            _user_token.reset(tok)
+        _response_cache_table_ready = True
+        return True
+    except Exception as e:
+        logger.debug("Could not ensure response cache table (non-fatal): %s", e)
+        return False
+
+
+def bundle_cache_key(endpoint: str, start_date: str, end_date: str, workspace_ids: list[str] | None) -> str:
+    """Stable MD5 cache key for a bundle request."""
+    ws_part = ",".join(sorted(workspace_ids)) if workspace_ids else ""
+    raw = f"{endpoint}:{start_date}:{end_date}:{ws_part}"
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def delta_cache_get(key: str) -> dict | None:
+    """Read a bundle payload from the Delta response cache. Returns None on miss/error."""
+    try:
+        cat, sch = get_catalog_schema()
+        if not cat or not sch:
+            return None
+        tok = _user_token.set("")
+        try:
+            rows = execute_query(
+                f"SELECT payload_json FROM `{cat}`.`{sch}`.`app_response_cache` "
+                f"WHERE cache_key = :key AND expires_at > CURRENT_TIMESTAMP() LIMIT 1",
+                {"key": key},
+                no_cache=True,
+            )
+        finally:
+            _user_token.reset(tok)
+        if rows and rows[0].get("payload_json"):
+            import gzip, base64 as _b64
+            return json.loads(gzip.decompress(_b64.b64decode(rows[0]["payload_json"])).decode())
+    except Exception as e:
+        logger.debug("Delta cache read failed (non-fatal): %s", e)
+    return None
+
+
+def delta_cache_put(key: str, endpoint: str, payload: dict, ttl_seconds: int = 600) -> None:
+    """Write a bundle payload to the Delta response cache. Synchronous, fails silently."""
+    try:
+        if not _ensure_response_cache_table():
+            return
+        cat, sch = get_catalog_schema()
+        if not cat or not sch:
+            return
+        import gzip, base64 as _b64
+        compressed = _b64.b64encode(gzip.compress(json.dumps(payload).encode())).decode("ascii")
+        tok = _user_token.set("")
+        try:
+            execute_query(
+                f"DELETE FROM `{cat}`.`{sch}`.`app_response_cache` WHERE expires_at < CURRENT_TIMESTAMP()",
+                no_cache=True,
+            )
+            execute_query(
+                f"""MERGE INTO `{cat}`.`{sch}`.`app_response_cache` AS tgt
+                USING (SELECT
+                    :key      AS cache_key,
+                    :endpoint AS endpoint,
+                    :payload  AS payload_json,
+                    CURRENT_TIMESTAMP() AS computed_at,
+                    TIMESTAMPADD(SECOND, {ttl_seconds}, CURRENT_TIMESTAMP()) AS expires_at
+                ) AS src
+                ON tgt.cache_key = src.cache_key
+                WHEN MATCHED THEN UPDATE SET *
+                WHEN NOT MATCHED BY TARGET THEN INSERT *""",
+                {"key": key, "endpoint": endpoint, "payload": compressed},
+                no_cache=True,
+            )
+        finally:
+            _user_token.reset(tok)
+    except Exception as e:
+        logger.debug("Delta cache write failed (non-fatal): %s", e)
+
+
+def delta_cache_invalidate(pattern: str | None = None) -> None:
+    """Delete Delta cache entries, optionally filtered by endpoint prefix."""
+    try:
+        cat, sch = get_catalog_schema()
+        if not cat or not sch:
+            return
+        tok = _user_token.set("")
+        try:
+            if pattern:
+                execute_query(
+                    f"DELETE FROM `{cat}`.`{sch}`.`app_response_cache` WHERE endpoint LIKE :pat",
+                    {"pat": f"{pattern}%"},
+                    no_cache=True,
+                )
+            else:
+                execute_query(
+                    f"DELETE FROM `{cat}`.`{sch}`.`app_response_cache`",
+                    no_cache=True,
+                )
+        finally:
+            _user_token.reset(tok)
+    except Exception as e:
+        logger.debug("Delta cache invalidation failed (non-fatal): %s", e)
+
 # Singleton WorkspaceClient instance
 _workspace_client: WorkspaceClient | None = None
 

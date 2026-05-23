@@ -714,8 +714,9 @@ async def rebuild_mvs(background_tasks: BackgroundTasks, request: Request) -> di
                 from server.routers.billing import _mv_cache
                 _mv_cache["available"] = None
             with contextlib.suppress(Exception):
-                from server.db import clear_query_cache
+                from server.db import clear_query_cache, delta_cache_invalidate
                 clear_query_cache()
+                delta_cache_invalidate()
         except Exception as exc:
             logger.error("Debugger MV rebuild failed: %s", exc)
         finally:

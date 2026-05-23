@@ -91,8 +91,8 @@ async def get_sql_warehouse_status() -> dict[str, Any]:
             warming_states = {"STOPPED", "STOPPING", "STARTING", "DELETING", "DELETED"}
             if raw_state.upper() in warming_states:
                 return {"status": "warming_up", "state": raw_state, "latency_ms": None, "warehouse_id": warehouse_id}
-            if raw_state.upper() == "RUNNING":
-                return {"status": "warm", "state": raw_state, "latency_ms": None, "warehouse_id": warehouse_id}
+            # Any other state (RUNNING, RESIZING, SCALING_DOWN, etc.) — warehouse accepts queries.
+            return {"status": "warm", "state": raw_state, "latency_ms": None, "warehouse_id": warehouse_id}
         except Exception as e:
             logger.debug("Warehouse REST check failed, trying SQL probe: %s", e)
 
@@ -101,7 +101,7 @@ async def get_sql_warehouse_status() -> dict[str, Any]:
         from server.db import execute_query
         import asyncio
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         t0 = _time.monotonic()
 
         def _probe():
@@ -327,7 +327,7 @@ async def query_diagnostics() -> dict[str, Any]:
 
         return tests
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     diag["tests"] = await loop.run_in_executor(None, _run_sql_tests)
 
     # Test 5: UC REST API table list (used by setup status check — no warehouse needed)
@@ -423,7 +423,7 @@ async def billing_diagnostics() -> dict[str, Any]:
 
         return mv_tests, fallback_tests
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     mv_results, fallback_results = await loop.run_in_executor(None, _run_billing_tests)
     diag["mv_queries"] = mv_results
     diag["fallback_queries"] = fallback_results

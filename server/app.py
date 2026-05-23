@@ -541,8 +541,9 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
         try:
             from server.routers.billing import _mv_cache
             _mv_cache["available"] = None
-            from server.db import clear_query_cache
+            from server.db import clear_query_cache, delta_cache_invalidate
             clear_query_cache()
+            delta_cache_invalidate()
         except Exception as cache_exc:
             logger.warning(f"Cache invalidation after MV refresh failed: {cache_exc}")
     except Exception as exc:

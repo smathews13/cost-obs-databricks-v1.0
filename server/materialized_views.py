@@ -1271,19 +1271,20 @@ def _update_refresh_state(catalog: str, schema: str, table_name: str, refresh_co
     """Upsert refresh state after a successful table refresh."""
     try:
         cfg = _TABLE_REFRESH_CONFIG.get(table_name, {})
-        reprocess_days = cfg.get("reprocess_days", 14)
+        reprocess_days = int(cfg.get("reprocess_days", 14))
         execute_query(
             f"""MERGE INTO `{catalog}`.`{schema}`.`app_mv_refresh_state` AS tgt
             USING (SELECT
-                '{table_name}' AS table_name,
+                :table_name AS table_name,
                 CURRENT_TIMESTAMP() AS last_refresh_at,
                 CURRENT_DATE() AS last_source_watermark,
-                {reprocess_days} AS reprocess_window_days,
-                {refresh_count} AS refresh_count
+                :reprocess_days AS reprocess_window_days,
+                :refresh_count AS refresh_count
             ) AS src
             ON tgt.table_name = src.table_name
             WHEN MATCHED THEN UPDATE SET *
-            WHEN NOT MATCHED BY TARGET THEN INSERT *"""
+            WHEN NOT MATCHED BY TARGET THEN INSERT *""",
+            {"table_name": table_name, "reprocess_days": reprocess_days, "refresh_count": refresh_count},
         )
     except Exception as e:
         logger.warning("Could not update refresh state for %s (non-fatal): %s", table_name, e)

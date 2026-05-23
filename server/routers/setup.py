@@ -869,16 +869,17 @@ def _refresh_tables_task(catalog: str, schema: str):
             _mv_cache["checked_at"] = 0
         except Exception:
             pass
-        # Invalidate the Delta response cache so requests immediately see fresh data
-        # rather than serving stale bundle payloads for up to 30 minutes post-refresh.
+    except Exception as e:
+        logger.error(f"Table refresh failed: {e}")
+    finally:
+        # Always invalidate the Delta response cache — even on partial/failed refresh,
+        # stale payloads should not continue serving when the underlying data has changed.
         try:
             from server.db import delta_cache_invalidate
             delta_cache_invalidate()
             logger.info("Delta response cache cleared after MV refresh")
         except Exception:
             pass
-    except Exception as e:
-        logger.error(f"Table refresh failed: {e}")
 
 
 # ============================================================================

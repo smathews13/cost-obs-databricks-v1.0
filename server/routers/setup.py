@@ -751,6 +751,16 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
         results = create_materialized_views(catalog, schema, on_table_event=_on_table_event)
         logger.info(f"Table creation completed: {results}")
 
+        # Explicitly bootstrap the Delta response cache table now that the SP has
+        # schema-level permissions. Lazy creation would fail silently until post-setup
+        # grants propagate; doing it here makes it part of the authoritative setup path.
+        try:
+            from server.db import _ensure_response_cache_table
+            _ensure_response_cache_table()
+            logger.info("app_response_cache table ensured during setup")
+        except Exception as _rce:
+            logger.warning("Could not bootstrap app_response_cache during setup: %s", _rce)
+
         all_errors = {
             k: v for k, v in results.items()
             if k != "__mv_timings__" and isinstance(v, str) and v.startswith("error:")
@@ -857,6 +867,14 @@ def _refresh_tables_task(catalog: str, schema: str):
             from server.routers.billing import _mv_cache
             _mv_cache["available"] = None
             _mv_cache["checked_at"] = 0
+        except Exception:
+            pass
+        # Invalidate the Delta response cache so requests immediately see fresh data
+        # rather than serving stale bundle payloads for up to 30 minutes post-refresh.
+        try:
+            from server.db import delta_cache_invalidate
+            delta_cache_invalidate()
+            logger.info("Delta response cache cleared after MV refresh")
         except Exception:
             pass
     except Exception as e:

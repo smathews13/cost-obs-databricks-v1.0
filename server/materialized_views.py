@@ -1254,7 +1254,8 @@ def _get_refresh_state(catalog: str, schema: str, table_name: str) -> dict | Non
         rows = execute_query(
             f"SELECT last_source_watermark, refresh_count "
             f"FROM `{catalog}`.`{schema}`.`app_mv_refresh_state` "
-            f"WHERE table_name = '{table_name}' LIMIT 1"
+            f"WHERE table_name = :table_name LIMIT 1",
+            {"table_name": table_name},
         )
         if rows:
             return {

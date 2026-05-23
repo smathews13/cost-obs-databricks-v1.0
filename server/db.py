@@ -415,13 +415,18 @@ _response_cache_table_ready: bool = False
 
 
 def _ensure_response_cache_table() -> bool:
-    """Create app_response_cache if it doesn't exist. Returns False on any error."""
+    """Create app_response_cache if it doesn't exist. Returns False on any error.
+
+    Before setup completes (no catalog configured): returns False silently (debug log).
+    After setup (catalog configured but create fails): logs at WARNING — config drift.
+    """
     global _response_cache_table_ready
     if _response_cache_table_ready:
         return True
     try:
         cat, sch = get_catalog_schema()
         if not cat or not sch:
+            logger.debug("Delta cache table skipped — catalog not configured yet")
             return False
         tok = _user_token.set("")  # always as SP — app-owned table
         try:
@@ -434,7 +439,11 @@ def _ensure_response_cache_table() -> bool:
         _response_cache_table_ready = True
         return True
     except Exception as e:
-        logger.debug("Could not ensure response cache table (non-fatal): %s", e)
+        cat, sch = get_catalog_schema()
+        if cat and sch:
+            logger.warning("Could not ensure response cache table (config drift?): %s", e)
+        else:
+            logger.debug("Could not ensure response cache table (pre-setup): %s", e)
         return False
 
 
@@ -470,40 +479,43 @@ def delta_cache_get(key: str) -> dict | None:
 
 
 def delta_cache_put(key: str, endpoint: str, payload: dict, ttl_seconds: int = 600) -> None:
-    """Write a bundle payload to the Delta response cache. Synchronous, fails silently."""
-    try:
-        if not _ensure_response_cache_table():
-            return
-        cat, sch = get_catalog_schema()
-        if not cat or not sch:
-            return
-        import gzip, base64 as _b64
-        compressed = _b64.b64encode(gzip.compress(json.dumps(payload).encode())).decode("ascii")
-        tok = _user_token.set("")
+    """Write a bundle payload to the Delta response cache. Fails silently; one retry on conflict."""
+    if not _ensure_response_cache_table():
+        return
+    cat, sch = get_catalog_schema()
+    if not cat or not sch:
+        return
+    import gzip, base64 as _b64
+    compressed = _b64.b64encode(gzip.compress(json.dumps(payload).encode())).decode("ascii")
+    merge_sql = f"""MERGE INTO `{cat}`.`{sch}`.`app_response_cache` AS tgt
+        USING (SELECT
+            :key      AS cache_key,
+            :endpoint AS endpoint,
+            :payload  AS payload_json,
+            CURRENT_TIMESTAMP() AS computed_at,
+            TIMESTAMPADD(SECOND, {ttl_seconds}, CURRENT_TIMESTAMP()) AS expires_at
+        ) AS src
+        ON tgt.cache_key = src.cache_key
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED BY TARGET THEN INSERT *"""
+    merge_params = {"key": key, "endpoint": endpoint, "payload": compressed}
+    for attempt in range(2):
         try:
-            execute_query(
-                f"DELETE FROM `{cat}`.`{sch}`.`app_response_cache` WHERE expires_at < CURRENT_TIMESTAMP()",
-                no_cache=True,
-            )
-            execute_query(
-                f"""MERGE INTO `{cat}`.`{sch}`.`app_response_cache` AS tgt
-                USING (SELECT
-                    :key      AS cache_key,
-                    :endpoint AS endpoint,
-                    :payload  AS payload_json,
-                    CURRENT_TIMESTAMP() AS computed_at,
-                    TIMESTAMPADD(SECOND, {ttl_seconds}, CURRENT_TIMESTAMP()) AS expires_at
-                ) AS src
-                ON tgt.cache_key = src.cache_key
-                WHEN MATCHED THEN UPDATE SET *
-                WHEN NOT MATCHED BY TARGET THEN INSERT *""",
-                {"key": key, "endpoint": endpoint, "payload": compressed},
-                no_cache=True,
-            )
-        finally:
-            _user_token.reset(tok)
-    except Exception as e:
-        logger.debug("Delta cache write failed (non-fatal): %s", e)
+            tok = _user_token.set("")
+            try:
+                execute_query(
+                    f"DELETE FROM `{cat}`.`{sch}`.`app_response_cache` WHERE expires_at < CURRENT_TIMESTAMP()",
+                    no_cache=True,
+                )
+                execute_query(merge_sql, merge_params, no_cache=True)
+            finally:
+                _user_token.reset(tok)
+            return
+        except Exception as e:
+            if attempt == 0:
+                logger.debug("Delta cache write conflict, retrying: %s", e)
+            else:
+                logger.debug("Delta cache write failed after retry (non-fatal): %s", e)
 
 
 def delta_cache_invalidate(pattern: str | None = None) -> None:

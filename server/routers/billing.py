@@ -2145,7 +2145,8 @@ async def get_kpis_bundle(
             "end_date": params["end_date"],
         },
     }
-    delta_cache_put(_dkey, "billing:kpis-bundle", _kpis_resp, ttl_seconds=600 if id_list else 1800)
+    # Anomaly surfaces need fresher data — cap at 5 min regardless of scope
+    delta_cache_put(_dkey, "billing:kpis-bundle", _kpis_resp, ttl_seconds=300)
     return _kpis_resp
 
 

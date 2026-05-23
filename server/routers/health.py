@@ -70,10 +70,17 @@ async def get_sql_warehouse_status() -> dict[str, Any]:
         warehouse_id: warehouse ID being checked (or None if not configured)
     """
     import os
+    import re as _re
     import time as _time
 
-    http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
-    warehouse_id = http_path.split("/")[-1] if http_path and "/" in http_path else None
+    # Prefer DATABRICKS_WAREHOUSE_ID if injected; fall back to parsing HTTP path.
+    # The regex handles /sql/1.0/warehouses/<id> and /sql/1.0/endpoints/<id>,
+    # strips query-string params, and is safe against trailing slashes.
+    warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID") or None
+    if not warehouse_id:
+        http_path = os.getenv("DATABRICKS_HTTP_PATH", "").split("?")[0].rstrip("/")
+        _m = _re.search(r"/(?:warehouses|endpoints)/([a-f0-9]+)$", http_path, _re.IGNORECASE)
+        warehouse_id = _m.group(1) if _m else None
 
     # ── 1. Try warehouse REST API state ──────────────────────────────────────
     if warehouse_id:

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { formatIdentity } from "@/utils/identity";
 import { createPortal } from "react-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFeatureAvailability } from "@/hooks/useFeatureAvailability";
 import {
   AreaChart,
@@ -106,8 +106,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const [whSizeDropdownOpen, setWhSizeDropdownOpen] = useState(false);
   const whSizeDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Warehouse Health state
-  const [warehouseHealth, setWarehouseHealth] = useState<{
+  // Warehouse Health — React Query with long stale time (recommendations don't change rapidly)
+  const { data: warehouseHealth, isLoading: healthLoading } = useQuery<{
     available: boolean;
     recommendations: Array<{
       warehouse_id: string;
@@ -124,8 +124,12 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
       query_count?: number;
     }>;
     warehouses_analyzed: number;
-  } | null>(null);
-  const [healthLoading, setHealthLoading] = useState(true);
+  }>({
+    queryKey: ["warehouse-health"],
+    queryFn: () => fetch("/api/sql/warehouse-health").then(r => r.json()),
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
   const [healthIssueFilter, setHealthIssueFilter] = useState<string>("");
   const [healthPage, setHealthPage] = useState(1);
   const HEALTH_PAGE_SIZE = 10;
@@ -190,16 +194,6 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
         .finally(() => setSourceQueriesLoading(false));
     }
   };
-
-  // Fetch warehouse health (not date-dependent)
-  useEffect(() => {
-    setHealthLoading(true);
-    fetch("/api/sql/warehouse-health")
-      .then(r => r.json())
-      .then(d => setWarehouseHealth(d))
-      .catch(() => setWarehouseHealth(null))
-      .finally(() => setHealthLoading(false));
-  }, []);
 
   // Pre-warm trend queries so modals open instantly
   const queryClient = useQueryClient();

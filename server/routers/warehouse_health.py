@@ -7,7 +7,9 @@ system.query.history to detect underutilized warehouses via three heuristics:
   3. OVERSIZED     — large size with low queue wait and fast queries
 """
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,6 +19,10 @@ from server.db import execute_query, execute_queries_parallel
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_health_cache: dict | None = None
+_health_cache_ts: float = 0.0
+_HEALTH_CACHE_TTL = 30 * 60  # 30 minutes — recommendations don't change rapidly
 
 # ── Tunable thresholds ────────────────────────────────────────────────────────
 _IDLE_LOOKBACK_HOURS = 2
@@ -82,7 +88,7 @@ concurrent_per_minute AS (
     COUNT(*) AS concurrent_queries
   FROM system.query.history
   WHERE start_time >= NOW() - INTERVAL 30 DAY
-    AND compute.warehouse_id IS NOT NULL
+    AND compute.warehouse_id IN (SELECT warehouse_id FROM cluster_scale_events)
   GROUP BY 1, 2
 ),
 max_concurrency AS (
@@ -124,7 +130,7 @@ qstats AS (
     ) AS median_duration_seconds
   FROM system.query.history
   WHERE start_time >= NOW() - INTERVAL 30 DAY
-    AND compute.warehouse_id IS NOT NULL
+    AND compute.warehouse_id IN (SELECT warehouse_id FROM large_warehouses)
     AND total_task_duration_ms > 0
     AND end_time IS NOT NULL
   GROUP BY compute.warehouse_id
@@ -185,27 +191,20 @@ def _build_recommendation(
     return rec
 
 
-@router.get("")
-async def get_warehouse_health() -> dict[str, Any]:
-    """Return rightsizing recommendations for all warehouses."""
-    try:
-        results = execute_queries_parallel([
-            ("idle", lambda: execute_query(_SQL_IDLE)),
-            ("over_scaled", lambda: execute_query(_SQL_OVER_SCALED)),
-            ("oversized", lambda: execute_query(_SQL_OVERSIZED)),
-        ])
-    except Exception as e:
-        logger.warning(f"Warehouse health queries failed: {e}")
-        return {"available": False, "error": str(e), "recommendations": [], "warehouses_analyzed": 0,
-                "generated_at": datetime.now(timezone.utc).isoformat()}
+def _run_health_queries() -> dict[str, Any]:
+    """Execute the three health queries synchronously (called via asyncio.to_thread)."""
+    results = execute_queries_parallel([
+        ("idle", lambda: execute_query(_SQL_IDLE)),
+        ("over_scaled", lambda: execute_query(_SQL_OVER_SCALED)),
+        ("oversized", lambda: execute_query(_SQL_OVERSIZED)),
+    ])
 
     recommendations: list[dict] = []
     seen_wids: set[str] = set()
 
     for row in (results.get("idle") or []):
-        wid = row.get("warehouse_id") or ""
         recommendations.append(_build_recommendation(row, "IDLE_RUNNING"))
-        seen_wids.add(wid)
+        seen_wids.add(row.get("warehouse_id") or "")
 
     for row in (results.get("over_scaled") or []):
         recommendations.append(_build_recommendation(row, "OVER_SCALED"))
@@ -215,7 +214,6 @@ async def get_warehouse_health() -> dict[str, Any]:
         recommendations.append(_build_recommendation(row, "OVERSIZED"))
         seen_wids.add(row.get("warehouse_id") or "")
 
-    # Sort: IDLE first (most actionable), then OVER_SCALED, then OVERSIZED
     order = {"IDLE_RUNNING": 0, "OVER_SCALED": 1, "OVERSIZED": 2}
     recommendations.sort(key=lambda r: order.get(r["recommendation_type"], 9))
 
@@ -227,9 +225,29 @@ async def get_warehouse_health() -> dict[str, Any]:
     }
 
 
+@router.get("")
+async def get_warehouse_health() -> dict[str, Any]:
+    """Return rightsizing recommendations for all warehouses."""
+    global _health_cache, _health_cache_ts
+
+    if _health_cache is not None and (time.time() - _health_cache_ts) < _HEALTH_CACHE_TTL:
+        return _health_cache
+
+    try:
+        payload = await asyncio.to_thread(_run_health_queries)
+    except Exception as e:
+        logger.warning(f"Warehouse health queries failed: {e}")
+        return {"available": False, "error": str(e), "recommendations": [], "warehouses_analyzed": 0,
+                "generated_at": datetime.now(timezone.utc).isoformat()}
+
+    _health_cache = payload
+    _health_cache_ts = time.time()
+    return payload
+
+
 @router.get("/{warehouse_id}")
 async def get_warehouse_health_detail(warehouse_id: str) -> dict[str, Any]:
-    """Return health detail for a specific warehouse."""
+    """Return health detail for a specific warehouse (served from cache)."""
     result = await get_warehouse_health()
     recs = [r for r in result.get("recommendations", []) if r.get("warehouse_id") == warehouse_id]
     return {

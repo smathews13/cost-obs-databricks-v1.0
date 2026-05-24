@@ -251,7 +251,7 @@ function Dashboard() {
     // Save the deploying user as admin (fire-and-forget)
     fetch("/api/setup/bootstrap-admin", { method: "POST" }).catch(() => {});
     setShowSetupWizard(false);
-    queryClient.invalidateQueries();
+    rqClient.invalidateQueries();
   };
 
   // On first load after each new deploy, reset all info banner minimize flags so users
@@ -282,10 +282,10 @@ function Dashboard() {
   useEffect(() => {
     if (appSettings.refreshIntervalMinutes <= 0) return;
     const interval = setInterval(() => {
-      queryClient.invalidateQueries();
+      rqClient.invalidateQueries();
     }, appSettings.refreshIntervalMinutes * 60 * 1000);
     return () => clearInterval(interval);
-  }, [appSettings.refreshIntervalMinutes]);
+  }, [appSettings.refreshIntervalMinutes, rqClient]);
 
   // Compact mode - toggle CSS class on root
   useEffect(() => {
@@ -377,6 +377,13 @@ function Dashboard() {
       })),
     };
   }, [bundle?.workspaces, pricingMultiplier, applyPricing]);
+
+  const workspaceNameMap = useMemo(() =>
+    workspaces?.workspaces?.reduce((m: Record<string, string>, w: any) => {
+      m[w.workspace_id] = w.workspace_name || w.workspace_id;
+      return m;
+    }, {} as Record<string, string>) ?? {}
+  , [workspaces?.workspaces]);
 
   const timeseries = useMemo(() => {
     const t = bundle?.timeseries;
@@ -515,9 +522,8 @@ function Dashboard() {
   } : undefined, [infraCostsTimeseries]);
 
   const handleExport = (sections: ExportSections, format: ExportFormat) => {
-    const wsNameMap = workspaces?.workspaces?.reduce((m: Record<string, string>, w: any) => { m[w.workspace_id] = w.workspace_name || w.workspace_id; return m; }, {} as Record<string, string>) ?? {};
     const workspaceFilter = _wsIds?.length
-      ? { ids: _wsIds, names: _wsIds.map((id: string) => wsNameMap[id] || id) }
+      ? { ids: _wsIds, names: _wsIds.map((id: string) => workspaceNameMap[id] || id) }
       : { ids: [] };
 
     if (format === "csv") {
@@ -556,7 +562,7 @@ function Dashboard() {
         pipelineObjects,
         interactiveBreakdown,
         awsCosts: infraCosts ? {
-          clusters: infraCosts.clusters.map(c => ({
+          clusters: (infraCosts.clusters ?? []).map(c => ({
             cluster_id: c.cluster_id,
             cluster_name: c.cluster_name,
             driver_instance_type: c.driver_instance_type,
@@ -639,6 +645,8 @@ function Dashboard() {
         </div>
       )}
 
+      {/* Sticky top chrome: navy account bar + white title/tabs */}
+      <div className="sticky top-0 z-30 shadow">
       {/* Account Info Banner */}
       <div className="text-white" style={{ backgroundColor: '#1B3139' }}>
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
@@ -713,13 +721,19 @@ function Dashboard() {
             {user && (
               <div className="flex items-center gap-2">
                 {authStatus && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
+                  <>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                      {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}
+                    </span>
                     {authStatus.identity !== "user_oauth" && authStatus.sp_client_id && (
-                      <span className="font-mono opacity-70">{authStatus.sp_client_id.slice(0, 16)}</span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
+                        <span className="font-mono opacity-70">{authStatus.sp_client_id.slice(0, 8)}</span>
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                        ID
+                      </span>
                     )}
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                    {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}
-                  </span>
+                  </>
                 )}
                 <span className="text-sm opacity-90">
                   {user.email}
@@ -758,7 +772,7 @@ function Dashboard() {
       <AccountPricingBanner />
       <SpGrantsBanner onOpenSettings={() => setShowSettings(true)} />
 
-      <header className="sticky top-0 z-30 bg-white shadow">
+      <header className="bg-white">
         <div className="mx-auto max-w-7xl px-4 pt-8 pb-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-3 items-center gap-4">
             <div>
@@ -909,6 +923,7 @@ function Dashboard() {
           </div>
         </div>
       </header>
+      </div>{/* end sticky top chrome */}
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <div key={activeTab} className="animate-fade-in relative">
@@ -994,7 +1009,7 @@ function Dashboard() {
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
             detectedCloud={accountInfo?.cloud || undefined}
-            workspaceNameMap={workspaces?.workspaces?.reduce((m, w) => { m[w.workspace_id] = w.workspace_name || w.workspace_id; return m; }, {} as Record<string, string>)}
+            workspaceNameMap={workspaceNameMap}
             workspaceIds={_wsIds}
           />
           </TabErrorBoundary>
@@ -1033,7 +1048,7 @@ function Dashboard() {
             dateRange={dateRange}
             enableHostingComparison={appSettings.enableAppHostingComparison}
             workspaceIds={_wsIds}
-            workspaceNameMap={workspaces?.workspaces?.reduce((m, w) => { m[w.workspace_id] = w.workspace_name || w.workspace_id; return m; }, {} as Record<string, string>)}
+            workspaceNameMap={workspaceNameMap}
           />
           </TabErrorBoundary>
         ) : activeTab === "tagging" ? (

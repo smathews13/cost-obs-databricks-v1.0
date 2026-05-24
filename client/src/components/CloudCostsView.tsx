@@ -203,6 +203,7 @@ export function CloudCostsView({
   const [showHistoricalClusters, setShowHistoricalClusters] = useState(false);
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
   const [selectedFamilies, setSelectedFamilies] = useState<Set<string>>(new Set());
+  useEffect(() => { setCurrentPage(1); }, [selectedFamilies]);
   const [tableFamily, setTableFamily] = useState<string>("");
   const [tableWorkspace, setTableWorkspace] = useState<string>("");
   const [familyFilterOpen, setFamilyFilterOpen] = useState(false);
@@ -360,6 +361,7 @@ export function CloudCostsView({
     } else {
       setSortField(field);
       setSortDirection("desc");
+      setCurrentPage(1);
     }
   };
 
@@ -546,7 +548,7 @@ export function CloudCostsView({
                       <td className="px-3 py-3 text-right text-sm text-gray-600">{formatCurrency(cluster.storage_cost)}</td>
                       <td className="px-3 py-3 text-right text-sm text-gray-600">{formatCurrency(cluster.network_cost)}</td>
                       <td className="px-3 py-3 text-right text-sm font-medium text-gray-900">{formatCurrency(cluster.total_cost)}</td>
-                      <td className="px-3 py-3 text-right text-sm text-gray-500">{cluster.percentage.toFixed(1)}%</td>
+                      <td className="px-3 py-3 text-right text-sm text-gray-500">{(cluster.percentage ?? 0).toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -672,7 +674,7 @@ export function CloudCostsView({
                       <td className="px-3 py-3 text-sm text-gray-500 font-mono">{p.project_id}</td>
                       <td className="px-3 py-3 text-right text-sm text-gray-600">{p.service_count}</td>
                       <td className="px-3 py-3 text-right text-sm font-medium text-gray-900">{formatCurrency(p.total_cost)}</td>
-                      <td className="px-3 py-3 text-right text-sm text-gray-500">{p.percentage.toFixed(1)}%</td>
+                      <td className="px-3 py-3 text-right text-sm text-gray-500">{(p.percentage ?? 0).toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -701,7 +703,7 @@ export function CloudCostsView({
                       <td className="px-3 py-3 text-sm font-medium text-gray-900">{s.service}</td>
                       <td className="px-3 py-3 text-right text-sm text-gray-600">{s.days_active}</td>
                       <td className="px-3 py-3 text-right text-sm font-medium text-gray-900">{formatCurrency(s.total_cost)}</td>
-                      <td className="px-3 py-3 text-right text-sm text-gray-500">{s.percentage.toFixed(1)}%</td>
+                      <td className="px-3 py-3 text-right text-sm text-gray-500">{(s.percentage ?? 0).toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -911,7 +913,7 @@ export function CloudCostsView({
                         {formatCurrency(cluster.total_cost)}
                       </td>
                       <td className="px-3 py-3 text-right text-sm text-gray-500">
-                        {cluster.percentage.toFixed(1)}%
+                        {(cluster.percentage ?? 0).toFixed(1)}%
                       </td>
                     </tr>
                   ))}
@@ -1245,8 +1247,8 @@ export function CloudCostsView({
     if (sortField === "cluster_name") {
       return ((a.cluster_name || "").localeCompare(b.cluster_name || "")) * modifier;
     }
-    const aVal = a[sortField] as number;
-    const bVal = b[sortField] as number;
+    const aVal = (a[sortField] as number) ?? 0;
+    const bVal = (b[sortField] as number) ?? 0;
     return (aVal - bVal) * modifier;
   });
 
@@ -1888,7 +1890,7 @@ export function CloudCostsView({
                       {cluster.days_active}
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-gray-500">
-                      {cluster.percentage.toFixed(1)}%
+                      {(cluster.percentage ?? 0).toFixed(1)}%
                     </td>
                   </tr>
                 );

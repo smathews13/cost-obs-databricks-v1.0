@@ -1243,7 +1243,7 @@ WHEN NOT MATCHED BY TARGET THEN INSERT *
 def _ensure_refresh_state_table(catalog: str, schema: str) -> None:
     """Create app_mv_refresh_state tracking table if it doesn't exist."""
     try:
-        execute_query(CREATE_MV_REFRESH_STATE.format(catalog=catalog, schema=schema))
+        execute_query(CREATE_MV_REFRESH_STATE.format(catalog=catalog, schema=schema), no_cache=True)
     except Exception as e:
         logger.warning("Could not create app_mv_refresh_state (non-fatal): %s", e)
 
@@ -1256,6 +1256,7 @@ def _get_refresh_state(catalog: str, schema: str, table_name: str) -> dict | Non
             f"FROM `{catalog}`.`{schema}`.`app_mv_refresh_state` "
             f"WHERE table_name = :table_name LIMIT 1",
             {"table_name": table_name},
+            no_cache=True,
         )
         if rows:
             return {
@@ -1285,6 +1286,7 @@ def _update_refresh_state(catalog: str, schema: str, table_name: str, refresh_co
             WHEN MATCHED THEN UPDATE SET *
             WHEN NOT MATCHED BY TARGET THEN INSERT *""",
             {"table_name": table_name, "reprocess_days": reprocess_days, "refresh_count": refresh_count},
+            no_cache=True,
         )
     except Exception as e:
         logger.warning("Could not update refresh state for %s (non-fatal): %s", table_name, e)
@@ -1325,7 +1327,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
     # permission error bubble up from the CREATE SCHEMA step.
     if catalog != "main":
         try:
-            execute_query(f"CREATE CATALOG IF NOT EXISTS `{catalog}` COMMENT 'Cost Observability data'")
+            execute_query(f"CREATE CATALOG IF NOT EXISTS `{catalog}` COMMENT 'Cost Observability data'", no_cache=True)
             logger.info(f"Catalog `{catalog}` is ready")
             results["catalog"] = "ok"
         except Exception as _cat_e:
@@ -1385,7 +1387,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
             results["schema"] = "exists"
         else:
             logger.info(f"Creating schema {catalog}.{schema}...")
-            execute_query(CREATE_SCHEMA_SQL.format(catalog=catalog, schema=schema))
+            execute_query(CREATE_SCHEMA_SQL.format(catalog=catalog, schema=schema), no_cache=True)
             results["schema"] = "created"
     except Exception as e:
         err_str = str(e)
@@ -1471,7 +1473,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
                             catalog=catalog, schema=schema,
                             reprocess_start=str(reprocess_start),
                             billing_lookback_days=lookback_days,
-                        ))
+                        ), no_cache=True)
                         new_count = state["refresh_count"] + 1
                         _update_refresh_state(catalog, schema, table_name, new_count)
 
@@ -1479,7 +1481,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
                         if new_count % _OPTIMIZE_EVERY_N_REFRESHES == 0:
                             try:
                                 logger.info(f"Running OPTIMIZE on {table_name} (refresh #{new_count})")
-                                execute_query(f"OPTIMIZE `{catalog}`.`{schema}`.`{table_name}`")
+                                execute_query(f"OPTIMIZE `{catalog}`.`{schema}`.`{table_name}`", no_cache=True)
                             except Exception as opt_e:
                                 logger.warning("OPTIMIZE %s failed (non-fatal): %s", table_name, opt_e)
 
@@ -1493,7 +1495,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
                         # fall through to full rebuild below
 
             # Full rebuild path (bootstrap or fallback)
-            execute_query(create_sql.format(catalog=catalog, schema=schema, billing_lookback_days=lookback_days))
+            execute_query(create_sql.format(catalog=catalog, schema=schema, billing_lookback_days=lookback_days), no_cache=True)
             _update_refresh_state(catalog, schema, table_name, 1)
             elapsed = _time.monotonic() - t0
             logger.info(f"✓ {table_name} full rebuild done in {elapsed:.1f}s")
@@ -1538,7 +1540,7 @@ def drop_materialized_views(catalog: str | None = None, schema: str | None = Non
     results: dict[str, str] = {}
     for name in _MV_TABLES:
         try:
-            execute_query(f"DROP TABLE IF EXISTS `{catalog}`.`{schema}`.`{name}`")
+            execute_query(f"DROP TABLE IF EXISTS `{catalog}`.`{schema}`.`{name}`", no_cache=True)
             results[name] = "dropped"
         except Exception as e:
             results[name] = f"error: {e}"

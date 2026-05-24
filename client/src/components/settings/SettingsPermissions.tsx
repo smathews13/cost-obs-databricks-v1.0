@@ -69,7 +69,6 @@ export function SettingsPermissions() {
   });
 
   const handleReadinessRecheck = (_forceRefresh?: boolean) => {
-    queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
     queryClient.refetchQueries({ queryKey: READINESS_QUERY_KEY });
   };
 
@@ -103,7 +102,6 @@ export function SettingsPermissions() {
           ? `${body.applied} grant(s) applied for ${body.sp_client_id}.`
           : `Grants applied for ${body.sp_client_id}.`;
         setGrantResult({ ok: true, message: detail });
-        queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
         queryClient.refetchQueries({ queryKey: READINESS_QUERY_KEY });
         await refetchAuth();
       } else {

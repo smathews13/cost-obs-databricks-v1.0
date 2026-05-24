@@ -313,10 +313,11 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const [artifactPage, setArtifactPage] = useState(1);
   const artifactsPerPage = 10;
 
-  const { data: freshData, isLoading: freshLoading } = useAppsDashboardBundle(dateRange, workspaceIds, true);
+  const { data: freshData, isLoading: freshLoading, isError: freshError, refetch } = useAppsDashboardBundle(dateRange, workspaceIds, true);
 
   const data = freshData ?? initialData;
   const isLoading = freshLoading || initialLoading;
+  const isError = freshError && !data;
 
   // Close workspace filter dropdown on outside click
   useEffect(() => {
@@ -469,6 +470,24 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
       <div className="flex h-64 flex-col items-center justify-center gap-3">
         <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
         <p className="text-sm text-gray-500">Loading Apps data...</p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+        <div className="flex flex-col items-center justify-center gap-3 py-4">
+          <p className="text-base font-medium text-red-800">Failed to load Apps data</p>
+          <p className="text-sm text-red-700">The server may be warming up or the Apps SDK call timed out. Click retry to try again.</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-1 rounded-md px-4 py-2 text-sm font-medium text-white"
+            style={{ backgroundColor: '#FF3621' }}
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

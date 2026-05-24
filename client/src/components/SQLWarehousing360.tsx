@@ -864,7 +864,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                                   }}
                                 />
                               </div>
-                              <span className="text-sm text-gray-500">{source.percentage.toFixed(1)}%</span>
+                              <span className="text-sm text-gray-500">{(source.percentage ?? 0).toFixed(1)}%</span>
                             </div>
                           </td>
                         </tr>
@@ -907,7 +907,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
               {querySourceTypes.length > 1 && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={() => setQuerySourceFilter(null)}
+                    onClick={() => { setQuerySourceFilter(null); setQueriesPage(1); }}
                     className={`rounded-full px-3 py-1 text-xs font-medium ${
                       querySourceFilter === null
                         ? "text-white"
@@ -920,7 +920,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   {querySourceTypes.map((type) => (
                     <button
                       key={type}
-                      onClick={() => setQuerySourceFilter(querySourceFilter === type ? null : type)}
+                      onClick={() => { setQuerySourceFilter(querySourceFilter === type ? null : type); setQueriesPage(1); }}
                       className={`rounded-full px-3 py-1 text-xs font-medium ${
                         querySourceFilter === type
                           ? "text-white"

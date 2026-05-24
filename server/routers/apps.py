@@ -1,5 +1,6 @@
 """Databricks Apps cost analysis API endpoints."""
 
+import asyncio
 import logging
 import re
 import time
@@ -83,7 +84,7 @@ def _get_app_registry() -> dict[str, dict[str, str]]:
 # ── Connected artifacts cache ────────────────────────────────────────
 _app_resources_cache: dict[str, list[dict[str, str]]] = {}
 _app_resources_cache_time: float = 0
-APP_RESOURCES_CACHE_TTL = 300  # 5 minutes
+APP_RESOURCES_CACHE_TTL = 1800  # 30 minutes — SDK calls are expensive
 
 
 def _get_app_resources() -> dict[str, list[dict[str, str]]]:
@@ -585,8 +586,8 @@ async def get_apps_dashboard_bundle(
     def _ws(sql: str) -> str:
         return wf.inject_ws_filter(sql, ws_clause)
 
-    # Fetch app registry (UUID → name) — needed to filter queries to registered apps
-    registry = _get_app_registry()
+    # Fetch app registry (UUID → name) — run in thread so blocking SDK calls don't freeze the event loop
+    registry = await asyncio.to_thread(_get_app_registry)
     app_filter = _build_app_id_filter(registry)
 
     # Build a filtered timeseries query for registered apps only
@@ -671,8 +672,8 @@ async def get_apps_dashboard_bundle(
         key=lambda x: x["date"],
     )
 
-    # Fetch connected artifacts
-    resources_by_app = _get_app_resources()
+    # Fetch connected artifacts — run in thread so serial w.apps.get() calls don't block the event loop
+    resources_by_app = await asyncio.to_thread(_get_app_resources)
     connected_artifacts: list[dict[str, Any]] = []
     for uid, entry in registry.items():
         app_name = entry["name"]

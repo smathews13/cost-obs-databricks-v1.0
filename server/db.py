@@ -385,7 +385,7 @@ def clear_query_cache(pattern: str | None = None) -> int:
         # Clear entries matching pattern
         keys_to_clear = [k for k in _query_cache.keys() if pattern in k]
         for key in keys_to_clear:
-            del _query_cache[key]
+            _query_cache.pop(key, None)
         logger.info(f"Cleared {len(keys_to_clear)} cache entries matching '{pattern}'")
         return len(keys_to_clear)
 

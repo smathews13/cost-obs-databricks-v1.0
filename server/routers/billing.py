@@ -6,6 +6,8 @@ import time
 from datetime import date, timedelta
 from typing import Any
 
+from cachetools import TTLCache
+
 from fastapi import APIRouter, Query
 
 from server.db import execute_query, execute_queries_parallel, get_catalog_schema, get_host_url, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
@@ -56,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 # Stale fallback: stores the last successful non-zero kpis_response per date-range key so
 # transient failures (warehouse cold-start, lakeflow replication gap) never show 0s.
-_kpis_stale: dict[str, Any] = {}
+_kpis_stale: TTLCache = TTLCache(maxsize=500, ttl=3600)
 
 
 def _ensure_list(val: Any) -> list:
@@ -284,7 +286,7 @@ async def get_billing_by_product(
     products = []
     total_spend = 0
 
-    for row in results:
+    for row in (results or []):
         spend = float(row.get("total_spend") or 0)
         total_spend += spend
         products.append(
@@ -342,7 +344,7 @@ async def get_billing_timeseries(
     # Transform to chart-friendly format: [{date, SQL, ETL, Interactive, ...}, ...]
     date_data: dict[str, dict[str, float]] = {}
 
-    for row in results:
+    for row in (results or []):
         date_str = str(row.get("usage_date"))
         category = row.get("product_category")
         spend = float(row.get("total_spend") or 0)
@@ -385,6 +387,7 @@ async def get_sql_breakdown(
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
 
     try:
+        from server import workspace_filter as wf
         ws_clause = wf.build_ws_filter_clause(id_list=id_list)
         use_mv = _check_mv_available()
         if use_mv:
@@ -446,7 +449,7 @@ async def get_etl_breakdown(
     products = []
     total_spend = 0
 
-    for row in results:
+    for row in (results or []):
         spend = float(row.get("total_spend") or 0)
         total_spend += spend
         products.append(
@@ -554,7 +557,7 @@ async def get_interactive_breakdown(
         items = []
         total_spend = 0
 
-        for row in results:
+        for row in (results or []):
             spend = float(row.get("total_spend") or 0)
             total_spend += spend
             items.append(
@@ -2517,7 +2520,8 @@ async def get_kpi_trend(
         if mv_fallback_query:
             try:
                 results = execute_query(_inject_ws_filter(mv_fallback_query, ws_clause), params)
-            except Exception:
+            except Exception as fallback_e:
+                logger.warning(f"KPI trend fallback query also failed for {kpi}: {fallback_e}")
                 results = []
         if not results:
             return {
@@ -3059,11 +3063,12 @@ async def get_contract_burndown() -> dict[str, Any]:
     import asyncio as _asyncio
     _sql = (
         f"SELECT usage_date, SUM(total_spend) as total_spend FROM `{catalog}`.`{schema}`.`daily_usage_summary`"
-        f" WHERE usage_date >= '{start_str}' AND usage_date <= '{query_end.isoformat()}'"
+        f" WHERE usage_date >= :start_date AND usage_date <= :end_date"
         f" GROUP BY usage_date ORDER BY usage_date"
     )
+    _params = {"start_date": start_str, "end_date": query_end.isoformat()}
     loop = _asyncio.get_running_loop()
-    rows = await loop.run_in_executor(None, execute_query, _sql)
+    rows = await loop.run_in_executor(None, execute_query, _sql, _params)
 
     # Build daily spend lookup
     spend_by_date: dict[str, float] = {}

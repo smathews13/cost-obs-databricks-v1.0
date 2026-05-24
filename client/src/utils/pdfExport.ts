@@ -327,8 +327,8 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
       format(new Date(a.usage_date), "MMM d, yyyy"),
       formatCurrency(a.daily_spend),
       formatCurrency(a.prev_day_spend),
-      formatCurrency(Math.abs(a.change_amount)),
-      `${Math.abs(a.change_percent).toFixed(1)}%`,
+      formatCurrency(Math.abs(a.change_amount ?? 0)),
+      `${Math.abs(a.change_percent ?? 0).toFixed(1)}%`,
     ]);
 
     autoTable(doc, {
@@ -505,7 +505,7 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
       yPos += 6;
 
       const familyData = data.awsCosts.instance_families.slice(0, 5).map((f) => {
-        const percentage = (f.total_dbu_hours / data.awsCosts!.total_dbu_hours) * 100;
+        const percentage = data.awsCosts?.total_dbu_hours ? (f.total_dbu_hours / data.awsCosts.total_dbu_hours) * 100 : 0;
         return [
           f.instance_family || "Unknown",
           formatNumber(f.total_dbu_hours),

@@ -631,7 +631,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Warehouse setup during lifespan failed (non-fatal): {e}")
 
     # Remaining startup tasks run in background
-    asyncio.get_event_loop().run_in_executor(None, startup_tasks)
+    asyncio.get_running_loop().run_in_executor(None, startup_tasks)
 
     # Daily MV refresh scheduler — runs at 2am UTC inside the app process.
     # Uses a file lock so only one uvicorn worker fires the refresh.
@@ -653,8 +653,7 @@ async def lifespan(app: FastAPI):
                     with open(lock_path, "w") as lf:
                         fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
                         logger.info("Running scheduled daily MV refresh...")
-                        loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(None, _run_mv_refresh)
+                        await asyncio.get_running_loop().run_in_executor(None, _run_mv_refresh)
                         logger.info("Scheduled MV refresh complete")
                         fcntl.flock(lf, fcntl.LOCK_UN)
                 except BlockingIOError:

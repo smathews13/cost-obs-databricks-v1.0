@@ -66,6 +66,7 @@ export function SettingsConfig({
     has_sql_scope: boolean | null;
     sp_display_name?: string;
     sp_client_id?: string;
+    sp_user_name?: string;
   } | null>({
     queryKey: ["settings-auth-status"],
     queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
@@ -243,19 +244,19 @@ export function SettingsConfig({
                   Overrides the app name shown in the header. Leave blank to use the default ({authStatus?.sp_display_name || appConfig?.identity?.display_name || "service principal name"}).
                 </p>
               </div>
-              {(authStatus?.sp_display_name || appConfig?.identity) && (
+              {(authStatus?.sp_user_name || authStatus?.sp_display_name || appConfig?.identity) && (
                 <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3">
                   <div className="text-sm text-gray-500">Service Principal</div>
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1 text-xs font-semibold text-green-700">
-                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                      {authStatus?.sp_display_name || appConfig?.identity?.display_name || appConfig?.identity?.user_name || "Service Principal"}
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1 text-xs font-semibold text-green-700 font-mono">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                      {authStatus?.sp_user_name || authStatus?.sp_client_id || appConfig?.identity?.display_name || appConfig?.identity?.user_name || "Service Principal"}
                     </span>
                     <button
                       type="button"
-                      title="Copy service principal name"
+                      title="Copy service principal ID"
                       onClick={() => {
-                        navigator.clipboard.writeText(authStatus?.sp_display_name || appConfig?.identity?.display_name || appConfig?.identity?.user_name || "");
+                        navigator.clipboard.writeText(authStatus?.sp_user_name || authStatus?.sp_client_id || appConfig?.identity?.display_name || appConfig?.identity?.user_name || "");
                         setSpCopied(true);
                         setTimeout(() => setSpCopied(false), 2000);
                       }}

@@ -734,9 +734,12 @@ async def get_auth_status_endpoint():
     # Add SP identity and catalog/schema so the UI renders accurate GRANT SQL without placeholders
     try:
         me = get_workspace_client().current_user.me()
+        # user_name is the SP's applicationId (its actual identity); display_name is the human label
+        status["sp_user_name"] = me.user_name or ""
         status["sp_display_name"] = me.display_name or me.user_name or ""
         status["sp_client_id"] = _os.getenv("DATABRICKS_CLIENT_ID", me.user_name or "")
     except Exception:
+        status["sp_user_name"] = ""
         status["sp_display_name"] = ""
         status["sp_client_id"] = _os.getenv("DATABRICKS_CLIENT_ID", "")
     try:

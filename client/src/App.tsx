@@ -315,6 +315,7 @@ function Dashboard() {
     has_sql_scope: boolean | null;
     sp_client_id?: string;
     sp_display_name?: string;
+    sp_user_name?: string;
   } | null>({
     queryKey: ["settings-auth-status"],
     queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
@@ -729,8 +730,8 @@ function Dashboard() {
                   <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
                     <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
                     <span className="font-mono">
-                      {authStatus.identity !== "user_oauth" && authStatus.sp_display_name
-                        ? authStatus.sp_display_name
+                      {authStatus.identity !== "user_oauth"
+                        ? (authStatus.sp_user_name || authStatus.sp_client_id || "SP")
                         : "SP"}
                     </span>
                   </span>

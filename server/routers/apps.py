@@ -655,7 +655,7 @@ async def get_apps_dashboard_bundle(
     summary = {
         "total_dbus": reg_dbus,
         "total_spend": reg_spend,
-        "workspace_count": len({a.get("workspace_count", 0) for a in apps_result["apps"]}),
+        "workspace_count": len(all_workspaces),
         "app_count": apps_result["total_app_count"],
         "days_in_range": days_in_range,
         "avg_daily_spend": reg_spend / days_in_range if days_in_range > 0 else 0,
@@ -718,7 +718,9 @@ async def get_apps_dashboard_bundle(
         "start_date": params["start_date"],
         "end_date": params["end_date"],
     }
-    delta_cache_put(_dkey, _endpoint, _resp, ttl_seconds=600 if id_list else 1800)
+    # Use short TTL when registry was cold so next request gets properly filtered data
+    cache_ttl = 60 if not registry else (600 if id_list else 1800)
+    delta_cache_put(_dkey, _endpoint, _resp, ttl_seconds=cache_ttl)
     return _resp
 
 

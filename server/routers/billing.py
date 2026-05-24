@@ -2059,11 +2059,8 @@ async def get_kpis_bundle(
     else:
         parallel_queries.append(("delta_query_stats", lambda: execute_query(delta_query_stats_sql, params)))
 
-    # Add supplemental user count query (runs in parallel, fast from materialized table)
-    try:
-        parallel_queries.append(("user_count", lambda: execute_query(USER_COUNT_QUERY, params)))
-    except Exception:
-        pass  # prpr table may not exist
+    # Supplemental user count from materialized table — failures handled inside execute_query
+    parallel_queries.append(("user_count", lambda: execute_query(USER_COUNT_QUERY, params)))
 
     query_results = execute_queries_parallel(parallel_queries)
 
@@ -2174,6 +2171,14 @@ async def get_kpi_trend(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+
+    _dkey = bundle_cache_key(f"billing:kpi-trend:{kpi}:{granularity}", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
+    def _resp(data: dict) -> dict:
+        delta_cache_put(_dkey, "billing:kpi-trend", data, ttl_seconds=1800)
+        return data
+
     ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
 
     use_mv = _check_mv_available()
@@ -2617,7 +2622,7 @@ async def get_kpi_trend(
     else:
         trend = "decreasing"
 
-    return {
+    return _resp({
         "kpi": kpi,
         "granularity": granularity,
         "data_points": data_points,
@@ -2631,7 +2636,7 @@ async def get_kpi_trend(
             "avg_value": round(sum(all_values) / len(all_values), 2),
             "trend": trend
         }
-    }
+    })
 
 def _build_platform_kpi_response(kpi: str, granularity: str, data_points: list[dict]) -> dict[str, Any]:
     """Build the standard platform KPI trend response from a list of {date, value} points."""
@@ -2677,6 +2682,14 @@ async def get_platform_kpi_trend(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+
+    _dkey = bundle_cache_key(f"billing:platform-kpi-trend:{kpi}:{granularity}", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
+    def _resp(data: dict) -> dict:
+        delta_cache_put(_dkey, "billing:platform-kpi-trend", data, ttl_seconds=1800)
+        return data
+
     ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
     # KPIs sourced from system.query.history (workspace_id filter via _inject_qh_ws_filter)
     _QH_KPIS = frozenset({"total_queries", "total_rows_read", "total_bytes_read",
@@ -2703,7 +2716,7 @@ async def get_platform_kpi_trend(
             """
             results = execute_query(_inject_qh_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
-            return _build_platform_kpi_response(kpi, granularity, daily_points)
+            return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
         elif kpi == "active_workspaces":
             query = f"""
             SELECT
@@ -2716,7 +2729,7 @@ async def get_platform_kpi_trend(
             """
             results = execute_query(_inject_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
-            return _build_platform_kpi_response(kpi, granularity, daily_points)
+            return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
         elif kpi == "total_jobs":
             query = f"""
             SELECT
@@ -2730,7 +2743,7 @@ async def get_platform_kpi_trend(
             """
             results = execute_query(_inject_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
-            return _build_platform_kpi_response(kpi, granularity, daily_points)
+            return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
         elif kpi == "models_served":
             query = f"""
             SELECT
@@ -2744,7 +2757,7 @@ async def get_platform_kpi_trend(
             """
             results = execute_query(_inject_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
-            return _build_platform_kpi_response(kpi, granularity, daily_points)
+            return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
         elif kpi == "unique_warehouses":
             query = f"""
             SELECT
@@ -2759,7 +2772,7 @@ async def get_platform_kpi_trend(
             """
             results = execute_query(_inject_qh_ws_filter(query, ws_clause), params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
-            return _build_platform_kpi_response(kpi, granularity, daily_points)
+            return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
 
     # Build query based on KPI type
     # Use explicit TIMESTAMP casts for partition-aware date filtering on system.query.history
@@ -3017,7 +3030,7 @@ async def get_platform_kpi_trend(
     else:
         trend = "decreasing"
 
-    return {
+    return _resp({
         "kpi": kpi,
         "granularity": granularity,
         "data_points": data_points,
@@ -3031,7 +3044,7 @@ async def get_platform_kpi_trend(
             "avg_value": round(sum(values) / len(values), 2),
             "trend": trend
         }
-    }
+    })
 
 
 @router.get("/contract-burndown")

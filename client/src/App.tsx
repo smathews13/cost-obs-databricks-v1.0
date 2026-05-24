@@ -733,9 +733,8 @@ function Dashboard() {
                     </span>
                     {authStatus.identity !== "user_oauth" && authStatus.sp_display_name && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
-                        <span className="font-mono opacity-70">{authStatus.sp_display_name.split(" ")[0]}</span>
                         <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                        ID
+                        <span className="font-mono">{authStatus.sp_display_name.split(" ")[0]}</span>
                       </span>
                     )}
                   </>

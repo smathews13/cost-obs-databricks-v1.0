@@ -345,12 +345,15 @@ async def get_setup_status() -> dict[str, Any]:
             _token_snap = user_token
             _catalog_snap = catalog
             _schema_snap = schema
+            _sp_id_snap = os.getenv("DATABRICKS_CLIENT_ID", "")
             def _bg_grant():
                 tok = _db_user_token.set(_token_snap)
                 try:
                     _grant_sp_schema_access(_catalog_snap, _schema_snap)
                 finally:
                     _db_user_token.reset(tok)
+                if _sp_id_snap:
+                    _grant_system_via_uc_api(_token_snap, _sp_id_snap)
             _threading.Thread(target=_bg_grant, daemon=True).start()
 
     # Core tables exist (checked above) and setup_done.json is present (either
@@ -721,6 +724,7 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
         # Pre-creation grants — must run before create_materialized_views.
         # The SP needs USE CATALOG + CREATE SCHEMA before it can create the schema.
         if user_token:
+            sp_id = os.getenv("DATABRICKS_CLIENT_ID", "")
             pre_tok = _db_user_token.set(user_token)
             try:
                 pre_grant = _grant_sp_schema_access(catalog, schema)
@@ -739,6 +743,24 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
                     return
             finally:
                 _db_user_token.reset(pre_tok)
+
+            # System table grants via UC REST API — SQL GRANT on system.* requires
+            # metastore admin which the SP does not have. _grant_sp_schema_access
+            # silently swallows those permission errors. Call the UC API path here
+            # using the user's metastore-admin token so grants actually land.
+            if sp_id:
+                sys_grant = _grant_system_via_uc_api(user_token, sp_id)
+                logger.info(
+                    f"System table grants (UC API): ok={sys_grant['ok']} "
+                    f"applied={sys_grant['applied']} failed={sys_grant['failed']}"
+                )
+                if sys_grant.get("failed", 0) > 0:
+                    logger.warning(
+                        "Some system table grants failed — SP may lack access to "
+                        "system.query.history / system.compute.clusters etc. "
+                        "Errors: %s", sys_grant.get("errors", [])
+                    )
+
             # Brief propagation pause before the SP hits the warehouse.
             _time.sleep(3)
         else:

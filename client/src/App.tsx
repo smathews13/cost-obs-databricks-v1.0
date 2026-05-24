@@ -404,17 +404,7 @@ function Dashboard() {
     };
   }, [bundle?.timeseries, pricingMultiplier, applyPricing]);
 
-  // Active tab flags — drive lazy loading when a workspace filter is active
-  const isInfraTab = activeTab === "infra";
-  const isAimlTab = activeTab === "aiml";
-  const isAppsTab = activeTab === "apps";
-  const isTaggingTab = activeTab === "tagging";
-  const isUsersTab = activeTab === "users-groups";
-
-  // Workspace filter — when active, only workspace-sensitive bundles gate on the tab;
-  // account-wide queries always preload. Without a filter, everything preloads eagerly.
   const _wsIds = selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined;
-  const hasWsFilter = !!_wsIds;
 
   // DBU tab sub-queries: pipelines, interactive, SKU are account-wide → always preload.
   // sqlBreakdown: secondary fetch — starts as soon as primary bundle returns (not tab-gated).
@@ -423,37 +413,29 @@ function Dashboard() {
   const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, _wsIds, true);
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, _wsIds, true);
 
-  // Infra tab data — only fetch when infra tab is active
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, isInfraTab);
+  // All tabs preload eagerly — backend delta_cache returns instantly on hits.
+  // asyncio.to_thread on the server ensures concurrent requests don't block each other.
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, true);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
-  // KPIs + anomalies — only fetch when kpis tab is active
-  const { data: kpisBundle, isLoading: kpisBundleLoading, isFetching: kpisBundleFetching } = useKPIsBundle(dateRange, _wsIds, activeTab === "kpis");
+  const { data: kpisBundle, isLoading: kpisBundleLoading, isFetching: kpisBundleFetching } = useKPIsBundle(dateRange, _wsIds, true);
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;
   const kpisLoading = kpisBundleLoading;
 
-  // AI/ML tab data
-  const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, _wsIds, !hasWsFilter || isAimlTab);
+  const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, _wsIds, true);
+  const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, _wsIds, true);
+  const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, _wsIds, true);
 
-  // Apps tab data
-  const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, _wsIds, !hasWsFilter || isAppsTab);
+  // Cloud actual costs — no workspace filter; always preload
+  const { data: awsActualData, isLoading: awsActualLoading } = useAWSActualCosts(dateRange, true);
+  const { data: azureActualData, isLoading: azureActualLoading } = useAzureActualCosts(dateRange, true);
+  const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, true);
 
-  // Tagging tab data
-  const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, _wsIds, !hasWsFilter || isTaggingTab);
-
-  // Cloud actual costs — fetch only when on infra tab (cloud provider data doesn't support ws filter)
-  const { data: awsActualData, isLoading: awsActualLoading } = useAWSActualCosts(dateRange, isInfraTab);
-  const { data: azureActualData, isLoading: azureActualLoading } = useAzureActualCosts(dateRange, isInfraTab);
-  const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, isInfraTab);
-
-  // DBSQL/SQL Warehousing tab data
-  const { data: dbsqlData, isLoading: dbsqlLoading, isFetching: dbsqlFetching } = useDBSQLQueryCosts(dateRange, _wsIds, !hasWsFilter || activeTab === "sql");
-
-  // Users & Groups tab data
-  const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, !hasWsFilter || isUsersTab);
+  const { data: dbsqlData, isLoading: dbsqlLoading, isFetching: dbsqlFetching } = useDBSQLQueryCosts(dateRange, _wsIds, true);
+  const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, true);
 
   // Use Cases tab data - only fetch when feature is enabled
   const useCasesEnabled = appSettings.enableUseCaseTracking;

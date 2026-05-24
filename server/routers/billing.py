@@ -1,5 +1,6 @@
 """Billing API endpoints for cost observability."""
 
+import asyncio
 import logging
 import os
 import time
@@ -838,7 +839,7 @@ async def get_infra_bundle(
     _clusters_sql = _inject_ws_filter(INFRA_COST_ESTIMATE, _ws_clause)
     _ts_sql = _inject_ws_filter(INFRA_COST_TIMESERIES, _ws_clause)
     try:
-        query_results = execute_queries_parallel([
+        query_results = await asyncio.to_thread(execute_queries_parallel, [
             ("clusters", lambda: execute_query(_clusters_sql, params)),
             ("timeseries", lambda: execute_query(_ts_sql, params)),
             ("billing_summary", lambda: execute_query(_infra_sql, params)),
@@ -1180,7 +1181,7 @@ async def get_dashboard_bundle(
         ("aws_timeseries", lambda: execute_query(AWS_COST_TIMESERIES, params)),
     ]
 
-    results = execute_queries_parallel(queries)
+    results = await asyncio.to_thread(execute_queries_parallel, queries)
 
     # Format responses to match existing endpoint structures
     response = {
@@ -1352,7 +1353,7 @@ async def get_dashboard_bundle_fast(
             ("workspace_count", lambda: execute_query(WORKSPACE_COUNT_QUERY, params)),
         ]
 
-    results = execute_queries_parallel(queries)
+    results = await asyncio.to_thread(execute_queries_parallel, queries)
 
     # Format responses
     response = {
@@ -2082,7 +2083,7 @@ async def get_kpis_bundle(
     # Supplemental user count from materialized table — failures handled inside execute_query
     parallel_queries.append(("user_count", lambda: execute_query(USER_COUNT_QUERY, params)))
 
-    query_results = execute_queries_parallel(parallel_queries)
+    query_results = await asyncio.to_thread(execute_queries_parallel, parallel_queries)
 
     # --- Build KPIs response ---
     kpis_response = {

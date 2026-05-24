@@ -1172,6 +1172,7 @@ export function CloudCostsView({
 
   // Cloud costs summary stats
   const cloudSummary = useMemo(() => {
+    if (!data) return { totalCost: 0, totalDBUHours: 0, avgActiveClustersPerDay: 0, avgCostPerCluster: 0 };
     const bs = (data as any)?.billing_summary;
     const totalDBUHours = data.clusters.reduce((sum, c) => sum + (c.total_dbu_hours || 0), 0);
     const clustersWithTypes = data.clusters.filter(c => c.driver_instance_type || c.worker_instance_type);

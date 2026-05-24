@@ -206,11 +206,11 @@ function Dashboard() {
   const rqClient = useQueryClient();
 
   const handleTabRefresh = async () => {
-    // Cancel every in-flight query first so nothing hangs during the refresh
     await rqClient.cancelQueries();
-    // Clear ALL server-side Delta + in-process caches, then refetch everything
-    fetch("/api/cache/clear", { method: "POST" }).catch(() => {});
-    await rqClient.invalidateQueries();
+    // Await cache clear so server-side cache is empty before any query fires
+    await fetch("/api/cache/clear", { method: "POST" }).catch(() => {});
+    // refetchQueries bypasses enabled:false — forces all tab-gated queries to fetch too
+    await rqClient.refetchQueries({ type: "all" });
   };
 
   // On every load, verify setup status with the server.
@@ -314,6 +314,7 @@ function Dashboard() {
     locked_to_sp: boolean;
     has_sql_scope: boolean | null;
     sp_client_id?: string;
+    sp_display_name?: string;
   } | null>({
     queryKey: ["settings-auth-status"],
     queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
@@ -626,7 +627,11 @@ function Dashboard() {
             </span>
           </div>
           <button
-            onClick={() => { setSetupIncomplete(false); setShowSetupWizard(true); }}
+            onClick={() => {
+              setSetupIncomplete(false);
+              fetch("/api/setup/rerun", { method: "POST" }).catch(() => {});
+              setShowSetupWizard(true);
+            }}
             className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold text-white transition-colors"
             style={{ backgroundColor: '#FF3621' }}
           >
@@ -724,11 +729,11 @@ function Dashboard() {
                   <>
                     <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                      {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}
+                      SP
                     </span>
-                    {authStatus.identity !== "user_oauth" && authStatus.sp_client_id && (
+                    {authStatus.identity !== "user_oauth" && authStatus.sp_display_name && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
-                        <span className="font-mono opacity-70">{authStatus.sp_client_id.slice(0, 8)}</span>
+                        <span className="font-mono opacity-70">{authStatus.sp_display_name.split(" ")[0]}</span>
                         <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
                         ID
                       </span>

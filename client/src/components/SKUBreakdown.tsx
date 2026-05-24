@@ -140,7 +140,7 @@ export function SKUBreakdown({ data, isLoading, workspaces, dateRange }: SKUBrea
       .sort((a, b) => b.total_spend - a.total_spend)
       .slice(0, 10)
       .map((sku) => {
-        const stripped = sku.product.replace(/^(PREMIUM_|STANDARD_|ENTERPRISE_)/i, "");
+        const stripped = (sku.product ?? "").replace(/^(PREMIUM_|STANDARD_|ENTERPRISE_)/i, "");
         const parts = stripped.split("_");
         const label = parts.length > 4 ? parts.slice(0, 4).join(" ") + "…" : stripped.replace(/_/g, " ");
         return { name: label, total_spend: sku.total_spend };

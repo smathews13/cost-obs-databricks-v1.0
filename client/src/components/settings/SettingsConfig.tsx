@@ -150,6 +150,12 @@ export function SettingsConfig({
   };
 
   // Workspace pool — read-only, set during setup
+  const { data: accountInfo } = useQuery<{ account_name: string | null; host: string | null } | null>({
+    queryKey: ["billing", "account"],
+    queryFn: () => fetch("/api/billing/account").then(r => r.json()).catch(() => null),
+    staleTime: Infinity,
+  });
+
   const { data: wsFilterData } = useQuery<{ workspace_ids: string[] } | null>({
     queryKey: ["setup-workspace-filter"],
     queryFn: () => fetch("/api/setup/workspace-filter").then(r => r.json()).catch(() => null),
@@ -228,34 +234,31 @@ export function SettingsConfig({
                   type="text"
                   value={localSettings.appDisplayName}
                   onChange={(e) => updateSetting("appDisplayName", e.target.value)}
-                  placeholder={appConfig?.identity?.display_name || "e.g., Cost Observability"}
+                  placeholder={authStatus?.sp_display_name || appConfig?.identity?.display_name || "e.g., Cost Observability"}
                   className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Overrides the app name shown in the header. Leave blank to use the default ({appConfig?.identity?.display_name || "service principal name"}).
+                  Overrides the app name shown in the header. Leave blank to use the default ({authStatus?.sp_display_name || appConfig?.identity?.display_name || "service principal name"}).
                 </p>
               </div>
-              {appConfig?.identity && (
+              {(authStatus?.sp_display_name || appConfig?.identity) && (
                 <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3">
                   <div className="text-sm text-gray-500">Service Principal</div>
-                  <div className="text-sm font-medium text-gray-900">{appConfig.identity.user_name || "—"}</div>
-                </div>
-              )}
-              {authStatus && (
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3">
-                  <div className="text-sm text-gray-500">Auth Mode</div>
-                  <div className="flex items-center gap-1.5">
-                    {authStatus.identity === "user_oauth" ? (
-                      <>
-                        <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-                        <span className="text-sm font-medium text-green-700">User OAuth</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-                        <span className="text-sm font-medium text-green-700">Service principal</span>
-                      </>
-                    )}
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1 text-xs font-semibold text-green-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      {authStatus?.sp_display_name || appConfig?.identity?.display_name || appConfig?.identity?.user_name || "Service Principal"}
+                    </span>
+                    <button
+                      type="button"
+                      title="Copy service principal name"
+                      onClick={() => navigator.clipboard.writeText(authStatus?.sp_display_name || appConfig?.identity?.display_name || appConfig?.identity?.user_name || "")}
+                      className="rounded p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
               )}
@@ -626,8 +629,8 @@ export function SettingsConfig({
             <div className="rounded-lg border border-gray-200 bg-white p-3">
               <div className="text-sm text-gray-700">
                 {wsFilterData?.workspace_ids?.length
-                  ? <span>{wsFilterData.workspace_ids.length} workspace{wsFilterData.workspace_ids.length !== 1 ? "s" : ""} configured</span>
-                  : <span className="text-gray-500">All workspaces (no filter configured)</span>
+                  ? <span>{wsFilterData.workspace_ids.length} workspace{wsFilterData.workspace_ids.length !== 1 ? "s" : ""} configured{accountInfo?.account_name ? ` — ${accountInfo.account_name}` : ""}</span>
+                  : <span className="text-gray-500">All workspaces (no filter configured){accountInfo?.account_name ? ` — ${accountInfo.account_name}` : ""}</span>
                 }
               </div>
             </div>

@@ -849,6 +849,11 @@ async def get_infra_bundle(
                     break
 
         # --- Build clusters and instance families in one pass ---
+        # Pre-build a pricing map for all unique instance types to avoid repeated lookups
+        all_types = {row.get("driver_instance_type") for row in cluster_results} | {row.get("worker_instance_type") for row in cluster_results}
+        pricing_map = {t: get_instance_pricing(t, cloud) for t in all_types if t}
+        family_map = {t: get_instance_family(t, cloud) for t in all_types if t}
+
         clusters = []
         total_estimated_cost = 0
         total_dbu_hours = 0
@@ -858,8 +863,8 @@ async def get_infra_bundle(
             dbu_hours = float(row.get("total_dbu_hours") or 0)
             driver_type = row.get("driver_instance_type")
             worker_type = row.get("worker_instance_type")
-            driver_cost = get_instance_pricing(driver_type, cloud)
-            worker_cost = get_instance_pricing(worker_type, cloud)
+            driver_cost = pricing_map.get(driver_type, 0.0) if driver_type else 0.0
+            worker_cost = pricing_map.get(worker_type, 0.0) if worker_type else 0.0
             estimated_cost = dbu_hours * (driver_cost + worker_cost * 2) / 2
             total_estimated_cost += estimated_cost
             total_dbu_hours += dbu_hours

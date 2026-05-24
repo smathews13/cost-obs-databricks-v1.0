@@ -87,8 +87,58 @@ _app_resources_cache_time: float = 0
 APP_RESOURCES_CACHE_TTL = 1800  # 30 minutes — SDK calls are expensive
 
 
+def _fetch_one_app_resources(w: Any, app_name: str) -> tuple[str, list[dict[str, str]]]:
+    """Fetch resources for a single app. Runs in a thread-pool worker."""
+    try:
+        app_detail = w.apps.get(app_name)
+        resources = getattr(app_detail, "resources", None) or []
+        app_resources: list[dict[str, str]] = []
+        for r in resources:
+            res_name = getattr(r, "name", None) or ""
+            res_description = getattr(r, "description", None) or ""
+            res_type = ""
+            if getattr(r, "serving_endpoint", None):
+                res_type = "SERVING_ENDPOINT"
+                ep = r.serving_endpoint
+                res_name = res_name or getattr(ep, "name", "") or getattr(ep, "endpoint_name", "") or ""
+                res_description = res_description or getattr(ep, "permission", "") or ""
+            elif getattr(r, "sql_warehouse", None):
+                res_type = "SQL_WAREHOUSE"
+                wh = r.sql_warehouse
+                res_name = res_name or getattr(wh, "name", "") or getattr(wh, "id", "") or ""
+                res_description = res_description or getattr(wh, "permission", "") or ""
+            elif getattr(r, "secret", None):
+                res_type = "SECRET"
+                sec = r.secret
+                res_name = res_name or getattr(sec, "key", "") or ""
+                res_description = res_description or getattr(sec, "scope", "") or ""
+            elif getattr(r, "job", None):
+                res_type = "JOB"
+                job = r.job
+                res_name = res_name or getattr(job, "id", "") or ""
+                res_description = res_description or getattr(job, "permission", "") or ""
+            else:
+                res_type = getattr(r, "type", None) or "UNKNOWN"
+            app_resources.append({"name": res_name, "type": res_type, "description": res_description})
+
+        sp_name = getattr(app_detail, "service_principal_name", None) or ""
+        sp_id = getattr(app_detail, "service_principal_id", None)
+        if not sp_name and sp_id:
+            sp_name = str(sp_id)
+        if sp_name:
+            app_resources.append({"name": sp_name, "type": "SERVICE_PRINCIPAL", "description": "Run-as identity"})
+        return app_name, app_resources
+    except Exception as e:
+        logger.debug("Failed to get resources for app %s: %s", app_name, e)
+        return app_name, []
+
+
 def _get_app_resources() -> dict[str, list[dict[str, str]]]:
     """Fetch connected artifacts/resources for each app via w.apps.get().
+
+    Sequential fetch with per-app error isolation — the SDK client is not safe
+    to share across concurrent threads, so we iterate serially with a 30s
+    total budget enforced by the asyncio.wait_for() wrapper in the endpoint.
 
     Returns a dict keyed by app name with lists of resource dicts:
       {"cost-obs": [{"name": "sql-wh", "type": "SQL_WAREHOUSE", "description": "..."}]}
@@ -106,61 +156,9 @@ def _get_app_resources() -> dict[str, list[dict[str, str]]]:
     try:
         w = get_workspace_client()
         resources_by_app: dict[str, list[dict[str, str]]] = {}
-        for uid, entry in registry.items():
-            app_name = entry["name"]
-            try:
-                app_detail = w.apps.get(app_name)
-                resources = getattr(app_detail, "resources", None) or []
-                app_resources: list[dict[str, str]] = []
-                for r in resources:
-                    res_name = getattr(r, "name", None) or ""
-                    res_description = getattr(r, "description", None) or ""
-                    # Resource type might be on the resource or its nested object
-                    res_type = ""
-                    # Check for serving_endpoint, sql_warehouse, secret, job sub-objects
-                    if getattr(r, "serving_endpoint", None):
-                        res_type = "SERVING_ENDPOINT"
-                        ep = r.serving_endpoint
-                        res_name = res_name or getattr(ep, "name", "") or getattr(ep, "endpoint_name", "") or ""
-                        res_description = res_description or getattr(ep, "permission", "") or ""
-                    elif getattr(r, "sql_warehouse", None):
-                        res_type = "SQL_WAREHOUSE"
-                        wh = r.sql_warehouse
-                        res_name = res_name or getattr(wh, "name", "") or getattr(wh, "id", "") or ""
-                        res_description = res_description or getattr(wh, "permission", "") or ""
-                    elif getattr(r, "secret", None):
-                        res_type = "SECRET"
-                        sec = r.secret
-                        res_name = res_name or getattr(sec, "key", "") or ""
-                        res_description = res_description or getattr(sec, "scope", "") or ""
-                    elif getattr(r, "job", None):
-                        res_type = "JOB"
-                        job = r.job
-                        res_name = res_name or getattr(job, "id", "") or ""
-                        res_description = res_description or getattr(job, "permission", "") or ""
-                    else:
-                        res_type = getattr(r, "type", None) or "UNKNOWN"
-
-                    app_resources.append({
-                        "name": res_name,
-                        "type": res_type,
-                        "description": res_description,
-                    })
-                # Also include the app's run-as service principal from the API
-                sp_name = getattr(app_detail, "service_principal_name", None) or ""
-                sp_id = getattr(app_detail, "service_principal_id", None)
-                if not sp_name and sp_id:
-                    sp_name = str(sp_id)
-                if sp_name:
-                    app_resources.append({
-                        "name": sp_name,
-                        "type": "SERVICE_PRINCIPAL",
-                        "description": "Run-as identity",
-                    })
-                resources_by_app[app_name] = app_resources
-            except Exception as e:
-                logger.debug("Failed to get resources for app %s: %s", app_name, e)
-                resources_by_app[app_name] = []
+        for entry in registry.values():
+            app_name, app_res = _fetch_one_app_resources(w, entry["name"])
+            resources_by_app[app_name] = app_res
 
         _app_resources_cache = resources_by_app
         _app_resources_cache_time = now
@@ -586,8 +584,12 @@ async def get_apps_dashboard_bundle(
     def _ws(sql: str) -> str:
         return wf.inject_ws_filter(sql, ws_clause)
 
-    # Fetch app registry (UUID → name) — run in thread so blocking SDK calls don't freeze the event loop
-    registry = await asyncio.to_thread(_get_app_registry)
+    # Fetch app registry (UUID → name) — 12s timeout; fall back to stale cache on miss
+    try:
+        registry = await asyncio.wait_for(asyncio.to_thread(_get_app_registry), timeout=12.0)
+    except asyncio.TimeoutError:
+        logger.warning("App registry fetch timed out — using stale cache")
+        registry = _app_name_cache
     app_filter = _build_app_id_filter(registry)
 
     # Build a filtered timeseries query for registered apps only
@@ -672,8 +674,12 @@ async def get_apps_dashboard_bundle(
         key=lambda x: x["date"],
     )
 
-    # Fetch connected artifacts — run in thread so serial w.apps.get() calls don't block the event loop
-    resources_by_app = await asyncio.to_thread(_get_app_resources)
+    # Fetch connected artifacts — parallel per-app, 35s timeout; fall back to stale cache
+    try:
+        resources_by_app = await asyncio.wait_for(asyncio.to_thread(_get_app_resources), timeout=35.0)
+    except asyncio.TimeoutError:
+        logger.warning("App resources fetch timed out — using stale cache")
+        resources_by_app = _app_resources_cache
     connected_artifacts: list[dict[str, Any]] = []
     for uid, entry in registry.items():
         app_name = entry["name"]
@@ -725,9 +731,11 @@ async def get_apps_dashboard_bundle(
 # ── KPI Trend (registered-apps-only) ─────────────────────────────────
 
 def _build_app_id_filter(registry: dict[str, dict[str, str]]) -> str:
-    """Build a SQL IN-clause for registered app UUIDs."""
+    """Build a SQL IN-clause for registered app UUIDs.
+    Returns empty string when registry is unavailable so we still show all apps data.
+    """
     if not registry:
-        return "AND 1=0"  # no registered apps → empty result
+        return ""  # no registry → no filter, show all billing APPS rows
     ids = ", ".join(f"'{uid}'" for uid in registry)
     return f"AND u.usage_metadata.app_id IN ({ids})"
 

@@ -25,12 +25,13 @@ interface KPICardProps {
   icon: React.ReactNode;
   color: string;
   onClick?: () => void;
+  isLoading?: boolean;
   /** When set, renders an unavailable state with this reason instead of the value. */
   unavailableReason?: string;
 }
 
 // Memoize KPICard to prevent unnecessary re-renders when parent state changes
-const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, icon, color, onClick, unavailableReason }: KPICardProps) {
+const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, icon, color, onClick, isLoading, unavailableReason }: KPICardProps) {
   if (unavailableReason) {
     return (
       <div
@@ -66,11 +67,17 @@ const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, ico
         </div>
         <div className="ml-4 flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
-          {subtitle && !infoTooltip && (
+          {isLoading ? (
+            <div className="mt-2 h-6 w-6">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
+            </div>
+          ) : (
+            <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
+          )}
+          {!isLoading && subtitle && !infoTooltip && (
             <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p>
           )}
-          {infoTooltip && (
+          {!isLoading && infoTooltip && (
             <div className="mt-0.5 flex items-center gap-1.5">
               <div className="group relative inline-flex">
                 <div className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-500 cursor-help">
@@ -127,10 +134,10 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
 
   const wsKey = workspaceIds?.join(",") ?? "";
 
-  // Pre-warm trend data in the background once dates are available
+  // Pre-warm the first 3 KPI trends in the background; the rest load on card click
   useEffect(() => {
     if (!startDate || !endDate) return;
-    for (const kpi of PLATFORM_KPI_KEYS) {
+    for (const kpi of PLATFORM_KPI_KEYS.slice(0, 3)) {
       queryClient.prefetchQuery({
         queryKey: ["platform-kpi-trend", kpi, startDate, endDate, "daily", wsKey],
         queryFn: async () => {
@@ -263,8 +270,9 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <KPICard
             title="Total Queries Executed"
-            value={(isLoading || isFetching) ? "—" : formatNumber(data.total_queries)}
-            subtitle={(isLoading || isFetching) ? "" : `${data.unique_query_users} unique users`}
+            value={formatNumber(data.total_queries)}
+            subtitle={`${data.unique_query_users} unique users`}
+            isLoading={isLoading || isFetching}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
             onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_queries", "Total Queries Executed") : undefined}
@@ -277,8 +285,9 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
 
           <KPICard
             title="Rows Processed"
-            value={(isLoading || isFetching) ? "—" : formatNumber(data.total_rows_read)}
+            value={formatNumber(data.total_rows_read)}
             subtitle="Total data scanned"
+            isLoading={isLoading || isFetching}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
             onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_rows_read", "Rows Processed") : undefined}
@@ -291,8 +300,9 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
 
           <KPICard
             title="Data Processed"
-            value={(isLoading || isFetching) ? "—" : formatBytes(data.total_bytes_read)}
+            value={formatBytes(data.total_bytes_read)}
             subtitle="Total throughput"
+            isLoading={isLoading || isFetching}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
             onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_bytes_read", "Data Processed") : undefined}
@@ -305,8 +315,9 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
 
           <KPICard
             title="Compute Time"
-            value={(isLoading || isFetching) ? "—" : formatDurationSeconds(data.total_compute_seconds)}
+            value={formatDurationSeconds(data.total_compute_seconds)}
             subtitle="Total processing time"
+            isLoading={isLoading || isFetching}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
             onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_compute_seconds", "Compute Time") : undefined}
@@ -328,6 +339,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             value={formatNumber(data.total_jobs)}
             subtitle={`${data.unique_job_owners} unique owners`}
             color="bg-orange-100"
+            isLoading={isLoading || isFetching}
             unavailableReason={jobsUnavailable}
             onClick={!jobsUnavailable && startDate && endDate ? () => handleKPIClick("total_jobs", "Total Jobs") : undefined}
             icon={
@@ -342,6 +354,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             value={formatNumber(data.total_job_runs)}
             subtitle="Total executions"
             color="bg-orange-100"
+            isLoading={isLoading || isFetching}
             unavailableReason={jobsUnavailable}
             onClick={!jobsUnavailable && startDate && endDate ? () => handleKPIClick("total_job_runs", "Job Runs") : undefined}
             icon={
@@ -356,6 +369,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             value={hasSuccessRateData ? formatNumber(data.successful_runs) : "N/A"}
             subtitle={hasSuccessRateData ? `of ${formatNumber(data.total_job_runs)} total runs` : "Result states unavailable"}
             color={hasSuccessRateData ? "bg-orange-100" : "bg-gray-100"}
+            isLoading={isLoading || isFetching}
             onClick={startDate && endDate && hasSuccessRateData ? () => handleKPIClick("successful_runs", "Successful Runs") : undefined}
             icon={
               <svg className={`h-6 w-6 ${hasSuccessRateData ? "text-[#FF3621]" : "text-gray-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -369,6 +383,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             value={formatNumber(data.active_notebooks)}
             subtitle="Unique clusters with usage"
             color="bg-orange-100"
+            isLoading={isLoading || isFetching}
             unavailableReason={clustersUnavailable}
             onClick={!clustersUnavailable && startDate && endDate ? () => handleKPIClick("active_notebooks", "Active Clusters") : undefined}
             icon={
@@ -389,6 +404,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             value={formatNumber(data.active_workspaces)}
             subtitle="Collaborative environments"
             color="bg-orange-100"
+            isLoading={isLoading || isFetching}
             onClick={startDate && endDate ? () => handleKPIClick("active_workspaces", "Active Workspaces") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -403,6 +419,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
               value={formatNumber(data.models_served)}
               subtitle={`${formatNumber(data.total_serving_dbus)} DBUs`}
               color="bg-orange-100"
+              isLoading={isLoading || isFetching}
               unavailableReason={servingUnavailable}
               onClick={!servingUnavailable && startDate && endDate ? () => handleKPIClick("models_served", "Models Served") : undefined}
               icon={
@@ -417,6 +434,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             title="Total Users"
             value={formatNumber(data.unique_query_users + data.unique_job_owners)}
             subtitle="Unique active users"
+            isLoading={isLoading || isFetching}
             infoTooltip="Distinct users who ran queries or jobs in the selected period. Counts unique query executors and unique job owners."
             color="bg-orange-100"
             onClick={startDate && endDate ? () => handleKPIClick("total_users", "Total Users") : undefined}

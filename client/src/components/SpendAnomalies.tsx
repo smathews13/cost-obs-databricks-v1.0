@@ -73,7 +73,7 @@ function CalendarView({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-8 sm:grid-cols-2">
         {months.map((month) => {
           const monthStart = startOfMonth(month);
           const monthEnd = endOfMonth(month);
@@ -188,6 +188,13 @@ export function SpendAnomalies({ data, isLoading }: SpendAnomaliesProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Date range badge — same style as the date picker */}
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm">
+            <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            {format(parseISO(data.start_date), "MMM d, yyyy")} – {format(parseISO(data.end_date), "MMM d, yyyy")}
+          </span>
           {/* View toggle */}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
             <button

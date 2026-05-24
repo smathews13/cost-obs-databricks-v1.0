@@ -86,7 +86,7 @@ export const SpendChart = memo(function SpendChart({ data, isLoading }: SpendCha
           />
           <Tooltip
             formatter={(value: number | undefined) => formatCurrency(value ?? 0)}
-            labelFormatter={(label) => format(parseISO(label as string), "MMM d, yyyy")}
+            labelFormatter={(label) => { try { return format(parseISO(label as string), "MMM d, yyyy"); } catch { return String(label); } }}
             contentStyle={{
               backgroundColor: "white",
               border: "1px solid #e5e7eb",

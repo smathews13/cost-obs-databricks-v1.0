@@ -217,7 +217,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                       />
                     </div>
                     <span className="w-12 text-right">
-                      {ws.percentage.toFixed(1)}%
+                      {(ws.percentage ?? 0).toFixed(1)}%
                     </span>
                   </div>
                 </td>

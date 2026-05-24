@@ -332,7 +332,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
                     {formatNumber(obj.total_runs)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-right text-sm text-gray-500">
-                    {obj.percentage.toFixed(1)}%
+                    {(obj.percentage ?? 0).toFixed(1)}%
                   </td>
                 </tr>
               );

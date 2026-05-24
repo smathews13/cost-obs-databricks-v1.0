@@ -295,27 +295,13 @@ export function SettingsPermissions() {
             </svg>
             <h4 className="text-sm font-semibold text-gray-900">Query Authentication Mode</h4>
           </div>
-          <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
             Service Principal
           </div>
         </div>
 
         <div className="p-5 space-y-4">
-
-          {/* Locked SP banner */}
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-            <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-amber-800">Service Principal only — OAuth disabled</p>
-              <p className="text-[11px] text-amber-700">
-                All queries run as the app's service principal. OAuth user-identity mode is preserved in the codebase
-                but is not active. Grant the SP access to system tables using the button below.
-              </p>
-            </div>
-          </div>
 
           {/* Current identity */}
           {authLoading ? (
@@ -342,9 +328,9 @@ export function SettingsPermissions() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
               </svg>
               <div>
-                <p className="text-xs font-semibold text-amber-800">Re-apply grants after every git deploy</p>
+                <p className="text-xs font-semibold text-amber-800">Re-apply grants when creating a new app</p>
                 <p className="mt-0.5 text-[11px] text-amber-700">
-                  Each git deploy creates a new service principal with a new client ID. Grants applied to the prior SP do not carry over. Run this after every deploy as a metastore or account admin.
+                  Each new Databricks App gets a new service principal with a new client ID. Grants do not carry over from a previous app. Run this once after creating the app as a metastore or account admin.
                 </p>
               </div>
             </div>
@@ -364,7 +350,7 @@ export function SettingsPermissions() {
                   </div>
                 )}
                 <p className="text-[10px] text-amber-600 italic pt-0.5">
-                  If this ID changed since your last grant run, dashboard data will show 0 until grants are re-applied.
+                  If grants have not been applied to this SP, dashboard data will show 0 until grants are run.
                 </p>
               </div>
             )}
@@ -408,7 +394,7 @@ export function SettingsPermissions() {
 `-- System tables (billing + query history + compute + lakeflow)
 -- WHY: The app SP queries these tables to build all dashboards.
 -- WHO: Must be run by a metastore admin or account admin.
--- WHEN: Required once per deploy — SP client ID rotates on each git deploy.
+-- WHEN: Required once when the app is first created (SP is tied to the app, not the code).
 GRANT USE CATALOG ON CATALOG system TO \`${spName}\`;
 GRANT USE SCHEMA ON SCHEMA system.billing TO \`${spName}\`;
 GRANT SELECT ON TABLE system.billing.usage TO \`${spName}\`;

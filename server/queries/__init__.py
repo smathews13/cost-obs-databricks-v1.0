@@ -1155,47 +1155,46 @@ ORDER BY usage_date, product_category
 # Multi-cloud infrastructure cost estimation query
 # Uses dynamic pricing based on cloud provider
 INFRA_COST_ESTIMATE = """
-WITH cluster_info AS (
-  -- Deduplicate audit log — one row per cluster with latest config
-  SELECT
-    cluster_id,
-    MAX(cluster_name)     AS cluster_name,
-    MAX(driver_node_type) AS driver_instance_type,
-    MAX(worker_node_type) AS worker_instance_type,
-    MAX(cluster_source)   AS cluster_source
-  FROM system.compute.clusters
-  GROUP BY cluster_id
-),
-usage_with_cluster AS (
+WITH usage_filtered AS (
   SELECT
     u.usage_date,
     u.workspace_id,
     u.usage_metadata.cluster_id AS cluster_id,
     u.cloud,
-    u.usage_quantity            AS estimated_dbu_hours,
-    ci.cluster_name,
-    ci.driver_instance_type,
-    ci.worker_instance_type,
-    ci.cluster_source
+    u.usage_quantity            AS estimated_dbu_hours
   FROM system.billing.usage u
-  LEFT JOIN cluster_info ci ON u.usage_metadata.cluster_id = ci.cluster_id
   WHERE u.usage_date BETWEEN :start_date AND :end_date
     AND u.usage_quantity > 0
     AND u.usage_metadata.cluster_id IS NOT NULL
     AND u.billing_origin_product NOT IN ('SQL', 'DLT')
+),
+cluster_ids AS (
+  SELECT DISTINCT cluster_id FROM usage_filtered
+),
+cluster_info AS (
+  SELECT
+    c.cluster_id,
+    MAX(c.cluster_name)     AS cluster_name,
+    MAX(c.driver_node_type) AS driver_instance_type,
+    MAX(c.worker_node_type) AS worker_instance_type,
+    MAX(c.cluster_source)   AS cluster_source
+  FROM system.compute.clusters c
+  INNER JOIN cluster_ids ci ON c.cluster_id = ci.cluster_id
+  GROUP BY c.cluster_id
 )
 SELECT
-  cluster_id,
-  MAX(cluster_name)            AS cluster_name,
-  MAX(driver_instance_type)    AS driver_instance_type,
-  MAX(worker_instance_type)    AS worker_instance_type,
-  MAX(cluster_source)          AS cluster_source,
-  MAX(workspace_id)            AS workspace_id,
-  MAX(cloud)                   AS cloud,
-  SUM(estimated_dbu_hours)     AS total_dbu_hours,
-  COUNT(DISTINCT usage_date)   AS days_active
-FROM usage_with_cluster
-GROUP BY cluster_id
+  uf.cluster_id,
+  MAX(ci.cluster_name)         AS cluster_name,
+  MAX(ci.driver_instance_type) AS driver_instance_type,
+  MAX(ci.worker_instance_type) AS worker_instance_type,
+  MAX(ci.cluster_source)       AS cluster_source,
+  MAX(uf.workspace_id)         AS workspace_id,
+  MAX(uf.cloud)                AS cloud,
+  SUM(uf.estimated_dbu_hours)  AS total_dbu_hours,
+  COUNT(DISTINCT uf.usage_date) AS days_active
+FROM usage_filtered uf
+LEFT JOIN cluster_info ci ON uf.cluster_id = ci.cluster_id
+GROUP BY uf.cluster_id
 ORDER BY total_dbu_hours DESC
 LIMIT 100
 """
@@ -1205,42 +1204,17 @@ INFRA_COST_BY_INSTANCE_TYPE = None
 
 # Multi-cloud cost timeseries
 INFRA_COST_TIMESERIES = """
-WITH cluster_info AS (
-  SELECT
-    cluster_id,
-    driver_node_type AS driver_instance_type,
-    worker_node_type AS worker_instance_type
-  FROM system.compute.clusters
-),
-cluster_usage AS (
-  SELECT
-    u.usage_date,
-    u.usage_metadata.cluster_id AS cluster_id,
-    u.cloud,
-    u.usage_quantity AS estimated_dbu_hours
-  FROM system.billing.usage u
-  WHERE u.usage_date BETWEEN :start_date AND :end_date
-    AND u.usage_quantity > 0
-    AND u.usage_metadata.cluster_id IS NOT NULL
-    AND u.billing_origin_product NOT IN ('SQL', 'DLT')
-),
-usage_with_cluster AS (
-  SELECT
-    cu.usage_date,
-    cu.cloud,
-    cu.estimated_dbu_hours,
-    ci.driver_instance_type,
-    ci.worker_instance_type
-  FROM cluster_usage cu
-  LEFT JOIN cluster_info ci ON cu.cluster_id = ci.cluster_id
-)
 SELECT
-  usage_date,
-  MAX(cloud) as cloud,
-  SUM(estimated_dbu_hours) as total_dbu_hours
-FROM usage_with_cluster
-GROUP BY usage_date
-ORDER BY usage_date
+  u.usage_date,
+  MAX(u.cloud) as cloud,
+  SUM(u.usage_quantity) as total_dbu_hours
+FROM system.billing.usage u
+WHERE u.usage_date BETWEEN :start_date AND :end_date
+  AND u.usage_quantity > 0
+  AND u.usage_metadata.cluster_id IS NOT NULL
+  AND u.billing_origin_product NOT IN ('SQL', 'DLT')
+GROUP BY u.usage_date
+ORDER BY u.usage_date
 """
 
 # Fast Platform KPIs - single scan of billing.usage + separate lakeflow query

@@ -375,8 +375,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
               </svg>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Query</h1>
-              <p className="text-sm text-gray-500">Query-level cost attribution and warehouse analytics</p>
+              <h1 className="text-2xl font-bold text-gray-900">SQL</h1>
+              <p className="text-sm text-gray-500">SQL-level cost attribution and warehouse analytics</p>
             </div>
           </div>
 

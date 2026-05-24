@@ -584,12 +584,9 @@ async def get_apps_dashboard_bundle(
     def _ws(sql: str) -> str:
         return wf.inject_ws_filter(sql, ws_clause)
 
-    # Fetch app registry (UUID → name) — 12s timeout; fall back to stale cache on miss
-    try:
-        registry = await asyncio.wait_for(asyncio.to_thread(_get_app_registry), timeout=12.0)
-    except asyncio.TimeoutError:
-        logger.warning("App registry fetch timed out — using stale cache")
-        registry = _app_name_cache
+    # Use stale registry immediately so SQL can start now; refresh in background
+    registry = _app_name_cache
+    asyncio.create_task(asyncio.to_thread(_get_app_registry))
     app_filter = _build_app_id_filter(registry)
 
     # Build a filtered timeseries query for registered apps only
@@ -674,12 +671,9 @@ async def get_apps_dashboard_bundle(
         key=lambda x: x["date"],
     )
 
-    # Fetch connected artifacts — parallel per-app, 35s timeout; fall back to stale cache
-    try:
-        resources_by_app = await asyncio.wait_for(asyncio.to_thread(_get_app_resources), timeout=35.0)
-    except asyncio.TimeoutError:
-        logger.warning("App resources fetch timed out — using stale cache")
-        resources_by_app = _app_resources_cache
+    # Use stale resources immediately; refresh in background
+    resources_by_app = _app_resources_cache
+    asyncio.create_task(asyncio.to_thread(_get_app_resources))
     connected_artifacts: list[dict[str, Any]] = []
     for uid, entry in registry.items():
         app_name = entry["name"]

@@ -2051,12 +2051,13 @@ async def get_kpis_bundle(
         ("billing_kpis", lambda: execute_query(billing_kpis_sql, params)),
         ("lakeflow_kpis", lambda: execute_query(LAKEFLOW_JOB_STATS, params)),
         ("anomalies", lambda: execute_query(_inject_ws_filter(anomalies_sql, ws_clause), params)),
-        ("delta_query_stats", lambda: execute_query(delta_query_stats_sql, params)),
     ]
 
-    # Add MV query if available
+    # delta_query_stats is a Delta-direct fallback; skip it when MV is available to avoid redundant scan
     if use_mv:
         parallel_queries.append(("mv_kpis", lambda: _exec_mv(MV_PLATFORM_KPIS, params, mv_ws)))
+    else:
+        parallel_queries.append(("delta_query_stats", lambda: execute_query(delta_query_stats_sql, params)))
 
     # Add supplemental user count query (runs in parallel, fast from materialized table)
     try:

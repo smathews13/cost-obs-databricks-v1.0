@@ -125,6 +125,8 @@ export function SettingsConfig({
       }
     }, 30_000);
   }
+  const [spCopied, setSpCopied] = useState(false);
+
   // MV wipe state
   const [wipePending, setWipePending] = useState(false);
   const [wiping, setWiping] = useState(false);
@@ -252,12 +254,20 @@ export function SettingsConfig({
                     <button
                       type="button"
                       title="Copy service principal name"
-                      onClick={() => navigator.clipboard.writeText(authStatus?.sp_display_name || appConfig?.identity?.display_name || appConfig?.identity?.user_name || "")}
+                      onClick={() => {
+                        navigator.clipboard.writeText(authStatus?.sp_display_name || appConfig?.identity?.display_name || appConfig?.identity?.user_name || "");
+                        setSpCopied(true);
+                        setTimeout(() => setSpCopied(false), 2000);
+                      }}
                       className="rounded p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
                     >
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                      {spCopied ? (
+                        <span className="text-[10px] font-medium text-green-600 px-0.5">Copied!</span>
+                      ) : (
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
                     </button>
                   </div>
                 </div>

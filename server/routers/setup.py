@@ -654,7 +654,6 @@ async def create_tables(
     target_schema = schema or sch
 
     if _create_task_state.get("status") == "running":
-        from fastapi import HTTPException
         raise HTTPException(status_code=409, detail="Table creation already in progress")
 
     if run_in_background:

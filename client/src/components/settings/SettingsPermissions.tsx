@@ -421,7 +421,7 @@ GRANT SELECT ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;`;
                       <div className="grid grid-cols-3 gap-2 text-[11px] rounded border border-gray-200 bg-white px-3 py-2">
                         <div><span className="text-gray-500">Target SP</span><br /><code className="font-mono text-gray-800 break-all">{spName}</code></div>
                         <div><span className="text-gray-500">Who must run</span><br /><span className="text-gray-700">Metastore or account admin</span></div>
-                        <div><span className="text-gray-500">When</span><br /><span className="text-gray-700">Required after every deploy (SP rotates)</span></div>
+                        <div><span className="text-gray-500">When</span><br /><span className="text-gray-700">Required once when the app is first created</span></div>
                       </div>
                       <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
                         <strong>Warehouse CAN_USE</strong> cannot be granted via SQL. Grant it via: SQL Warehouses → [warehouse name] → Permissions tab → Add {spName}. The app attempts this automatically on startup.

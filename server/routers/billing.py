@@ -882,7 +882,7 @@ async def get_infra_bundle(
             # Derive instance families from cluster data — no second query needed
             for itype in [driver_type, worker_type]:
                 if itype:
-                    family = get_instance_family(itype, cloud)
+                    family = family_map.get(itype) or get_instance_family(itype, cloud)
                     days = row.get("days_active") or 0
                     if family in family_agg:
                         family_agg[family]["total_dbu_hours"] += dbu_hours

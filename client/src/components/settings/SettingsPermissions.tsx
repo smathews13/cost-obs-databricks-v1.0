@@ -356,7 +356,7 @@ export function SettingsPermissions() {
                 <div className="flex items-center gap-2">
                   <span className="text-gray-500 w-28 shrink-0">Current SP ID</span>
                   <code className="font-mono text-gray-800" title={authStatus.sp_client_id}>
-                    {authStatus.sp_client_id.slice(0, 13)}…
+                    {authStatus.sp_client_id.slice(0, 8)}…
                   </code>
                 </div>
                 {authStatus.sp_display_name && (

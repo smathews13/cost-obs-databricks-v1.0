@@ -708,15 +708,21 @@ function Dashboard() {
             </div>
             {user && (
               <div className="flex items-center gap-2">
-                {authStatus && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                    <span className="font-mono">
-                      {authStatus.identity !== "user_oauth"
-                        ? (authStatus.sp_user_name || authStatus.sp_client_id || "SP")
-                        : "SP"}
-                    </span>
-                  </span>
+                {authStatus && authStatus.identity !== "user_oauth" && (
+                  <>
+                    {authStatus.sp_display_name && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200" title={authStatus.sp_display_name}>
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                        <span className="font-mono">{authStatus.sp_display_name.slice(0, 8)}</span>
+                      </span>
+                    )}
+                    {(authStatus.sp_user_name || authStatus.sp_client_id) && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200" title={authStatus.sp_user_name || authStatus.sp_client_id}>
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                        <span className="font-mono">{(authStatus.sp_user_name || authStatus.sp_client_id || "").slice(0, 8)}</span>
+                      </span>
+                    )}
+                  </>
                 )}
                 <span className="text-sm opacity-90">
                   {user.email}

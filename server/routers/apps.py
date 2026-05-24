@@ -748,8 +748,11 @@ async def get_apps_kpi_trend(
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
+    _dkey = bundle_cache_key(f"apps:kpi-trend:{kpi}:{granularity}", params["start_date"], params["end_date"], None)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
 
-    registry = _get_app_registry()
+    registry = _app_name_cache  # use stale cache — background refresh handled by dashboard-bundle
     app_filter = _build_app_id_filter(registry)
 
     if kpi == "apps_spend":
@@ -848,7 +851,7 @@ async def get_apps_kpi_trend(
     change_pct = (change / start_val * 100) if start_val > 0 else 0
     trend = "flat" if abs(change_pct) < 5 else ("increasing" if change_pct > 0 else "decreasing")
 
-    return {
+    _resp = {
         "kpi": kpi,
         "granularity": granularity,
         "data_points": data_points,
@@ -863,6 +866,8 @@ async def get_apps_kpi_trend(
             "trend": trend,
         },
     }
+    delta_cache_put(_dkey, "apps:kpi-trend", _resp, ttl_seconds=1800)
+    return _resp
 
 
 # ── Thumbnail proxy ──────────────────────────────────────────────────

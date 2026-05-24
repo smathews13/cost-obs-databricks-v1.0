@@ -385,6 +385,9 @@ async def get_sql_breakdown(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    _dkey = bundle_cache_key("billing:sql-breakdown", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
 
     try:
         from server import workspace_filter as wf
@@ -415,13 +418,15 @@ async def get_sql_breakdown(
                 (product["total_spend"] / total_spend * 100) if total_spend > 0 else 0
             )
 
-        return {
+        _resp = {
             "products": products,
             "total_spend": total_spend,
             "start_date": params["start_date"],
             "end_date": params["end_date"],
             "using_materialized_views": use_mv,
         }
+        delta_cache_put(_dkey, "billing:sql-breakdown", _resp, ttl_seconds=1800)
+        return _resp
     except Exception as e:
         # If query.history is not available, return empty result
         return {
@@ -487,6 +492,9 @@ async def get_pipeline_objects(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    _dkey = bundle_cache_key("billing:pipeline-objects", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     try:
@@ -520,12 +528,14 @@ async def get_pipeline_objects(
                 (obj["total_spend"] / total_spend * 100) if total_spend > 0 else 0
             )
 
-        return {
+        _resp = {
             "objects": objects,
             "total_spend": total_spend,
             "start_date": params["start_date"],
             "end_date": params["end_date"],
         }
+        delta_cache_put(_dkey, "billing:pipeline-objects", _resp, ttl_seconds=1800)
+        return _resp
     except Exception as e:
         return {
             "objects": [],
@@ -549,6 +559,9 @@ async def get_interactive_breakdown(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    _dkey = bundle_cache_key("billing:interactive-breakdown", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     try:
@@ -581,12 +594,14 @@ async def get_interactive_breakdown(
                 (item["total_spend"] / total_spend * 100) if total_spend > 0 else 0
             )
 
-        return {
+        _resp = {
             "items": items,
             "total_spend": total_spend,
             "start_date": params["start_date"],
             "end_date": params["end_date"],
         }
+        delta_cache_put(_dkey, "billing:interactive-breakdown", _resp, ttl_seconds=1800)
+        return _resp
     except Exception as e:
         return {
             "items": [],
@@ -1714,6 +1729,9 @@ async def get_sku_breakdown(
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    _dkey = bundle_cache_key("billing:sku-breakdown", params["start_date"], params["end_date"], id_list)
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        return _dcached
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
     results = execute_query(_inject_ws_filter(SKU_BREAKDOWN, ws_clause), params)
 
@@ -1731,12 +1749,14 @@ async def get_sku_breakdown(
         skus.append(sku)
         total_spend += sku["total_spend"]
 
-    return {
+    _resp = {
         "skus": skus,
         "total_spend": total_spend,
         "start_date": params["start_date"],
         "end_date": params["end_date"],
     }
+    delta_cache_put(_dkey, "billing:sku-breakdown", _resp, ttl_seconds=1800)
+    return _resp
 
 
 _group_membership_cache: dict[str, list[str]] | None = None

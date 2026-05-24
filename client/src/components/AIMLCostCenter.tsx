@@ -160,7 +160,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
       return {
         name,
         value: cat.total_spend,
-        percentage: cat.percentage,
+        percentage: cat.percentage ?? 0,
         fill: categoryColorMap[name] || FALLBACK_COLORS[0],
       };
     });

@@ -90,11 +90,11 @@ function UserDetailModal({ user, onClose }: { user: UserSpend; onClose: () => vo
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <p className="text-xs text-gray-500">Share of total</p>
-              <p className="text-lg font-bold text-gray-900">{user.percentage.toFixed(1)}%</p>
+              <p className="text-lg font-bold text-gray-900">{(user.percentage ?? 0).toFixed(1)}%</p>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <p className="text-xs text-gray-500">Total DBUs</p>
-              <p className="text-lg font-bold text-gray-900">{user.total_dbus.toFixed(0)}</p>
+              <p className="text-lg font-bold text-gray-900">{(user.total_dbus ?? 0).toFixed(0)}</p>
               <p className="text-xs text-gray-500 mt-0.5">{fmt(user.total_spend)} spend</p>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
@@ -668,7 +668,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
                         <div className="w-16 h-1.5 rounded-full bg-gray-100">
                           <div className="h-1.5 rounded-full" style={{ width: `${Math.min(u.percentage, 100)}%`, backgroundColor: COLORS[globalIdx % COLORS.length] }} />
                         </div>
-                        <span className="text-gray-500 text-xs w-10 text-right">{u.percentage.toFixed(1)}%</span>
+                        <span className="text-gray-500 text-xs w-10 text-right">{(u.percentage ?? 0).toFixed(1)}%</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-gray-600">{fmt(u.total_spend)}</td>

@@ -330,20 +330,24 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
     setSelectedTagFilters(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
+    setCurrentPage(1);
   }, []);
 
   const handleClearTagFilters = useCallback(() => {
     setSelectedTagFilters([]);
+    setCurrentPage(1);
   }, []);
 
   const handleToggleTagValueFilter = useCallback((keyValue: string) => {
     setSelectedTagValueFilters(prev =>
       prev.includes(keyValue) ? prev.filter(kv => kv !== keyValue) : [...prev, keyValue]
     );
+    setCurrentPage(1);
   }, []);
 
   const handleClearTagValueFilters = useCallback(() => {
     setSelectedTagValueFilters([]);
+    setCurrentPage(1);
   }, []);
 
   if (isLoading) {
@@ -1178,7 +1182,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                           <div className="h-1.5 w-10 overflow-hidden rounded-full bg-gray-200">
                             <div className="h-full rounded-full bg-orange-500" style={{ width: `${tag.percentage}%` }} />
                           </div>
-                          <span className="text-xs text-gray-500">{tag.percentage.toFixed(1)}%</span>
+                          <span className="text-xs text-gray-500">{(tag.percentage ?? 0).toFixed(1)}%</span>
                         </div>
                       </td>
                     </tr>

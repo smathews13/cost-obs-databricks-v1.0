@@ -481,6 +481,7 @@ export function SettingsConfig({
                       };
                     return tablesStatus.tables.map((t) => {
                       // Billing source data has 1-3 day ingestion lag — flag only if notably stale
+                      const veryStale = t.days_behind != null && t.days_behind > 7;
                       const stale = t.days_behind != null && t.days_behind > 4;
                       const missing = t.exists === false && !t.optional;
                       const notConfigured = t.exists === false && t.optional;
@@ -489,7 +490,7 @@ export function SettingsConfig({
                       // result may be stale. Show neutral ? until the fetch settles.
                       const showNeutral = tablesFetching;
                       return (
-                        <tr key={t.name} className={!showNeutral && missing ? "bg-red-50" : stale ? "bg-amber-50" : ""}>
+                        <tr key={t.name} className={!showNeutral && missing ? "bg-red-50" : veryStale ? "bg-red-50" : stale ? "bg-amber-50" : ""}>
                           <td className="px-3 py-2 font-mono text-gray-700 flex items-center gap-1.5">
                             {showNeutral ? (
                               <span className="text-gray-300">?</span>

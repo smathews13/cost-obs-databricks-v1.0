@@ -566,6 +566,7 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
             "mv_timings": {},
             "status": "error",
             "error": str(exc)[:500],
+            "lookback_days": lookback_days,
         }
         raise
     finally:

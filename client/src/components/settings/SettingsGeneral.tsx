@@ -18,9 +18,24 @@ interface SettingsGeneralProps {
 
 const SCHEDULE_DEFAULTS: ScheduleSettings = { enabled: true, frequency: "nightly", hour_utc: 5, lookback_days: 180 };
 
+interface RefreshHistoryEntry {
+  timestamp: string;
+  status: string;
+  duration_seconds: number;
+  lookback_days: number;
+  trigger: "manual" | "scheduled";
+  error?: string;
+}
+
 export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setSaveStatus }: SettingsGeneralProps) {
   const queryClient = useQueryClient();
   const [scheduleStatus, setScheduleStatus] = useState<string | null>(null);
+
+  const { data: tablesData } = useQuery<{ refresh_status?: { refresh_history?: RefreshHistoryEntry[] } | null } | null>({
+    queryKey: ["settings-tables-status"],
+    queryFn: () => fetch("/api/settings/tables").then(r => r.json()).catch(() => null),
+    staleTime: 10 * 60 * 1000,
+  });
 
   const { data: scheduleData } = useQuery<ScheduleSettings>({
     queryKey: ["settings-schedule"],
@@ -321,6 +336,47 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
               <option value={1095}>3 years</option>
             </select>
           </div>
+
+          {/* Recent nightly runs — shown only when schedule is enabled */}
+          {schedule.enabled && (() => {
+            const allHistory: RefreshHistoryEntry[] = tablesData?.refresh_status?.refresh_history ?? [];
+            const nightlyRuns = [...allHistory].reverse().filter(e => e.trigger === "scheduled").slice(0, 3);
+            const fmtTs = (ts: string) => {
+              try { return new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+              catch { return ts; }
+            };
+            const fmtDur = (s: number) => s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+            return (
+              <div className="border-t border-gray-100 px-4 py-3">
+                <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Recent nightly runs</p>
+                {nightlyRuns.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">No nightly runs yet — first run will occur at the scheduled time.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {nightlyRuns.map((entry, i) => (
+                      <div key={i} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-1.5 text-xs">
+                        <span className="text-gray-500 tabular-nums">{fmtTs(entry.timestamp)}</span>
+                        <span className="text-gray-400">{fmtDur(entry.duration_seconds)}</span>
+                        {entry.status === "success" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Success
+                          </span>
+                        ) : entry.status === "partial_error" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700" title={entry.error}>
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Partial
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[10px] font-medium text-red-700" title={entry.error}>
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />Error
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 

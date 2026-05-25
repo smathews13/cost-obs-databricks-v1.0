@@ -15,6 +15,10 @@ from pydantic import BaseModel
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Captured at module load time — proxy for "when this app process started",
+# which in Databricks Apps corresponds to the most recent deployment.
+_SERVER_START_TIME = datetime.utcnow().strftime("%Y-%m-%d %H:%M") + " UTC"
+
 
 def _require_admin(request: Request) -> str:
     """Raise 403 if the requesting user is not an admin. Returns email on success."""
@@ -304,7 +308,12 @@ def _get_git_sha() -> str:
 
 
 def _get_git_info() -> dict:
-    """Return git branch, repo remote URL, and commit date. Empty strings if unavailable."""
+    """Return git branch, repo remote URL, and commit date.
+
+    In Databricks Apps, the deployed directory has no .git history, so git
+    commands fail. Falls back to env vars and then to the server process start
+    time (a reliable proxy for the last deployment).
+    """
     import subprocess as _sp
     _cwd = os.path.dirname(__file__)
     def _run(cmd: list[str]) -> str:
@@ -318,10 +327,13 @@ def _get_git_info() -> dict:
     # Strip seconds+tz for brevity: "2026-05-25 14:30:00 +0000" → "2026-05-25 14:30"
     if commit_date and len(commit_date) >= 16:
         commit_date = commit_date[:16]
+    # Databricks Apps doesn't ship .git history, so git log always fails there.
+    # Fall back to server start time — the process restarts on every deploy, so
+    # this is a reliable proxy for "when was this version last deployed".
     return {
         "branch": branch or os.getenv("GIT_BRANCH", ""),
         "repo": repo or os.getenv("GIT_REPO", ""),
-        "commit_date": commit_date,
+        "commit_date": commit_date or os.getenv("COMMIT_DATE", _SERVER_START_TIME),
     }
 
 

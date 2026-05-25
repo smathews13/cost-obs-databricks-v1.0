@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time as _time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
@@ -9,6 +10,13 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _CHECK_TIMEOUT = 25  # seconds per individual check
+
+# Response-level cache — all 11+ checks run in parallel but still take ~5-15s
+# on a cold warehouse. Cache the full result for 5 min so the System Readiness
+# panel doesn't re-trigger a warehouse round-trip on every page load.
+_debug_cache: dict | None = None
+_debug_cache_ts: float = 0.0
+_DEBUG_CACHE_TTL = 5 * 60  # 5 minutes
 
 
 # ── Individual check functions ────────────────────────────────────────────────
@@ -650,8 +658,16 @@ _CHECKS = [
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/run")
-async def run_diagnostics() -> dict:
-    """Run all diagnostic checks in parallel and return structured results."""
+async def run_diagnostics(no_cache: bool = False) -> dict:
+    """Run all diagnostic checks in parallel and return structured results.
+
+    Results are cached for 5 minutes. Pass ?no_cache=true to force a fresh run
+    (useful after applying a fix when you want to verify it immediately).
+    """
+    global _debug_cache, _debug_cache_ts
+    if not no_cache and _debug_cache is not None and (_time.time() - _debug_cache_ts) < _DEBUG_CACHE_TTL:
+        return _debug_cache
+
     import asyncio
 
     loop = asyncio.get_event_loop()
@@ -683,10 +699,13 @@ async def run_diagnostics() -> dict:
     failed = sum(1 for r in results if r["status"] == "fail")
     warned = sum(1 for r in results if r["status"] == "warn")
 
-    return {
+    out = {
         "checks": results,
         "summary": {"passed": passed, "failed": failed, "warned": warned, "total": len(results)},
     }
+    _debug_cache = out
+    _debug_cache_ts = _time.time()
+    return out
 
 
 @router.post("/rebuild-mvs")
@@ -728,6 +747,11 @@ async def rebuild_mvs(background_tasks: BackgroundTasks, request: Request) -> di
             logger.error("Debugger MV rebuild failed: %s", exc)
         finally:
             _db_user_token.reset(ctx_tok)
+
+    # Invalidate debug cache so the next /run reflects the fresh MV state
+    global _debug_cache, _debug_cache_ts
+    _debug_cache = None
+    _debug_cache_ts = 0.0
 
     background_tasks.add_task(_do_rebuild)
     return {"status": "started", "message": "MV rebuild started in background — re-run diagnostics in a few minutes to verify"}

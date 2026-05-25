@@ -534,18 +534,21 @@ async def get_tables_status(request: Request, no_cache: bool = False):
         # Owner is fetched in a separate parallel pool — not here — to avoid
         # the SDK REST call serialising before the SQL query and doubling latency.
         skip_date = table_name in no_date_tables
-        # DESCRIBE TABLE is a metadata-only op — no full scan, instant on any table size.
-        try:
-            execute_query(f"DESCRIBE TABLE {fqn}")
-        except Exception as e:
-            err = str(e)
-            if "TABLE_OR_VIEW_NOT_FOUND" in err or "does not exist" in err.lower() or "not found" in err.lower():
-                return {"name": table_name, "table_type": table_type, "exists": False, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
-            return {"name": table_name, "table_type": table_type, "exists": None, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None, "error": err[:200]}
+        _not_found_signals = ("TABLE_OR_VIEW_NOT_FOUND",)
 
         if skip_date:
-            return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
+            # Single existence probe — avoids a separate DESCRIBE TABLE round-trip.
+            try:
+                execute_query(f"SELECT 1 FROM {fqn} LIMIT 1")
+                return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
+            except Exception as e:
+                err = str(e)
+                if any(s in err for s in _not_found_signals) or "does not exist" in err.lower() or "not found" in err.lower():
+                    return {"name": table_name, "table_type": table_type, "exists": False, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
+                return {"name": table_name, "table_type": table_type, "exists": None, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None, "error": err[:200]}
 
+        # Single query: SELECT MAX/MIN returns NULL on an empty table and raises
+        # TABLE_OR_VIEW_NOT_FOUND if the table doesn't exist — no DESCRIBE needed.
         try:
             max_expr = date_expr_overrides.get(table_name, "MAX(usage_date)")
             min_expr = min_date_expr_overrides.get(table_name, "MIN(usage_date)")
@@ -567,6 +570,8 @@ async def get_tables_status(request: Request, no_cache: bool = False):
             return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": min_date_str, "max_date": max_date_str, "days_behind": days_behind, "owner": None}
         except Exception as e:
             err = str(e)
+            if any(s in err for s in _not_found_signals) or "does not exist" in err.lower() or "not found" in err.lower():
+                return {"name": table_name, "table_type": table_type, "exists": False, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
             return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None, "error": err[:200]}
 
     # Config tables are created lazily on first save — not existing yet is expected

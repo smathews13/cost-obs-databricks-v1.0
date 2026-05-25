@@ -618,10 +618,9 @@ export function SettingsConfig({
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">Could not retrieve table status</div>
             )}
 
-            {/* Refresh history */}
-            {(() => {
-              const history = tablesStatus?.refresh_status?.refresh_history;
-              if (!history?.length) return null;
+            {/* Refresh history — always shown once tables are loaded */}
+            {tablesStatus && (() => {
+              const history = tablesStatus?.refresh_status?.refresh_history ?? [];
               const fmtWindow = (d: number) => {
                 if (d === 180) return "6 months";
                 if (d === 365) return "1 year";
@@ -641,42 +640,46 @@ export function SettingsConfig({
               return (
                 <div className="mt-4">
                   <p className="mb-2 text-xs font-medium text-gray-600">Refresh History</p>
-                  <div className="rounded-lg border border-gray-200 overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-100 text-xs">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          {(["Date / Time", "Trigger", "Window", "Duration", "Result"] as const).map(h => (
-                            <th key={h} className={`px-3 py-2 font-medium text-gray-500 ${h === "Date / Time" || h === "Trigger" ? "text-left" : "text-right"}`}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white">
-                        {[...history].reverse().map((entry, i) => (
-                          <tr key={i} className={entry.status === "error" ? "bg-red-50" : entry.status === "partial_error" ? "bg-amber-50" : ""}>
-                            <td className="px-3 py-1.5 text-gray-600 font-mono text-[11px]">{fmtTs(entry.timestamp)}</td>
-                            <td className="px-3 py-1.5 text-gray-500 capitalize">{entry.trigger}</td>
-                            <td className="px-3 py-1.5 text-right text-gray-500">{fmtWindow(entry.lookback_days)}</td>
-                            <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">{fmtDuration(entry.duration_seconds)}</td>
-                            <td className="px-3 py-1.5 text-right">
-                              {entry.status === "success" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Success
-                                </span>
-                              ) : entry.status === "partial_error" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700" title={entry.error}>
-                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Partial
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[10px] font-medium text-red-700" title={entry.error}>
-                                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />Error
-                                </span>
-                              )}
-                            </td>
+                  {history.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic px-1">No rebuild runs recorded yet. History will appear here after the first manual or nightly rebuild.</p>
+                  ) : (
+                    <div className="rounded-lg border border-gray-200 overflow-hidden">
+                      <table className="min-w-full divide-y divide-gray-100 text-xs">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            {(["Date / Time", "Trigger", "Window", "Duration", "Result"] as const).map(h => (
+                              <th key={h} className={`px-3 py-2 font-medium text-gray-500 ${h === "Date / Time" || h === "Trigger" ? "text-left" : "text-right"}`}>{h}</th>
+                            ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                          {[...history].reverse().map((entry, i) => (
+                            <tr key={i} className={entry.status === "error" ? "bg-red-50" : entry.status === "partial_error" ? "bg-amber-50" : ""}>
+                              <td className="px-3 py-1.5 text-gray-600 font-mono text-[11px]">{fmtTs(entry.timestamp)}</td>
+                              <td className="px-3 py-1.5 text-gray-500 capitalize">{entry.trigger}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-500">{fmtWindow(entry.lookback_days)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">{fmtDuration(entry.duration_seconds)}</td>
+                              <td className="px-3 py-1.5 text-right">
+                                {entry.status === "success" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Success
+                                  </span>
+                                ) : entry.status === "partial_error" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700" title={entry.error}>
+                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Partial
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[10px] font-medium text-red-700" title={entry.error}>
+                                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" />Error
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               );
             })()}

@@ -289,7 +289,7 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
   const { data: result, isFetching, isError } = useQuery<DiagResult>({
     queryKey: ["debug-run", runKey],
     queryFn: async () => {
-      const res = await fetch("/api/debug/run");
+      const res = await fetch("/api/debug/run?no_cache=true");
       if (!res.ok) throw new Error("Diagnostics request failed");
       return res.json();
     },

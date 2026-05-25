@@ -99,6 +99,7 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
         (f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{p}`",                         f"CREATE_SCHEMA/{catalog}"),
         (f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                  f"SCHEMA/{catalog}.{schema}"),
         (f"GRANT CREATE TABLE ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                f"CREATE_TABLE/{catalog}.{schema}"),
+        (f"GRANT MODIFY ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                      f"MODIFY/{catalog}.{schema}"),
         (f"GRANT SELECT ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                      f"SELECT/{catalog}.{schema}"),
     ]
 
@@ -1862,6 +1863,8 @@ def _build_fix_sql(table: str, sp_client_id: str) -> str:
         return (
             f"GRANT USE CATALOG ON CATALOG {q0} TO `{sp_client_id}`;\n"
             f"GRANT USE SCHEMA ON SCHEMA {q0}.{q1} TO `{sp_client_id}`;\n"
+            f"GRANT CREATE TABLE ON SCHEMA {q0}.{q1} TO `{sp_client_id}`;\n"
+            f"GRANT MODIFY ON SCHEMA {q0}.{q1} TO `{sp_client_id}`;\n"
             f"GRANT SELECT ON TABLE {q0}.{q1}.{q2} TO `{sp_client_id}`;"
         )
     q_table = ".".join(_uc_identifier(p) for p in parts)

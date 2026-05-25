@@ -361,18 +361,38 @@ def setup_materialized_views():
             )
             return
 
-        # Tables durably exist — background refresh is safe
+        # Tables durably exist — background refresh is safe, but skip if recently refreshed.
+        # Refreshing on every restart hammers the warehouse during cold start. The nightly
+        # scheduler handles regular refreshes; startup only refreshes if data is stale (>26h).
+        import json as _json
         import threading
+        from datetime import datetime, timezone
+        _log_path = "/tmp/mv_refresh_log.json"
+        _hours_since = float("inf")
+        try:
+            with open(_log_path) as _lf:
+                _log = _json.load(_lf)
+                _last = _log.get("last_refresh_utc")
+                if _last:
+                    _last_dt = datetime.fromisoformat(_last.replace("Z", "+00:00"))
+                    _hours_since = (datetime.now(timezone.utc) - _last_dt).total_seconds() / 3600
+        except Exception:
+            pass  # no log → treat as stale (infinity)
+
+        if _hours_since < 26:
+            logger.info(f"Startup MV refresh SKIPPED — last refresh was {_hours_since:.1f}h ago (< 26h, data is fresh)")
+            return
+
         def _bg_refresh():
             try:
-                logger.info("Refreshing materialized views in background (post-deploy)...")
+                logger.info("Refreshing materialized views in background (post-deploy, data is stale)...")
                 r = create_materialized_views(catalog, schema)
                 ok = sum(1 for v in r.values() if v == "created")
                 logger.info(f"Background MV refresh complete: {ok}/{len(r)} tables rebuilt")
             except Exception as ex:
                 logger.warning(f"Background MV refresh failed (non-fatal): {ex}")
         threading.Thread(target=_bg_refresh, daemon=True).start()
-        logger.info("Materialized views exist — background refresh started")
+        logger.info(f"Materialized views exist — background refresh started (data was {_hours_since:.1f}h stale)")
 
     except Exception as e:
         logger.warning(f"Materialized views startup check failed (non-fatal): {e}")

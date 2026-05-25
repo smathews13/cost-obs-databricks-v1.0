@@ -626,6 +626,12 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 180, for
             with open(log_tmp, "w") as f:
                 json.dump(log_data, f)
             os.replace(log_tmp, log_path)
+            # Persist to Delta so the log survives redeployments
+            try:
+                from server.routers.settings import save_refresh_log_to_delta
+                save_refresh_log_to_delta(log_data)
+            except Exception as delta_exc:
+                logger.warning(f"Could not save refresh log to Delta: {delta_exc}")
         except Exception as log_exc:
             logger.warning(f"Failed to write MV refresh log: {log_exc}")
 
@@ -649,6 +655,14 @@ def startup_tasks():
         setup_system_table_grants()
     else:
         logger.info("Setup already complete — skipping system table grants")
+
+    # Step 0d: Restore refresh log from Delta (file is ephemeral, wiped on redeploy).
+    # Must happen before setup_materialized_views() which reads the log for stale-check.
+    try:
+        from server.routers.settings import restore_refresh_log_from_delta
+        restore_refresh_log_from_delta()
+    except Exception as e:
+        logger.warning(f"Refresh log restore failed (non-fatal): {e}")
 
     # Step 1: Create materialized views if needed
     setup_materialized_views()

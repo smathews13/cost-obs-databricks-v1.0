@@ -188,6 +188,49 @@ def restore_workspace_filter_from_delta() -> None:
         logger.warning(f"Could not restore workspace filter from Delta (non-fatal): {e}")
 
 
+# ── Refresh log persistence (survives deploys via Delta) ──────────────────────
+
+def _ensure_refresh_log_table() -> None:
+    _ensure_config_table(
+        f"CREATE TABLE IF NOT EXISTS {_config_table('app_refresh_log')} "
+        f"(log_json STRING, updated_at TIMESTAMP) USING DELTA"
+    )
+
+
+def save_refresh_log_to_delta(log_data: dict) -> None:
+    """Persist mv_refresh_log.json content to Delta so it survives redeployments."""
+    import json as _json
+    from server.db import execute_write
+    _ensure_refresh_log_table()
+    table = _config_table("app_refresh_log")
+    execute_write(f"DELETE FROM {table}", None)
+    execute_write(
+        f"INSERT INTO {table} (log_json, updated_at) VALUES (:log_json, current_timestamp())",
+        {"log_json": _json.dumps(log_data)},
+    )
+    logger.info("Refresh log saved to Delta (status=%s)", log_data.get("status"))
+
+
+def restore_refresh_log_from_delta() -> None:
+    """Read saved refresh log from Delta and write to .settings file. Called at startup."""
+    import json as _json
+    try:
+        from server.db import execute_query
+        table = _config_table("app_refresh_log")
+        rows = execute_query(f"SELECT log_json FROM {table} LIMIT 1", None, no_cache=True)
+        if not rows or not rows[0].get("log_json"):
+            return
+        log_data = _json.loads(rows[0]["log_json"])
+        log_dir = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
+        log_path = os.path.join(log_dir, "mv_refresh_log.json")
+        os.makedirs(log_dir, exist_ok=True)
+        with open(log_path, "w") as f:
+            _json.dump(log_data, f)
+        logger.info("Restored refresh log from Delta (last_refresh=%s)", log_data.get("last_refresh_utc"))
+    except Exception as e:
+        logger.warning(f"Could not restore refresh log from Delta (non-fatal): {e}")
+
+
 class CloudConnectionCreate(BaseModel):
     name: str
     provider: str  # "azure", "aws", "gcp"

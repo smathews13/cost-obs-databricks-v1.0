@@ -3,12 +3,31 @@ import { useQuery } from "@tanstack/react-query";
 
 interface InstallReport {
   version?: { commit_sha: string };
-  warehouse?: { id: string | null; source?: string };
-  storage_location?: { catalog: string; schema: string };
+  warehouse?: {
+    id: string | null;
+    name?: string | null;
+    size?: string | null;
+    state?: string;
+    source?: string;
+  };
+  identity?: { display_name: string | null; user_name: string | null } | null;
+  storage_location?: {
+    catalog: string;
+    schema: string;
+    catalog_source?: string;
+    schema_source?: string;
+  };
 }
 
 interface AuthStatusSlim {
   auth_mode?: "unknown" | "user" | "sp";
+  identity?: "user_oauth" | "service_principal";
+  locked_to_sp?: boolean;
+  has_sql_scope?: boolean | null;
+  sp_display_name?: string;
+  sp_user_name?: string;
+  sp_client_id?: string;
+  user_email?: string | null;
 }
 
 // Module-level so state survives tab switches (useState resets on unmount)
@@ -247,16 +266,26 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
   const [runKey, setRunKey] = useState(_persistedRunKey);
   const [hasRun, setHasRun] = useState(_persistedHasRun);
 
-  const { data: installReport } = useQuery<InstallReport>({
+  const { data: installReport, isLoading: configLoading } = useQuery<InstallReport>({
     queryKey: ["settings-install-report"],
-    queryFn: () => fetch("/api/settings/config").then(r => r.json()).catch(() => null),
+    queryFn: async () => {
+      const res = await fetch("/api/settings/config");
+      if (!res.ok) throw new Error("config fetch failed");
+      return res.json();
+    },
     staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 
-  const { data: authStatusSlim } = useQuery<AuthStatusSlim>({
+  const { data: authStatusSlim, isLoading: authLoading } = useQuery<AuthStatusSlim>({
     queryKey: ["settings-auth-status"],
-    queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
+    queryFn: async () => {
+      const res = await fetch("/api/settings/auth-status");
+      if (!res.ok) throw new Error("auth-status fetch failed");
+      return res.json();
+    },
     staleTime: 10 * 1000,
+    retry: false,
   });
 
   const { data: result, isFetching, isError } = useQuery<DiagResult>({
@@ -298,30 +327,107 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
         </p>
       </div>
 
-      {/* Install report — static deployment snapshot */}
-      {installReport && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Deployment Info</p>
+      {/* Deployment snapshot — always rendered, loading skeleton while fetching */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Deployment Info</p>
+        {(configLoading || authLoading) ? (
+          <div className="space-y-2">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="grid grid-cols-2 gap-x-6">
+                <div className="h-3 w-24 animate-pulse rounded bg-gray-200" />
+                <div className="h-3 w-32 animate-pulse rounded bg-gray-200" />
+              </div>
+            ))}
+          </div>
+        ) : (
           <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
-            {installReport.version?.commit_sha && (
-              <>
-                <dt className="text-gray-500">Git SHA</dt>
-                <dd><code className="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-700">{installReport.version.commit_sha}</code></dd>
-              </>
-            )}
+            {/* Version */}
+            <dt className="text-gray-500">Git SHA</dt>
+            <dd>
+              {installReport?.version?.commit_sha
+                ? <code className="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-700">{installReport.version.commit_sha}</code>
+                : <span className="text-gray-400">—</span>}
+            </dd>
+
+            {/* Auth */}
             <dt className="text-gray-500">Auth mode</dt>
             <dd className="font-medium text-gray-700">{authStatusSlim?.auth_mode ?? "—"}</dd>
+
+            <dt className="text-gray-500">Identity</dt>
+            <dd className="font-medium text-gray-700">{authStatusSlim?.identity ?? "—"}</dd>
+
+            {authStatusSlim?.locked_to_sp != null && (
+              <>
+                <dt className="text-gray-500">Locked to SP</dt>
+                <dd className="font-medium text-gray-700">{authStatusSlim.locked_to_sp ? "yes" : "no"}</dd>
+              </>
+            )}
+            {authStatusSlim?.has_sql_scope != null && (
+              <>
+                <dt className="text-gray-500">SQL scope</dt>
+                <dd className="font-medium text-gray-700">{authStatusSlim.has_sql_scope ? "yes" : "no"}</dd>
+              </>
+            )}
+
+            {/* SP identity */}
+            {authStatusSlim?.sp_display_name && (
+              <>
+                <dt className="text-gray-500">SP display name</dt>
+                <dd className="font-mono text-gray-700">{authStatusSlim.sp_display_name}</dd>
+              </>
+            )}
+            {(authStatusSlim?.sp_user_name || authStatusSlim?.sp_client_id) && (
+              <>
+                <dt className="text-gray-500">SP client ID</dt>
+                <dd className="font-mono text-gray-700 break-all">{authStatusSlim.sp_user_name || authStatusSlim.sp_client_id}</dd>
+              </>
+            )}
+
+            {/* Warehouse */}
+            <dt className="text-gray-500 pt-2 border-t border-gray-200">Warehouse ID</dt>
+            <dd className="font-mono text-gray-700 pt-2 border-t border-gray-200 break-all">{installReport?.warehouse?.id ?? "—"}</dd>
+
+            {installReport?.warehouse?.name && (
+              <>
+                <dt className="text-gray-500">Warehouse name</dt>
+                <dd className="font-medium text-gray-700">{installReport.warehouse.name}</dd>
+              </>
+            )}
+            {installReport?.warehouse?.size && (
+              <>
+                <dt className="text-gray-500">Warehouse size</dt>
+                <dd className="font-medium text-gray-700">{installReport.warehouse.size}</dd>
+              </>
+            )}
+            <dt className="text-gray-500">Warehouse state</dt>
+            <dd className="font-medium text-gray-700">{installReport?.warehouse?.state ?? "—"}</dd>
+
             <dt className="text-gray-500">Warehouse source</dt>
-            <dd className="font-medium text-gray-700">{installReport.warehouse?.source ?? "—"}</dd>
-            <dt className="text-gray-500">Storage</dt>
-            <dd className="font-mono text-gray-700">
-              {installReport.storage_location
+            <dd className="font-medium text-gray-700">{installReport?.warehouse?.source ?? "—"}</dd>
+
+            {/* Storage */}
+            <dt className="text-gray-500 pt-2 border-t border-gray-200">Storage</dt>
+            <dd className="font-mono text-gray-700 pt-2 border-t border-gray-200">
+              {installReport?.storage_location
                 ? `${installReport.storage_location.catalog}.${installReport.storage_location.schema}`
                 : "—"}
             </dd>
+
+            {installReport?.storage_location?.catalog_source && (
+              <>
+                <dt className="text-gray-500">Catalog source</dt>
+                <dd className="font-medium text-gray-700">{installReport.storage_location.catalog_source}</dd>
+              </>
+            )}
+            {installReport?.storage_location?.schema_source && (
+              <>
+                <dt className="text-gray-500">Schema source</dt>
+                <dd className="font-medium text-gray-700">{installReport.storage_location.schema_source}</dd>
+              </>
+            )}
           </dl>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Run button + summary */}
       <div className="flex items-center gap-3 flex-wrap">

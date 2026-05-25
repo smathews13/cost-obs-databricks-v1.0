@@ -714,12 +714,14 @@ function Dashboard() {
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200" title={authStatus.sp_display_name}>
                         <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
                         <span className="font-mono">{authStatus.sp_display_name.slice(0, 8)}</span>
+                        <span className="opacity-60">ID</span>
                       </span>
                     )}
                     {(authStatus.sp_user_name || authStatus.sp_client_id) && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-200" title={authStatus.sp_user_name || authStatus.sp_client_id}>
                         <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
                         <span className="font-mono">{(authStatus.sp_user_name || authStatus.sp_client_id || "").slice(0, 8)}</span>
+                        <span className="opacity-60">SP</span>
                       </span>
                     )}
                   </>
@@ -949,7 +951,15 @@ function Dashboard() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">$DBU Spend</h1>
-                <p className="text-sm text-gray-500">Databricks Unit consumption and cost breakdown</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm text-gray-500">Databricks Unit consumption and cost breakdown</p>
+                  {_wsIds && _wsIds.length > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-xs font-medium text-green-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      {_wsIds.length === 1 ? (workspaceNameMap[_wsIds[0]] || _wsIds[0]) : `${_wsIds.length} workspaces`} · workspace filter applied
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1013,6 +1023,7 @@ function Dashboard() {
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
             workspaceIds={_wsIds}
+            workspaceNameMap={workspaceNameMap}
           />
           </TabErrorBoundary>
         ) : activeTab === "aiml" ? (
@@ -1024,6 +1035,7 @@ function Dashboard() {
             endDate={dateRange.endDate}
             host={accountInfo?.host}
             workspaceIds={_wsIds}
+            workspaceNameMap={workspaceNameMap}
           />
           </TabErrorBoundary>
         ) : activeTab === "apps" ? (
@@ -1049,6 +1061,7 @@ function Dashboard() {
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
             workspaceIds={_wsIds}
+            workspaceNameMap={workspaceNameMap}
           />
           </TabErrorBoundary>
         ) : activeTab === "sql" ? (
@@ -1061,6 +1074,7 @@ function Dashboard() {
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
             workspaceIds={_wsIds}
+            workspaceNameMap={workspaceNameMap}
           />
           </TabErrorBoundary>
         ) : activeTab === "use-cases" ? (
@@ -1082,6 +1096,7 @@ function Dashboard() {
             dateRange={dateRange}
             anonymizeUsers={appSettings.anonymizeUsers}
             workspaceIds={_wsIds}
+            workspaceNameMap={workspaceNameMap}
           />
           </TabErrorBoundary>
         ) : activeTab === "contract" ? (

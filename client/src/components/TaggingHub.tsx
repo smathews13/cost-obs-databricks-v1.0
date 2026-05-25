@@ -24,6 +24,7 @@ interface TaggingHubProps {
   startDate?: string;
   endDate?: string;
   workspaceIds?: string[];
+  workspaceNameMap?: Record<string, string>;
 }
 
 import { workspaceUrl } from "@/utils/formatters";
@@ -80,7 +81,7 @@ const formatNumber = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-export function TaggingHub({ data, isLoading, host, startDate, endDate, workspaceIds }: TaggingHubProps) {
+export function TaggingHub({ data, isLoading, host, startDate, endDate, workspaceIds, workspaceNameMap }: TaggingHubProps) {
   const [activeUntaggedTab, setActiveUntaggedTab] = useState<UntaggedTab>("clusters");
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -843,7 +844,15 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Tagging</h1>
-          <p className="text-sm text-gray-500">Cost attribution through resource tagging coverage</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm text-gray-500">Cost attribution through resource tagging coverage</p>
+            {workspaceIds && workspaceIds.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-xs font-medium text-green-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                {workspaceIds.length === 1 ? (workspaceNameMap?.[workspaceIds[0]] || workspaceIds[0]) : `${workspaceIds.length} workspaces`} · workspace filter applied
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

@@ -15,6 +15,7 @@ interface PlatformKPIsViewProps {
   startDate?: string;
   endDate?: string;
   workspaceIds?: string[];
+  workspaceNameMap?: Record<string, string>;
 }
 
 interface KPICardProps {
@@ -110,7 +111,7 @@ const PLATFORM_KPI_KEYS = [
   "active_workspaces", "models_served", "total_users",
 ] as const;
 
-export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, anomaliesLoading, startDate, endDate, workspaceIds }: PlatformKPIsViewProps) {
+export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, anomaliesLoading, startDate, endDate, workspaceIds, workspaceNameMap }: PlatformKPIsViewProps) {
   const queryClient = useQueryClient();
 
   // Per-feature availability from the shared hook (caches under READINESS_QUERY_KEY).
@@ -209,7 +210,15 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Platform KPIs & Trends</h1>
-          <p className="text-sm text-gray-500">Platform health, usage metrics, and adoption tracking</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm text-gray-500">Platform health, usage metrics, and adoption tracking</p>
+            {workspaceIds && workspaceIds.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-xs font-medium text-green-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                {workspaceIds.length === 1 ? (workspaceNameMap?.[workspaceIds[0]] || workspaceIds[0]) : `${workspaceIds.length} workspaces`} · workspace filter applied
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

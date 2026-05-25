@@ -570,14 +570,37 @@ async def get_apps_dashboard_bundle(
     workspace_ids: str = Query(default=None),
 ) -> dict[str, Any]:
     """Get all Apps dashboard data in a single request."""
+    import time as _time
+    _req_start = _time.time()
     params = {
         "start_date": start_date or get_default_start_date(),
         "end_date": end_date or get_default_end_date(),
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    logger.info(
+        "apps/dashboard-bundle request: start=%s end=%s workspaces=%s active_only=%s",
+        params["start_date"], params["end_date"],
+        id_list or "all", active_only,
+    )
+    try:
+        return await _get_apps_dashboard_bundle_inner(params, id_list, active_only, _req_start)
+    except Exception as exc:
+        _elapsed = _time.time() - _req_start
+        logger.error(
+            "apps/dashboard-bundle FAILED after %.1fs: workspaces=%s error=%s",
+            _elapsed, id_list or "all", exc, exc_info=True,
+        )
+        raise
+
+
+async def _get_apps_dashboard_bundle_inner(
+    params: dict, id_list: list | None, active_only: bool, req_start: float
+) -> dict[str, Any]:
+    import time as _time
     _endpoint = f"apps:dashboard-bundle:{'active' if active_only else 'all'}"
     _dkey = bundle_cache_key(_endpoint, params["start_date"], params["end_date"], id_list)
     if (_dcached := delta_cache_get(_dkey)) is not None:
+        logger.info("apps/dashboard-bundle cache hit (%.1fs)", _time.time() - req_start)
         return _dcached
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
@@ -721,6 +744,12 @@ async def get_apps_dashboard_bundle(
     # Use short TTL when registry was cold so next request gets properly filtered data
     cache_ttl = 60 if not registry else (600 if id_list else 1800)
     delta_cache_put(_dkey, _endpoint, _resp, ttl_seconds=cache_ttl)
+    import time as _time
+    logger.info(
+        "apps/dashboard-bundle OK: %.1fs workspaces=%s apps=%d",
+        _time.time() - req_start, id_list or "all",
+        apps_result.get("total_app_count", 0),
+    )
     return _resp
 
 

@@ -131,6 +131,22 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
   const contentScrollRef = useRef<HTMLDivElement>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────
+  const { data: permissions } = useQuery<{ admins: string[]; current_user?: string | null }>({
+    queryKey: ["user-permissions"],
+    queryFn: async () => {
+      const res = await fetch("/api/settings/permissions");
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    enabled: isOpen,
+    staleTime: 60 * 1000,
+  });
+
+  // Mirror backend logic: empty admins list = everyone is admin (fresh deploy)
+  const isAdmin = !permissions || !permissions.admins?.length || (
+    !!permissions.current_user && permissions.admins.includes(permissions.current_user)
+  );
+
   const { data: appConfig, isLoading: configLoading } = useQuery<{
     warehouse: { id: string; name: string | null; size: string | null; state: string; source?: "app_resource" | "http_path" | "none" } | null;
     identity: { display_name: string | null; user_name: string | null } | null;
@@ -154,6 +170,13 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
       setGeneralDirty(false);
     }
   }, [isOpen, tabVisibility, appSettings]);
+
+  // Kick non-admins off the setup tab if permissions load and they're not admin
+  useEffect(() => {
+    if (activeSection === "setup" && permissions && !isAdmin) {
+      setActiveSection("general");
+    }
+  }, [permissions, isAdmin, activeSection]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === "Escape") onClose();
@@ -274,18 +297,20 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                   </svg>
                   Debugger
                 </button>
-                <button
-                  onClick={() => setActiveSection("setup")}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                    activeSection === "setup" ? "text-white" : "text-gray-600 hover:bg-gray-100"
-                  }`}
-                  style={activeSection === "setup" ? { backgroundColor: '#1B3139' } : {}}
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Setup Wizard
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setActiveSection("setup")}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                      activeSection === "setup" ? "text-white" : "text-gray-600 hover:bg-gray-100"
+                    }`}
+                    style={activeSection === "setup" ? { backgroundColor: '#1B3139' } : {}}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Setup Wizard
+                  </button>
+                )}
               </div>
               <div className="relative group">
                 <button
@@ -357,7 +382,17 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
               }} />
             )}
             {activeSection === "setup" && (
-              <SetupWizard embedded onComplete={onClose} />
+              isAdmin
+                ? <SetupWizard embedded onComplete={onClose} />
+                : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <svg className="mb-3 h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <p className="text-sm font-medium text-gray-700">Admin access required</p>
+                    <p className="mt-1 text-xs text-gray-500">Only admins can run the Setup Wizard.</p>
+                  </div>
+                )
             )}
           </div>
 

@@ -26,10 +26,10 @@ interface SettingsTabsProps {
 export function SettingsTabs({ localVisibility, toggleTab, visibleCount, enableUseCaseTracking, enableAlerts, enableForecasting }: SettingsTabsProps) {
   return (
     <div>
-      <p className="mb-4 text-sm text-gray-500">
+      <p className="mb-3 text-sm text-gray-500">
         Toggle which tabs are visible in the dashboard. At least one tab must remain visible.
       </p>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {(Object.keys(TAB_LABELS) as Array<keyof TabVisibility>).filter((key) => {
           if (key === "use-cases" && !enableUseCaseTracking) return false;
           if (key === "alerts" && !enableAlerts) return false;
@@ -41,7 +41,7 @@ export function SettingsTabs({ localVisibility, toggleTab, visibleCount, enableU
           return (
             <label
               key={key}
-              className={`flex cursor-pointer items-center justify-between rounded-lg border-2 p-3 transition-colors ${
+              className={`flex cursor-pointer items-center justify-between rounded-lg border-2 px-3 py-2 transition-colors ${
                 checked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"
               }`}
             >

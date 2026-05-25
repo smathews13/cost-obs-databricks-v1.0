@@ -163,12 +163,12 @@ export function SettingsPermissions() {
     <div className="space-y-6">
 
       {/* ── System Readiness ── */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-          <h4 className="text-sm font-semibold text-gray-900">System Readiness</h4>
-          <span className="text-[11px] text-gray-500">SP access to Databricks system tables</span>
+      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+          <h4 className="text-sm font-semibold text-gray-800">System Readiness</h4>
+          <span className="text-xs text-gray-500">SP access to Databricks system tables</span>
         </div>
-        <div className="px-5 py-4">
+        <div className="px-4 py-3">
           <ReadinessChecks
             result={readiness ?? null}
             loading={readinessLoading}
@@ -187,12 +187,12 @@ export function SettingsPermissions() {
           <strong>Save failed:</strong> {saveMutation.error instanceof Error ? saveMutation.error.message : "Unknown error"}. Check that the app service principal has INSERT/DELETE access to the permissions table.
         </div>
       )}
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
         <strong>Default access:</strong> Any user not explicitly listed is treated as a <strong>Consumer</strong>. Add users to <em>Admins</em> to grant settings access.
       </div>
 
       {permissions?.table_location && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
           <span className="font-medium">Permissions table: </span>
           <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-gray-800">{permissions.table_location}</code>
           <span className="ml-2 text-gray-500">— stored in Unity Catalog, persists across deploys</span>
@@ -200,18 +200,20 @@ export function SettingsPermissions() {
       )}
 
       {/* Admins */}
-      <div>
-        <h4 className="mb-1 text-sm font-semibold text-gray-800">Admins</h4>
-        <p className="mb-3 text-xs text-gray-500">Admins can view all data and change app settings.</p>
-        <div className="mb-3 space-y-2">
+      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+        <div className="border-b border-gray-100 px-4 py-3">
+          <h4 className="text-sm font-semibold text-gray-800">Admins</h4>
+          <p className="mt-0.5 text-xs text-gray-500">Admins can view all data and change app settings.</p>
+        </div>
+        <div className="px-4 py-3 space-y-2">
           {(permissions?.admins ?? []).length === 0 ? (
             <div className="space-y-2">
               {permissions?.current_user && (
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 opacity-60">
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 opacity-70">
                   <div className="flex items-center gap-2">
                     <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">Admin</span>
-                    <span className="text-sm text-gray-800">{permissions.current_user}</span>
-                    <span className="text-xs text-gray-400 italic">(you — default admin)</span>
+                    <span className="text-xs text-gray-800">{permissions.current_user}</span>
+                    <span className="text-xs text-gray-500 italic">(you — default admin)</span>
                   </div>
                 </div>
               )}
@@ -219,81 +221,83 @@ export function SettingsPermissions() {
             </div>
           ) : (
             (permissions?.admins ?? []).map((email) => (
-              <div key={email} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <div key={email} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">Admin</span>
-                  <span className="text-sm text-gray-800">{email}</span>
+                  <span className="text-xs text-gray-800">{email}</span>
                 </div>
                 <button onClick={() => removeAdmin(email)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
               </div>
             ))
           )}
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="email"
-            placeholder="user@example.com"
-            value={newAdmin}
-            onChange={(e) => setNewAdmin(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addAdmin()}
-            className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-[#FF3621] focus:outline-none"
-          />
-          <button
-            onClick={addAdmin}
-            disabled={!newAdmin.trim() || saveMutation.isPending}
-            className="btn-brand rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            Add Admin
-          </button>
+          <div className="flex gap-2 pt-1">
+            <input
+              type="email"
+              placeholder="user@example.com"
+              value={newAdmin}
+              onChange={(e) => setNewAdmin(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addAdmin()}
+              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:border-[#FF3621] focus:outline-none"
+            />
+            <button
+              onClick={addAdmin}
+              disabled={!newAdmin.trim() || saveMutation.isPending}
+              className="btn-brand rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            >
+              Add Admin
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Consumers */}
-      <div>
-        <h4 className="mb-1 text-sm font-semibold text-gray-800">Consumers</h4>
-        <p className="mb-3 text-xs text-gray-500">Consumers can view dashboards but cannot change app settings.</p>
-        <div className="mb-3 space-y-2">
+      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+        <div className="border-b border-gray-100 px-4 py-3">
+          <h4 className="text-sm font-semibold text-gray-800">Consumers</h4>
+          <p className="mt-0.5 text-xs text-gray-500">Consumers can view dashboards but cannot change app settings.</p>
+        </div>
+        <div className="px-4 py-3 space-y-2">
           {(permissions?.consumers ?? []).length === 0 ? (
             <p className="text-xs text-gray-500 italic">No consumers listed.</p>
           ) : (
             (permissions?.consumers ?? []).map((email) => (
-              <div key={email} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <div key={email} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">Consumer</span>
-                  <span className="text-sm text-gray-800">{email}</span>
+                  <span className="text-xs text-gray-800">{email}</span>
                 </div>
                 <button onClick={() => removeConsumer(email)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
               </div>
             ))
           )}
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="email"
-            placeholder="user@example.com"
-            value={newConsumer}
-            onChange={(e) => setNewConsumer(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addConsumer()}
-            className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-[#FF3621] focus:outline-none"
-          />
-          <button
-            onClick={addConsumer}
-            disabled={!newConsumer.trim() || saveMutation.isPending}
-            className="btn-brand rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            Add Consumer
-          </button>
+          <div className="flex gap-2 pt-1">
+            <input
+              type="email"
+              placeholder="user@example.com"
+              value={newConsumer}
+              onChange={(e) => setNewConsumer(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addConsumer()}
+              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:border-[#FF3621] focus:outline-none"
+            />
+            <button
+              onClick={addConsumer}
+              disabled={!newConsumer.trim() || saveMutation.isPending}
+              className="btn-brand rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            >
+              Add Consumer
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ── Auth Mode Panel ── */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <div className="flex items-center gap-2">
             <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
             </svg>
-            <h4 className="text-sm font-semibold text-gray-900">Query Authentication Mode</h4>
+            <h4 className="text-sm font-semibold text-gray-800">Query Authentication Mode</h4>
           </div>
           <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
             <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -301,21 +305,21 @@ export function SettingsPermissions() {
           </div>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="px-4 py-3 space-y-4">
 
           {/* Current identity */}
           {authLoading ? (
-            <div className="h-12 animate-pulse rounded-lg bg-gray-100" />
+            <div className="h-10 animate-pulse rounded-lg bg-gray-100" />
           ) : authStatus ? (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 space-y-2">
-              <p className="text-xs font-medium text-gray-700 mb-2">Running as</p>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="text-xs font-medium text-gray-600 mb-2">Running as</p>
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1 text-xs font-semibold text-green-700">
                   <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
                   {authStatus.sp_display_name || "Service Principal"}
                 </span>
                 {authStatus.user_email && authStatus.user_email !== "service principal" && (
-                  <span className="text-[11px] text-gray-500">{authStatus.user_email}</span>
+                  <span className="text-xs text-gray-500">{authStatus.user_email}</span>
                 )}
               </div>
             </div>
@@ -336,7 +340,7 @@ export function SettingsPermissions() {
             </div>
 
             {authStatus?.sp_client_id && (
-              <div className="rounded border border-amber-200 bg-white px-3 py-2 text-[11px] space-y-1">
+              <div className="rounded border border-amber-200 bg-white px-3 py-2 text-xs space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="text-gray-500 w-28 shrink-0">Current SP ID</span>
                   <code className="font-mono text-gray-800" title={authStatus.sp_client_id}>
@@ -349,7 +353,7 @@ export function SettingsPermissions() {
                     <span className="text-gray-700">{authStatus.sp_display_name}</span>
                   </div>
                 )}
-                <p className="text-[10px] text-amber-600 italic pt-0.5">
+                <p className="text-xs text-amber-600 italic pt-0.5">
                   If grants have not been applied to this SP, dashboard data will show 0 until grants are run.
                 </p>
               </div>
@@ -380,8 +384,8 @@ export function SettingsPermissions() {
 
           {/* SP grants reference — app runtime grants */}
           {(isSP || noToken) && authStatus && (
-            <details className="rounded-lg border border-gray-200 bg-gray-50 text-xs">
-              <summary className="cursor-pointer px-4 py-2.5 font-medium text-gray-700 hover:text-gray-900">
+            <details className="rounded-lg border border-gray-200 bg-gray-50">
+              <summary className="cursor-pointer px-4 py-2.5 text-xs font-medium text-gray-700 hover:text-gray-900">
                 App runtime grants — exact SQL (run as metastore admin)
               </summary>
               <div className="border-t border-gray-200 px-4 py-3 space-y-3">
@@ -418,7 +422,7 @@ GRANT CREATE TABLE ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;
 GRANT SELECT ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;`;
                   return (
                     <>
-                      <div className="grid grid-cols-3 gap-2 text-[11px] rounded border border-gray-200 bg-white px-3 py-2">
+                      <div className="grid grid-cols-3 gap-2 text-xs rounded border border-gray-200 bg-white px-3 py-2">
                         <div><span className="text-gray-500">Target SP</span><br /><code className="font-mono text-gray-800 break-all">{spName}</code></div>
                         <div><span className="text-gray-500">Who must run</span><br /><span className="text-gray-700">Metastore or account admin</span></div>
                         <div><span className="text-gray-500">When</span><br /><span className="text-gray-700">Required once when the app is first created</span></div>

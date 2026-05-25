@@ -549,6 +549,10 @@ async def get_tables_status(request: Request, no_cache: bool = False):
 
         # Single query: SELECT MAX/MIN returns NULL on an empty table and raises
         # TABLE_OR_VIEW_NOT_FOUND if the table doesn't exist — no DESCRIBE needed.
+        # Use "TABLE_OR_VIEW_NOT_FOUND" and "table or view" as not-found signals;
+        # do NOT use the generic "not found" which also matches COLUMN_NOT_FOUND
+        # and would incorrectly mark an existing table with schema drift as absent.
+        _table_not_found = lambda e: ("TABLE_OR_VIEW_NOT_FOUND" in e or "table or view" in e.lower())
         try:
             max_expr = date_expr_overrides.get(table_name, "MAX(usage_date)")
             min_expr = min_date_expr_overrides.get(table_name, "MIN(usage_date)")
@@ -570,7 +574,7 @@ async def get_tables_status(request: Request, no_cache: bool = False):
             return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": min_date_str, "max_date": max_date_str, "days_behind": days_behind, "owner": None}
         except Exception as e:
             err = str(e)
-            if any(s in err for s in _not_found_signals) or "does not exist" in err.lower() or "not found" in err.lower():
+            if _table_not_found(err):
                 return {"name": table_name, "table_type": table_type, "exists": False, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
             return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None, "error": err[:200]}
 
@@ -602,7 +606,7 @@ async def get_tables_status(request: Request, no_cache: bool = False):
                 if name not in completed_names:
                     results.append({
                         "name": name, "table_type": ttype, "exists": None,
-                        "row_count": None, "max_date": None, "days_behind": None,
+                        "row_count": None, "min_date": None, "max_date": None, "days_behind": None,
                         "owner": None, "error": "timed out — warehouse may be starting up",
                     })
             logger.warning("Table status check timed out — warehouse likely cold")

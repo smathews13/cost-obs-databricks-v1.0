@@ -303,6 +303,28 @@ def _get_git_sha() -> str:
         return os.getenv("COMMIT_SHA", "")
 
 
+def _get_git_info() -> dict:
+    """Return git branch, repo remote URL, and commit date. Empty strings if unavailable."""
+    import subprocess as _sp
+    _cwd = os.path.dirname(__file__)
+    def _run(cmd: list[str]) -> str:
+        try:
+            return _sp.check_output(cmd, stderr=_sp.DEVNULL, cwd=_cwd).decode().strip()
+        except Exception:
+            return ""
+    branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    repo = _run(["git", "remote", "get-url", "origin"])
+    commit_date = _run(["git", "log", "-1", "--format=%ci", "HEAD"])
+    # Strip seconds+tz for brevity: "2026-05-25 14:30:00 +0000" → "2026-05-25 14:30"
+    if commit_date and len(commit_date) >= 16:
+        commit_date = commit_date[:16]
+    return {
+        "branch": branch or os.getenv("GIT_BRANCH", ""),
+        "repo": repo or os.getenv("GIT_REPO", ""),
+        "commit_date": commit_date,
+    }
+
+
 _warehouse_cache: dict | None = None  # in-process cache; cleared on server restart
 
 
@@ -378,19 +400,25 @@ async def get_app_config():
     except Exception as e:
         logger.warning(f"Could not fetch catalog/schema: {e}")
 
+    git = _get_git_info()
     return {
         "warehouse": warehouse,
         "identity": identity,
         "storage_location": storage_location,
-        "version": {"commit_sha": _get_git_sha()},
+        "version": {
+            "commit_sha": _get_git_sha(),
+            "branch": git["branch"],
+            "repo": git["repo"],
+            "commit_date": git["commit_date"],
+        },
     }
 
 
 @router.get("/tables")
-async def get_tables_status(request: Request):
+async def get_tables_status(request: Request, no_cache: bool = False):
     """Return status of each MV table: exists, row count, max date, days behind."""
     global _tables_cache, _tables_cache_ts
-    if _tables_cache is not None and (time.time() - _tables_cache_ts) < _TABLES_CACHE_TTL:
+    if not no_cache and _tables_cache is not None and (time.time() - _tables_cache_ts) < _TABLES_CACHE_TTL:
         return _tables_cache
 
     from server.db import get_catalog_schema, execute_query, _user_token
@@ -535,10 +563,15 @@ async def get_tables_status(request: Request):
                         "owner": None, "error": "timed out — warehouse may be starting up",
                     })
             logger.warning("Table status check timed out — warehouse likely cold")
-        # Merge owner results — they've been running in parallel; should be done or nearly done.
+        # Merge owner results — all have been running in parallel with SQL checks.
+        # Use a single shared deadline (3 s from now) so we don't block serially
+        # for up to 5 s × 7 tables = 35 s in the worst case.
+        import time as _t
+        _owner_deadline = _t.monotonic() + 3.0
         for r in results:
             try:
-                r["owner"] = owner_futures[r["name"]].result(timeout=5)
+                _remaining = max(0.0, _owner_deadline - _t.monotonic())
+                r["owner"] = owner_futures[r["name"]].result(timeout=_remaining)
             except Exception:
                 r["owner"] = None
 
@@ -720,8 +753,11 @@ async def trigger_mv_refresh(background_tasks: BackgroundTasks, lookback_days: i
 
     lookback_days: how many days of history to include (default 730 = 2 years).
     """
+    global _tables_cache, _tables_cache_ts
     from server.app import _run_mv_refresh
-
+    # Clear cache immediately so the next Status poll reflects fresh SQL results
+    _tables_cache = None
+    _tables_cache_ts = 0.0
     background_tasks.add_task(_run_mv_refresh, lookback_days=lookback_days)
     return {"status": "queued", "lookback_days": lookback_days}
 
@@ -730,11 +766,15 @@ async def trigger_mv_refresh(background_tasks: BackgroundTasks, lookback_days: i
 async def get_auth_status_endpoint():
     """Return current auth mode for the settings UI indicator."""
     import os as _os
+    import asyncio as _asyncio
     from server.db import get_auth_status, get_workspace_client
     status = get_auth_status()
     # Add SP identity and catalog/schema so the UI renders accurate GRANT SQL without placeholders
+    def _fetch_me():
+        return get_workspace_client().current_user.me()
     try:
-        me = get_workspace_client().current_user.me()
+        loop = _asyncio.get_running_loop()
+        me = await _asyncio.wait_for(loop.run_in_executor(None, _fetch_me), timeout=4.0)
         # user_name is the SP's applicationId (its actual identity); display_name is the human label
         status["sp_user_name"] = me.user_name or ""
         status["sp_display_name"] = me.display_name or me.user_name or ""
@@ -1275,7 +1315,7 @@ async def save_user_permissions(request: Request, data: UserPermissionsModel) ->
 
 # ── Refresh Schedule ─────────────────────────────────────────────────────────
 
-_SCHEDULE_DEFAULTS: dict = {"enabled": True, "frequency": "nightly", "hour_utc": 5}
+_SCHEDULE_DEFAULTS: dict = {"enabled": True, "frequency": "nightly", "hour_utc": 5, "lookback_days": 180}
 
 
 def load_schedule_settings() -> dict:
@@ -1300,9 +1340,12 @@ async def save_schedule_endpoint(request: Request, data: dict) -> dict:
         "enabled": bool(data.get("enabled", True)),
         "frequency": data.get("frequency", "nightly"),
         "hour_utc": max(0, min(23, int(data.get("hour_utc", 5)))),
+        "lookback_days": int(data.get("lookback_days", 180)),
     }
     if settings["frequency"] not in ("nightly", "weekly", "monthly"):
         settings["frequency"] = "nightly"
+    if settings["lookback_days"] not in (180, 365, 730, 1095):
+        settings["lookback_days"] = 180
     os.makedirs(SETTINGS_DIR, exist_ok=True)
     with open(SCHEDULE_SETTINGS_FILE, "w") as f:
         json.dump(settings, f, indent=2)

@@ -31,6 +31,14 @@ function ColWarn({ error, align = "left" }: { error: string; align?: "left" | "r
   );
 }
 
+// Module-level — survives tab switches (component unmount/remount)
+let _mvRefreshing = false;
+let _mvPrevRefreshTime: string | null = null;
+let _mvDeadline = 0;
+let _mvPollInterval: ReturnType<typeof setInterval> | null = null;
+// Active poll callback updated by each mounted component instance
+let _mvPollCallback: (() => Promise<void>) | null = null;
+
 export function SettingsConfig({
   configLoading,
   appConfig,
@@ -39,13 +47,9 @@ export function SettingsConfig({
   updateSetting,
 }: SettingsConfigProps) {
   const queryClient = useQueryClient();
-  const [mvRefreshing, setMvRefreshing] = useState(false);
+  const [mvRefreshing, setMvRefreshing] = useState(_mvRefreshing);
   const [lookbackDays, setLookbackDays] = useState(180);
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
-  }, []);
+  const noCacheRef = useRef(false);
 
   // Catalog/schema location override
   const { data: catalogInfo = null, isLoading: catalogLoading } = useQuery<{
@@ -99,32 +103,52 @@ export function SettingsConfig({
     }>;
   } | null>({
     queryKey: ["settings-tables-status"],
-    queryFn: () => fetch("/api/settings/tables").then(r => r.json()).catch(() => null),
+    queryFn: () => {
+      const url = noCacheRef.current ? "/api/settings/tables?no_cache=1" : "/api/settings/tables";
+      noCacheRef.current = false;
+      return fetch(url).then(r => r.json()).catch(() => null);
+    },
     staleTime: 2 * 60 * 1000,
   });
 
+  // Register the poll callback on every render so it always has current closures.
+  // The module-level interval calls this, so it works even after tab switches.
+  _mvPollCallback = async () => {
+    noCacheRef.current = true;
+    const result = await refetchTables();
+    const newTime = result.data?.refresh_status?.last_refresh_utc;
+    if ((newTime && newTime !== _mvPrevRefreshTime) || Date.now() > _mvDeadline) {
+      if (_mvPollInterval) { clearInterval(_mvPollInterval); _mvPollInterval = null; }
+      _mvRefreshing = false;
+      setMvRefreshing(false);
+      queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
+    }
+  };
+
+  // On mount: if rebuild was running, restart the poll loop with fresh callbacks
+  useEffect(() => {
+    if (_mvRefreshing && !_mvPollInterval) {
+      _mvPollInterval = setInterval(() => _mvPollCallback?.(), 30_000);
+    }
+    // On unmount: leave module vars intact; clear callback so ticks are no-ops
+    return () => { _mvPollCallback = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleMvRefresh() {
-    if (mvRefreshing) return;
-    const prevRefreshTime = tablesStatus?.refresh_status?.last_refresh_utc ?? null;
+    if (_mvRefreshing) return;
+    _mvPrevRefreshTime = tablesStatus?.refresh_status?.last_refresh_utc ?? null;
+    _mvRefreshing = true;
+    _mvDeadline = Date.now() + 15 * 60 * 1000;
     setMvRefreshing(true);
     try {
       await fetch(`/api/settings/refresh-mvs?lookback_days=${lookbackDays}`, { method: "POST" });
     } catch {
       // fire-and-forget — server runs refresh in background
     }
-    const deadline = Date.now() + 10 * 60 * 1000;
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    pollIntervalRef.current = setInterval(async () => {
-      const result = await refetchTables();
-      const newTime = result.data?.refresh_status?.last_refresh_utc;
-      if ((newTime && newTime !== prevRefreshTime) || Date.now() > deadline) {
-        clearInterval(pollIntervalRef.current!);
-        pollIntervalRef.current = null;
-        setMvRefreshing(false);
-        // Rebuild complete — readiness state may have changed (tables now exist).
-        queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
-      }
-    }, 30_000);
+    // Clear any old interval, start fresh
+    if (_mvPollInterval) clearInterval(_mvPollInterval);
+    _mvPollInterval = setInterval(() => _mvPollCallback?.(), 30_000);
   }
   const [spCopied, setSpCopied] = useState(false);
 
@@ -352,7 +376,7 @@ export function SettingsConfig({
                   <option value={1095}>3 years</option>
                 </select>
                 <button
-                  onClick={() => refetchTables()}
+                  onClick={() => { noCacheRef.current = true; refetchTables(); }}
                   disabled={mvRefreshing || tablesFetching}
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-gray-600 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Refresh table status"
@@ -456,7 +480,8 @@ export function SettingsConfig({
                         dbsql_cost_per_query: "~13mo (query.history)",
                       };
                     return tablesStatus.tables.map((t) => {
-                      const stale = t.days_behind != null && t.days_behind > 1;
+                      // Billing source data has 1-3 day ingestion lag — flag only if notably stale
+                      const stale = t.days_behind != null && t.days_behind > 4;
                       const missing = t.exists === false && !t.optional;
                       const notConfigured = t.exists === false && t.optional;
                       const unknown = t.exists === null;
@@ -534,9 +559,9 @@ export function SettingsConfig({
                               t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} align="right" /></> : <span className="text-gray-300">—</span>
                             ) : t.days_behind === 0 ? (
                               <span className="text-green-600 font-medium">Today</span>
-                            ) : t.days_behind === 1 ? (
-                              <span className="text-green-600">1d behind</span>
                             ) : t.days_behind <= 3 ? (
+                              <span className="text-gray-500">{t.days_behind}d behind</span>
+                            ) : t.days_behind <= 7 ? (
                               <span className="text-amber-600 font-medium">{t.days_behind}d behind</span>
                             ) : (
                               <span className="text-red-600 font-medium">{t.days_behind}d behind</span>

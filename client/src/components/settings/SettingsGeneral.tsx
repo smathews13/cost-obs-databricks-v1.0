@@ -5,6 +5,7 @@ interface ScheduleSettings {
   enabled: boolean;
   frequency: "nightly" | "weekly" | "monthly";
   hour_utc: number;
+  lookback_days: number;
 }
 
 interface SettingsGeneralProps {
@@ -15,7 +16,7 @@ interface SettingsGeneralProps {
 }
 
 export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setSaveStatus }: SettingsGeneralProps) {
-  const [schedule, setSchedule] = useState<ScheduleSettings>({ enabled: true, frequency: "nightly", hour_utc: 5 });
+  const [schedule, setSchedule] = useState<ScheduleSettings>({ enabled: true, frequency: "nightly", hour_utc: 5, lookback_days: 180 });
   const [scheduleStatus, setScheduleStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -293,6 +294,24 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
               {HOUR_OPTIONS.map(h => (
                 <option key={h} value={h}>{formatHour(h)}</option>
               ))}
+            </select>
+          </div>
+          {/* Rebuild window */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Rebuild Window</div>
+              <div className="text-xs text-gray-500">How far back to pull data on each rebuild</div>
+            </div>
+            <select
+              value={schedule.lookback_days}
+              onChange={e => saveSchedule({ ...schedule, lookback_days: Number(e.target.value) })}
+              disabled={!schedule.enabled}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+            >
+              <option value={180}>6 months (default)</option>
+              <option value={365}>1 year</option>
+              <option value={730}>2 years</option>
+              <option value={1095}>3 years</option>
             </select>
           </div>
         </div>

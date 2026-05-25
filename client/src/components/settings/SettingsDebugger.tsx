@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 interface InstallReport {
-  version?: { commit_sha: string };
+  version?: { commit_sha: string; branch?: string; repo?: string; commit_date?: string };
   warehouse?: {
     id: string | null;
     name?: string | null;
@@ -14,8 +14,6 @@ interface InstallReport {
   storage_location?: {
     catalog: string;
     schema: string;
-    catalog_source?: string;
-    schema_source?: string;
   };
 }
 
@@ -340,11 +338,23 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
           <div className="grid grid-cols-2 gap-x-6 text-[11px]">
             {/* Left: auth / identity */}
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 content-start">
-              <dt className="text-gray-500">Git SHA</dt>
-              <dd>
-                {installReport?.version?.commit_sha
+              {installReport?.version?.repo && (
+                <>
+                  <dt className="text-gray-500">Repo</dt>
+                  <dd className="font-mono text-gray-700 truncate text-[10px]">{installReport.version.repo.replace(/^https?:\/\//, "").replace(/\.git$/, "")}</dd>
+                </>
+              )}
+              {installReport?.version?.branch && (
+                <>
+                  <dt className="text-gray-500">Branch</dt>
+                  <dd className="font-mono text-gray-700">{installReport.version.branch}</dd>
+                </>
+              )}
+              <dt className="text-gray-500">Last deploy</dt>
+              <dd className="font-mono text-gray-700">
+                {installReport?.version?.commit_date || (installReport?.version?.commit_sha
                   ? <code className="rounded bg-gray-200 px-1 font-mono text-gray-700">{installReport.version.commit_sha}</code>
-                  : <span className="text-gray-400">—</span>}
+                  : <span className="text-gray-400">—</span>)}
               </dd>
               <dt className="text-gray-500">Auth mode</dt>
               <dd className="font-medium text-gray-700">{authStatusSlim?.auth_mode ?? "—"}</dd>
@@ -401,18 +411,6 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
                   ? `${installReport.storage_location.catalog}.${installReport.storage_location.schema}`
                   : "—"}
               </dd>
-              {installReport?.storage_location?.catalog_source && (
-                <>
-                  <dt className="text-gray-500">Cat. source</dt>
-                  <dd className="font-medium text-gray-700">{installReport.storage_location.catalog_source}</dd>
-                </>
-              )}
-              {installReport?.storage_location?.schema_source && (
-                <>
-                  <dt className="text-gray-500">Sch. source</dt>
-                  <dd className="font-medium text-gray-700">{installReport.storage_location.schema_source}</dd>
-                </>
-              )}
             </dl>
           </div>
         )}

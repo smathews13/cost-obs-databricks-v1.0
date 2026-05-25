@@ -522,7 +522,18 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
     log_data: dict = {"last_refresh_utc": start_utc, "duration_seconds": 0, "mv_timings": {}, "status": "error", "error": "unknown"}
     try:
         catalog, schema = get_catalog_schema()
-        results = refresh_materialized_views(catalog, schema, lookback_days=lookback_days)
+        # If lookback_days differs from the last run, force a full rebuild so the
+        # incremental MERGE path doesn't silently ignore the extended window.
+        prev_lookback = None
+        try:
+            with open(log_path) as _lf:
+                prev_lookback = json.load(_lf).get("lookback_days")
+        except Exception:
+            pass
+        force_full = prev_lookback is not None and prev_lookback != lookback_days
+        if force_full:
+            logger.info(f"lookback_days changed ({prev_lookback} → {lookback_days}) — forcing full rebuild")
+        results = refresh_materialized_views(catalog, schema, lookback_days=lookback_days, force_full_rebuild=force_full)
         mv_timings = results.pop("__mv_timings__", {})
         duration = round(time.monotonic() - refresh_start, 1)
         failed = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
@@ -531,6 +542,7 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
             "duration_seconds": duration,
             "mv_timings": mv_timings,
             "status": "partial_error" if failed else "success",
+            "lookback_days": lookback_days,
         }
         if failed:
             log_data["error"] = "; ".join(f"{k}: {v}" for k, v in failed.items())
@@ -678,8 +690,11 @@ async def lifespan(app: FastAPI):
                 try:
                     with open(lock_path, "w") as lf:
                         fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        logger.info(f"Running scheduled MV refresh ({frequency})...")
-                        await asyncio.get_running_loop().run_in_executor(None, _run_mv_refresh)
+                        lookback_days = sched.get("lookback_days", 180)
+                        logger.info(f"Running scheduled MV refresh ({frequency}, lookback={lookback_days}d)...")
+                        await asyncio.get_running_loop().run_in_executor(
+                            None, lambda: _run_mv_refresh(lookback_days=lookback_days)
+                        )
                         logger.info("Scheduled MV refresh complete")
                         fcntl.flock(lf, fcntl.LOCK_UN)
                 except BlockingIOError:

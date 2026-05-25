@@ -1292,7 +1292,7 @@ def _update_refresh_state(catalog: str, schema: str, table_name: str, refresh_co
         logger.warning("Could not update refresh state for %s (non-fatal): %s", table_name, e)
 
 
-def create_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None) -> dict:
+def create_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None, force_full_rebuild: bool = False) -> dict:
     """Create all materialized view tables.
 
     Args:
@@ -1451,7 +1451,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
             cfg = _TABLE_REFRESH_CONFIG.get(table_name, {})
             state = _get_refresh_state(catalog, schema, table_name)
 
-            if state and state.get("watermark"):
+            if not force_full_rebuild and state and state.get("watermark"):
                 # Incremental path: MERGE reprocess window
                 reprocess_days = cfg.get("reprocess_days", 14)
                 overlap_days = cfg.get("overlap_days", 0)
@@ -1522,9 +1522,9 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
     return results
 
 
-def refresh_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None) -> dict:
+def refresh_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None, force_full_rebuild: bool = False) -> dict:
     """Refresh all materialized view tables (same as create - full refresh)."""
-    return create_materialized_views(catalog, schema, lookback_days=lookback_days, on_table_event=on_table_event)
+    return create_materialized_views(catalog, schema, lookback_days=lookback_days, on_table_event=on_table_event, force_full_rebuild=force_full_rebuild)
 
 
 def drop_materialized_views(catalog: str | None = None, schema: str | None = None) -> dict:

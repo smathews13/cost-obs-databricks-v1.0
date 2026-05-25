@@ -120,7 +120,7 @@ export function SettingsConfig({
       noCacheRef.current = false;
       return fetch(url).then(r => r.json()).catch(() => null);
     },
-    staleTime: 2 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
   });
 
   // Register the poll callback on every render so it always has current closures.
@@ -528,7 +528,7 @@ export function SettingsConfig({
                       const unknown = t.exists === null;
                       // Don't show red ✗ while a re-check is in progress — the cached
                       // result may be stale. Show neutral ? until the fetch settles.
-                      const showNeutral = tablesFetching;
+                      const showNeutral = tablesLoading;
                       return (
                         <tr key={t.name} className={!showNeutral && missing ? "bg-red-50" : veryStale ? "bg-red-50" : stale ? "bg-amber-50" : ""}>
                           <td className="px-3 py-2 font-mono text-gray-700 flex items-center gap-1.5">

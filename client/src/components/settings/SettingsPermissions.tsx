@@ -33,6 +33,7 @@ export function SettingsPermissions() {
   const [newConsumer, setNewConsumer] = useState("");
   const [grantRunning, setGrantRunning] = useState(false);
   const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[] } | null>(null);
+  const [readinessOpen, setReadinessOpen] = useState(false);
 
   const { data: permissions, isLoading } = useQuery<UserPermissions>({
     queryKey: ["user-permissions"],
@@ -162,24 +163,58 @@ export function SettingsPermissions() {
   return (
     <div className="space-y-6">
 
-      {/* ── System Readiness ── */}
-      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-          <h4 className="text-sm font-semibold text-gray-800">System Readiness</h4>
-          <span className="text-xs text-gray-500">SP access to Databricks system tables</span>
-        </div>
-        <div className="px-4 py-3">
-          <ReadinessChecks
-            result={readiness ?? null}
-            loading={readinessLoading}
-            fetchError={readinessQueryError ? String(readinessQueryError) : null}
-            onRecheck={handleReadinessRecheck}
-            onAutoGrant={runSpGrants}
-            autoGrantRunning={grantRunning}
-            autoGrantResult={grantResult}
-          />
-        </div>
-      </div>
+      {/* ── System Readiness (collapsible) ── */}
+      {(() => {
+        const overall = readiness?.overall;
+        const dotColor = overall === "ready" ? "bg-green-500"
+          : overall === "core_ready" ? "bg-amber-500"
+          : overall ? "bg-red-500" : "bg-gray-300";
+        const badgeLabel = overall === "ready" ? "Ready"
+          : overall === "core_ready" ? "Core Ready"
+          : overall === "needs_action" ? "Needs Action"
+          : overall === "not_ready" ? "Not Ready"
+          : readinessLoading ? "Checking…" : "—";
+        const badgeColor = overall === "ready" ? "bg-green-50 text-green-700 border-green-200"
+          : overall === "core_ready" ? "bg-amber-50 text-amber-700 border-amber-200"
+          : overall ? "bg-red-50 text-red-700 border-red-200"
+          : "bg-gray-50 text-gray-500 border-gray-200";
+        return (
+          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setReadinessOpen(o => !o)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor}`} />
+                <h4 className="text-sm font-semibold text-gray-800">System Readiness</h4>
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeColor}`}>
+                  {badgeLabel}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-400">SP access to Databricks system tables</span>
+                <svg className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${readinessOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </button>
+            {readinessOpen && (
+              <div className="border-t border-gray-100 px-4 py-3">
+                <ReadinessChecks
+                  result={readiness ?? null}
+                  loading={readinessLoading}
+                  fetchError={readinessQueryError ? String(readinessQueryError) : null}
+                  onRecheck={handleReadinessRecheck}
+                  onAutoGrant={runSpGrants}
+                  autoGrantRunning={grantRunning}
+                  autoGrantResult={grantResult}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── App-level user/role permissions ── */}
       {saveMutation.isError && (

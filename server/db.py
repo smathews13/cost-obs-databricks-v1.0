@@ -1013,7 +1013,7 @@ def execute_queries_parallel(
     Returns:
         Dictionary mapping query names to results
     """
-    from concurrent.futures import wait as _wait, FIRST_COMPLETED as _FC
+    from concurrent.futures import wait as _wait
     start_time = time.time()
     results: dict[str, list[dict[str, Any]] | None] = {}
 
@@ -1033,6 +1033,16 @@ def execute_queries_parallel(
         "[SCHEMA_NOT_FOUND]",
     )
 
+    def _collect(future, name: str) -> None:
+        try:
+            results[name] = future.result()
+        except Exception as e:
+            if any(code in str(e) for code in _EXPECTED_CODES):
+                logger.warning("✗ %s failed (non-fatal): %s", name, e)
+            else:
+                logger.error("✗ %s failed: %s", name, e)
+            results[name] = None
+
     with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_name = {
             executor.submit(_timed(name, func)): name
@@ -1040,34 +1050,18 @@ def execute_queries_parallel(
         }
 
         if timeout is not None:
-            deadline = start_time + timeout
-            remaining = {f for f in future_to_name}
-            while remaining:
-                wait_secs = max(0.0, deadline - time.time())
-                if wait_secs == 0:
-                    break
-                done, remaining = _wait(remaining, timeout=wait_secs, return_when="ALL_COMPLETED")
-            # Anything still pending has timed out
-            for future in remaining:
+            done, not_done = _wait(future_to_name.keys(), timeout=timeout, return_when="ALL_COMPLETED")
+            for future in not_done:
                 name = future_to_name[future]
                 elapsed = time.time() - start_time
-                logger.error("✗ %s timed out after %.1fs (query still running in background)", name, elapsed)
+                logger.error("✗ %s timed out after %.1fs (thread still running in background)", name, elapsed)
                 results[name] = None
-            done_futures = {f for f in future_to_name if f not in remaining}
+            for future in done:
+                _collect(future, future_to_name[future])
         else:
-            done_futures = future_to_name.keys()
-
-        for future in done_futures:
-            name = future_to_name[future]
-            if future.done():
-                try:
-                    results[name] = future.result()
-                except Exception as e:
-                    if any(code in str(e) for code in _EXPECTED_CODES):
-                        logger.warning("✗ %s failed (non-fatal): %s", name, e)
-                    else:
-                        logger.error("✗ %s failed: %s", name, e)
-                    results[name] = None
+            # No timeout — wait for every future via as_completed (original behaviour)
+            for future in as_completed(future_to_name):
+                _collect(future, future_to_name[future])
 
     total_elapsed = time.time() - start_time
     logger.info("Parallel execution: %.2fs total (%d/%d queries completed)", total_elapsed, len(results), len(query_funcs))

@@ -313,7 +313,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const [artifactPage, setArtifactPage] = useState(1);
   const artifactsPerPage = 10;
 
-  const { data: freshData, isLoading: freshLoading, isError: freshError, refetch } = useAppsDashboardBundle(dateRange, workspaceIds, true);
+  const { data: freshData, isLoading: freshLoading, isError: freshError, error: freshErrorObj, refetch } = useAppsDashboardBundle(dateRange, workspaceIds, true);
 
   const data = freshData ?? initialData;
   const isLoading = freshLoading || initialLoading;
@@ -475,11 +475,15 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   }
 
   if (isError) {
+    const errMsg = freshErrorObj instanceof Error ? freshErrorObj.message : null;
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-6">
         <div className="flex flex-col items-center justify-center gap-3 py-4">
           <p className="text-base font-medium text-red-800">Failed to load Apps data</p>
-          <p className="text-sm text-red-700">The server may be warming up or the Apps SDK call timed out. Click retry to try again.</p>
+          {errMsg
+            ? <p className="text-sm text-red-700 font-mono text-center">{errMsg}</p>
+            : <p className="text-sm text-red-700">Check server logs for details.</p>
+          }
           <button
             onClick={() => refetch()}
             className="mt-1 rounded-md px-4 py-2 text-sm font-medium text-white"

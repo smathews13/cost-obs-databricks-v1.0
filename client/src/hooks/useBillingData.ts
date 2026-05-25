@@ -54,7 +54,12 @@ const STALE_TIME = 5 * 60 * 1000;
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to fetch: ${response.statusText}`);
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (body?.detail) detail = `${response.status}: ${body.detail}`;
+    } catch { /* ignore parse errors */ }
+    throw new Error(detail);
   }
   return response.json();
 }

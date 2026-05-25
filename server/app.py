@@ -633,26 +633,52 @@ async def lifespan(app: FastAPI):
     # Remaining startup tasks run in background
     asyncio.get_running_loop().run_in_executor(None, startup_tasks)
 
-    # Daily MV refresh scheduler — runs at 2am UTC inside the app process.
-    # Uses a file lock so only one uvicorn worker fires the refresh.
+    # MV refresh scheduler — frequency/hour configurable via Settings > General.
+    # Defaults: nightly at 05:00 UTC. Uses a file lock so only one worker fires.
     async def _daily_mv_refresh_loop():
         from datetime import datetime, timezone, timedelta
         import fcntl
         while True:
             try:
+                from server.routers.settings import load_schedule_settings
+                sched = load_schedule_settings()
+                if not sched.get("enabled", True):
+                    await asyncio.sleep(3600)  # check again in 1h
+                    continue
+
+                hour_utc = sched.get("hour_utc", 5)
+                frequency = sched.get("frequency", "nightly")
+
                 now = datetime.now(timezone.utc)
-                next_run = now.replace(hour=2, minute=0, second=0, microsecond=0)
+                next_run = now.replace(hour=hour_utc, minute=0, second=0, microsecond=0)
                 if next_run <= now:
                     next_run += timedelta(days=1)
-                wait = (next_run - datetime.now(timezone.utc)).total_seconds()
-                logger.info(f"Next MV refresh scheduled in {wait/3600:.1f}h (at 02:00 UTC)")
+                wait = (next_run - now).total_seconds()
+                logger.info(f"Next MV refresh in {wait/3600:.1f}h ({frequency} at {hour_utc:02d}:00 UTC)")
                 await asyncio.sleep(max(wait, 0))
-                # File lock — only one worker runs the refresh
+
+                # Re-read settings in case they changed while sleeping
+                sched = load_schedule_settings()
+                if not sched.get("enabled", True):
+                    continue
+                frequency = sched.get("frequency", "nightly")
+                now = datetime.now(timezone.utc)
+
+                # Check if this run day matches the frequency
+                should_run = (
+                    frequency == "nightly"
+                    or (frequency == "weekly" and now.weekday() == 0)   # Monday
+                    or (frequency == "monthly" and now.day == 1)
+                )
+                if not should_run:
+                    logger.info(f"Skipping refresh (frequency={frequency}, weekday={now.weekday()}, day={now.day})")
+                    continue
+
                 lock_path = "/tmp/cost-obs-mv-refresh.lock"
                 try:
                     with open(lock_path, "w") as lf:
                         fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        logger.info("Running scheduled daily MV refresh...")
+                        logger.info(f"Running scheduled MV refresh ({frequency})...")
                         await asyncio.get_running_loop().run_in_executor(None, _run_mv_refresh)
                         logger.info("Scheduled MV refresh complete")
                         fcntl.flock(lf, fcntl.LOCK_UN)
@@ -661,7 +687,7 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Daily MV refresh loop error: {e}")
+                logger.error(f"MV refresh scheduler error: {e}")
                 await asyncio.sleep(3600)  # retry in 1h on unexpected error
 
     scheduler_task = asyncio.create_task(_daily_mv_refresh_loop())

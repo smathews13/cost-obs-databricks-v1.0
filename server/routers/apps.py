@@ -653,7 +653,7 @@ async def _get_apps_dashboard_bundle_inner(
         ("service_principals", lambda: execute_query(_ws(APPS_SERVICE_PRINCIPALS), params)),
     ]
 
-    results = await asyncio.to_thread(execute_queries_parallel, queries)
+    results = await asyncio.to_thread(execute_queries_parallel, queries, 75.0)
 
     # Build workspace lookup per app_id (name → id mapping)
     workspace_rows = results.get("workspaces", []) or []

@@ -39,6 +39,7 @@ WEBHOOK_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "webhook_settings.json")
 WAREHOUSE_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "warehouse_settings.json")
 PRICING_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "pricing_settings.json")
 USER_PERMISSIONS_FILE = os.path.join(SETTINGS_DIR, "user_permissions.json")
+SCHEDULE_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "schedule_settings.json")
 # Legacy file path for backward compatibility
 AZURE_CONNECTIONS_FILE = os.path.join(SETTINGS_DIR, "azure_connections.json")
 
@@ -1270,6 +1271,43 @@ async def save_user_permissions(request: Request, data: UserPermissionsModel) ->
     except Exception as e:
         logger.error(f"Failed to save permissions: {e}")
         raise HTTPException(status_code=500, detail="Failed to save permissions — check server logs")
+
+
+# ── Refresh Schedule ─────────────────────────────────────────────────────────
+
+_SCHEDULE_DEFAULTS: dict = {"enabled": True, "frequency": "nightly", "hour_utc": 5}
+
+
+def load_schedule_settings() -> dict:
+    try:
+        if os.path.exists(SCHEDULE_SETTINGS_FILE):
+            with open(SCHEDULE_SETTINGS_FILE) as f:
+                return {**_SCHEDULE_DEFAULTS, **json.load(f)}
+    except Exception:
+        pass
+    return dict(_SCHEDULE_DEFAULTS)
+
+
+@router.get("/schedule")
+async def get_schedule_settings() -> dict:
+    return load_schedule_settings()
+
+
+@router.post("/schedule")
+async def save_schedule_endpoint(request: Request, data: dict) -> dict:
+    _require_admin(request)
+    settings = {
+        "enabled": bool(data.get("enabled", True)),
+        "frequency": data.get("frequency", "nightly"),
+        "hour_utc": max(0, min(23, int(data.get("hour_utc", 5)))),
+    }
+    if settings["frequency"] not in ("nightly", "weekly", "monthly"):
+        settings["frequency"] = "nightly"
+    os.makedirs(SETTINGS_DIR, exist_ok=True)
+    with open(SCHEDULE_SETTINGS_FILE, "w") as f:
+        json.dump(settings, f, indent=2)
+    logger.info("Schedule settings saved: %s", settings)
+    return settings
 
 
 # ── Customer Discounts ────────────────────────────────────────────────────────

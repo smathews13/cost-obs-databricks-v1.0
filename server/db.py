@@ -999,24 +999,21 @@ def get_auth_status() -> dict:
 
 
 def execute_queries_parallel(
-    query_funcs: list[tuple[str, Callable[[], list[dict[str, Any]]]]]
+    query_funcs: list[tuple[str, Callable[[], list[dict[str, Any]]]]],
+    timeout: float | None = None,
 ) -> dict[str, list[dict[str, Any]] | None]:
     """Execute multiple queries in parallel using ThreadPoolExecutor.
 
     Args:
         query_funcs: List of (name, lambda) tuples where lambda executes the query
+        timeout: Optional wall-clock timeout in seconds. Queries not finished by
+                 deadline are logged as timed-out and return None (threads keep
+                 running in background — callers must handle None gracefully).
 
     Returns:
         Dictionary mapping query names to results
-
-    Example:
-        queries = [
-            ("summary", lambda: execute_query(SUMMARY_QUERY, params)),
-            ("products", lambda: execute_query(PRODUCTS_QUERY, params)),
-        ]
-        results = execute_queries_parallel(queries)
-        summary_data = results["summary"]
     """
+    from concurrent.futures import wait as _wait, FIRST_COMPLETED as _FC
     start_time = time.time()
     results: dict[str, list[dict[str, Any]] | None] = {}
 
@@ -1029,37 +1026,50 @@ def execute_queries_parallel(
             return result
         return wrapped
 
-    # Use ThreadPoolExecutor for parallel execution
-    # Max 6 workers to avoid overwhelming the warehouse
+    _EXPECTED_CODES = (
+        "[INSUFFICIENT_PERMISSIONS]",
+        "[UNRESOLVED_COLUMN",
+        "[TABLE_OR_VIEW_NOT_FOUND]",
+        "[SCHEMA_NOT_FOUND]",
+    )
+
     with ThreadPoolExecutor(max_workers=10) as executor:
-        # Submit all queries with per-query timing wrappers
         future_to_name = {
             executor.submit(_timed(name, func)): name
             for name, func in query_funcs
         }
 
-        # Collect results as they complete
-        for future in as_completed(future_to_name):
-            name = future_to_name[future]
-            try:
-                results[name] = future.result()
-            except Exception as e:
-                # Expected structural errors (missing grants, schema differences,
-                # optional tables) — log at WARNING to reduce noise.
-                # Real errors (connection failures, unexpected types) stay at ERROR.
-                _EXPECTED_CODES = (
-                    "[INSUFFICIENT_PERMISSIONS]",
-                    "[UNRESOLVED_COLUMN",
-                    "[TABLE_OR_VIEW_NOT_FOUND]",
-                    "[SCHEMA_NOT_FOUND]",
-                )
-                if any(code in str(e) for code in _EXPECTED_CODES):
-                    logger.warning(f"✗ {name} failed (non-fatal): {e}")
-                else:
-                    logger.error(f"✗ {name} failed: {e}")
+        if timeout is not None:
+            deadline = start_time + timeout
+            remaining = {f for f in future_to_name}
+            while remaining:
+                wait_secs = max(0.0, deadline - time.time())
+                if wait_secs == 0:
+                    break
+                done, remaining = _wait(remaining, timeout=wait_secs, return_when="ALL_COMPLETED")
+            # Anything still pending has timed out
+            for future in remaining:
+                name = future_to_name[future]
+                elapsed = time.time() - start_time
+                logger.error("✗ %s timed out after %.1fs (query still running in background)", name, elapsed)
                 results[name] = None
+            done_futures = {f for f in future_to_name if f not in remaining}
+        else:
+            done_futures = future_to_name.keys()
+
+        for future in done_futures:
+            name = future_to_name[future]
+            if future.done():
+                try:
+                    results[name] = future.result()
+                except Exception as e:
+                    if any(code in str(e) for code in _EXPECTED_CODES):
+                        logger.warning("✗ %s failed (non-fatal): %s", name, e)
+                    else:
+                        logger.error("✗ %s failed: %s", name, e)
+                    results[name] = None
 
     total_elapsed = time.time() - start_time
-    logger.info(f"Parallel execution completed: {total_elapsed:.2f}s total ({len(results)} queries)")
+    logger.info("Parallel execution: %.2fs total (%d/%d queries completed)", total_elapsed, len(results), len(query_funcs))
 
     return results

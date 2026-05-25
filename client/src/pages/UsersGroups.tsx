@@ -338,12 +338,15 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          {workspaceIds && workspaceIds.length > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-xs font-medium text-green-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-              {workspaceIds.length === 1 ? (workspaceNameMap?.[workspaceIds[0]] || workspaceIds[0]) : `${workspaceIds.length} workspaces`} · workspace filter applied
-            </span>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm text-gray-500">User spend attribution and top consumers by product</p>
+            {workspaceIds && workspaceIds.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-xs font-medium text-green-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                {workspaceIds.length === 1 ? (workspaceNameMap?.[workspaceIds[0]] || workspaceIds[0]) : `${workspaceIds.length} workspaces`} · workspace filter applied
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

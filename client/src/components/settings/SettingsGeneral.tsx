@@ -1,4 +1,11 @@
+import { useState, useEffect } from "react";
 import type { AppSettings } from "../SettingsDialog";
+
+interface ScheduleSettings {
+  enabled: boolean;
+  frequency: "nightly" | "weekly" | "monthly";
+  hour_utc: number;
+}
 
 interface SettingsGeneralProps {
   localSettings: AppSettings;
@@ -8,6 +15,40 @@ interface SettingsGeneralProps {
 }
 
 export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setSaveStatus }: SettingsGeneralProps) {
+  const [schedule, setSchedule] = useState<ScheduleSettings>({ enabled: true, frequency: "nightly", hour_utc: 5 });
+  const [scheduleStatus, setScheduleStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/settings/schedule")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setSchedule(d); })
+      .catch(() => {});
+  }, []);
+
+  const saveSchedule = async (next: ScheduleSettings) => {
+    setSchedule(next);
+    try {
+      const res = await fetch("/api/settings/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (res.ok) {
+        setScheduleStatus("Schedule saved");
+        setTimeout(() => setScheduleStatus(null), 2500);
+      }
+    } catch {
+      setScheduleStatus("Save failed");
+      setTimeout(() => setScheduleStatus(null), 3000);
+    }
+  };
+
+  const HOUR_OPTIONS = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+  const formatHour = (h: number) => {
+    const period = h < 12 ? "AM" : "PM";
+    const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${display}:00 ${period} UTC`;
+  };
   return (
     <div className="space-y-5">
       {saveStatus && (
@@ -187,6 +228,72 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
             >
               Test
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Table Refresh Schedule ────────────────── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <h4 className="text-sm font-semibold text-gray-900">Table Refresh Schedule</h4>
+          {scheduleStatus && (
+            <span className="text-xs text-green-600">{scheduleStatus}</span>
+          )}
+        </div>
+        <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+          {/* Enable toggle */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Auto-Rebuild Tables</div>
+              <div className="text-xs text-gray-500">Automatically rebuild materialized views on a schedule</div>
+            </div>
+            <label className="relative cursor-pointer">
+              <input
+                type="checkbox"
+                checked={schedule.enabled}
+                onChange={e => saveSchedule({ ...schedule, enabled: e.target.checked })}
+                className="sr-only"
+              />
+              <div className={`h-6 w-11 rounded-full transition-colors ${schedule.enabled ? "" : "bg-gray-300"}`} style={schedule.enabled ? { backgroundColor: '#FF3621' } : {}} />
+              <div className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${schedule.enabled ? "translate-x-5" : "translate-x-0"}`} />
+            </label>
+          </div>
+          {/* Frequency */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Frequency</div>
+              <div className="text-xs text-gray-500">How often to rebuild tables</div>
+            </div>
+            <select
+              value={schedule.frequency}
+              onChange={e => saveSchedule({ ...schedule, frequency: e.target.value as ScheduleSettings["frequency"] })}
+              disabled={!schedule.enabled}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+            >
+              <option value="nightly">Nightly</option>
+              <option value="weekly">Weekly (Mondays)</option>
+              <option value="monthly">Monthly (1st of month)</option>
+            </select>
+          </div>
+          {/* Hour */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Time</div>
+              <div className="text-xs text-gray-500">Hour to run the rebuild (UTC)</div>
+            </div>
+            <select
+              value={schedule.hour_utc}
+              onChange={e => saveSchedule({ ...schedule, hour_utc: Number(e.target.value) })}
+              disabled={!schedule.enabled}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+            >
+              {HOUR_OPTIONS.map(h => (
+                <option key={h} value={h}>{formatHour(h)}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>

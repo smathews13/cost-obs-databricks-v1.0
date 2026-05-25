@@ -319,113 +319,102 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
     .filter(g => g.checks.length > 0);
 
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="text-sm text-gray-600">
-          Diagnose the most common causes of zeros, missing data, and permission errors across the dashboard.
-          Run a full check to identify issues and get step-by-step remediation instructions.
-        </p>
-      </div>
+    <div className="space-y-3">
+      <p className="text-xs text-gray-500">
+        Diagnose permission errors, missing materialized views, and data availability issues. Run a full check to get step-by-step remediation.
+      </p>
 
-      {/* Deployment snapshot — always rendered, loading skeleton while fetching */}
-      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Deployment Info</p>
+      {/* Deployment snapshot — two columns to minimise height */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Deployment Info</p>
         {(configLoading || authLoading) ? (
-          <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="grid grid-cols-2 gap-x-6">
+              <div key={i} className="grid grid-cols-2 gap-x-3">
+                <div className="h-3 w-16 animate-pulse rounded bg-gray-200" />
                 <div className="h-3 w-24 animate-pulse rounded bg-gray-200" />
-                <div className="h-3 w-32 animate-pulse rounded bg-gray-200" />
               </div>
             ))}
           </div>
         ) : (
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
-            {/* Version */}
-            <dt className="text-gray-500">Git SHA</dt>
-            <dd>
-              {installReport?.version?.commit_sha
-                ? <code className="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-700">{installReport.version.commit_sha}</code>
-                : <span className="text-gray-400">—</span>}
-            </dd>
-
-            {/* Auth */}
-            <dt className="text-gray-500">Auth mode</dt>
-            <dd className="font-medium text-gray-700">{authStatusSlim?.auth_mode ?? "—"}</dd>
-
-            <dt className="text-gray-500">Identity</dt>
-            <dd className="font-medium text-gray-700">{authStatusSlim?.identity ?? "—"}</dd>
-
-            {authStatusSlim?.locked_to_sp != null && (
-              <>
-                <dt className="text-gray-500">Locked to SP</dt>
-                <dd className="font-medium text-gray-700">{authStatusSlim.locked_to_sp ? "yes" : "no"}</dd>
-              </>
-            )}
-            {authStatusSlim?.has_sql_scope != null && (
-              <>
-                <dt className="text-gray-500">SQL scope</dt>
-                <dd className="font-medium text-gray-700">{authStatusSlim.has_sql_scope ? "yes" : "no"}</dd>
-              </>
-            )}
-
-            {/* SP identity */}
-            {authStatusSlim?.sp_display_name && (
-              <>
-                <dt className="text-gray-500">SP display name</dt>
-                <dd className="font-mono text-gray-700">{authStatusSlim.sp_display_name}</dd>
-              </>
-            )}
-            {(authStatusSlim?.sp_user_name || authStatusSlim?.sp_client_id) && (
-              <>
-                <dt className="text-gray-500">SP client ID</dt>
-                <dd className="font-mono text-gray-700 break-all">{authStatusSlim.sp_user_name || authStatusSlim.sp_client_id}</dd>
-              </>
-            )}
-
-            {/* Warehouse */}
-            <dt className="text-gray-500 pt-2 border-t border-gray-200">Warehouse ID</dt>
-            <dd className="font-mono text-gray-700 pt-2 border-t border-gray-200 break-all">{installReport?.warehouse?.id ?? "—"}</dd>
-
-            {installReport?.warehouse?.name && (
-              <>
-                <dt className="text-gray-500">Warehouse name</dt>
-                <dd className="font-medium text-gray-700">{installReport.warehouse.name}</dd>
-              </>
-            )}
-            {installReport?.warehouse?.size && (
-              <>
-                <dt className="text-gray-500">Warehouse size</dt>
-                <dd className="font-medium text-gray-700">{installReport.warehouse.size}</dd>
-              </>
-            )}
-            <dt className="text-gray-500">Warehouse state</dt>
-            <dd className="font-medium text-gray-700">{installReport?.warehouse?.state ?? "—"}</dd>
-
-            <dt className="text-gray-500">Warehouse source</dt>
-            <dd className="font-medium text-gray-700">{installReport?.warehouse?.source ?? "—"}</dd>
-
-            {/* Storage */}
-            <dt className="text-gray-500 pt-2 border-t border-gray-200">Storage</dt>
-            <dd className="font-mono text-gray-700 pt-2 border-t border-gray-200">
-              {installReport?.storage_location
-                ? `${installReport.storage_location.catalog}.${installReport.storage_location.schema}`
-                : "—"}
-            </dd>
-
-            {installReport?.storage_location?.catalog_source && (
-              <>
-                <dt className="text-gray-500">Catalog source</dt>
-                <dd className="font-medium text-gray-700">{installReport.storage_location.catalog_source}</dd>
-              </>
-            )}
-            {installReport?.storage_location?.schema_source && (
-              <>
-                <dt className="text-gray-500">Schema source</dt>
-                <dd className="font-medium text-gray-700">{installReport.storage_location.schema_source}</dd>
-              </>
-            )}
-          </dl>
+          <div className="grid grid-cols-2 gap-x-6 text-[11px]">
+            {/* Left: auth / identity */}
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 content-start">
+              <dt className="text-gray-500">Git SHA</dt>
+              <dd>
+                {installReport?.version?.commit_sha
+                  ? <code className="rounded bg-gray-200 px-1 font-mono text-gray-700">{installReport.version.commit_sha}</code>
+                  : <span className="text-gray-400">—</span>}
+              </dd>
+              <dt className="text-gray-500">Auth mode</dt>
+              <dd className="font-medium text-gray-700">{authStatusSlim?.auth_mode ?? "—"}</dd>
+              <dt className="text-gray-500">Identity</dt>
+              <dd className="font-medium text-gray-700">{authStatusSlim?.identity ?? "—"}</dd>
+              {authStatusSlim?.locked_to_sp != null && (
+                <>
+                  <dt className="text-gray-500">Locked to SP</dt>
+                  <dd className="font-medium text-gray-700">{authStatusSlim.locked_to_sp ? "yes" : "no"}</dd>
+                </>
+              )}
+              {authStatusSlim?.has_sql_scope != null && (
+                <>
+                  <dt className="text-gray-500">SQL scope</dt>
+                  <dd className="font-medium text-gray-700">{authStatusSlim.has_sql_scope ? "yes" : "no"}</dd>
+                </>
+              )}
+              {authStatusSlim?.sp_display_name && (
+                <>
+                  <dt className="text-gray-500">SP name</dt>
+                  <dd className="font-mono text-gray-700 truncate">{authStatusSlim.sp_display_name}</dd>
+                </>
+              )}
+              {(authStatusSlim?.sp_user_name || authStatusSlim?.sp_client_id) && (
+                <>
+                  <dt className="text-gray-500">SP client ID</dt>
+                  <dd className="font-mono text-gray-700 truncate">{authStatusSlim.sp_user_name || authStatusSlim.sp_client_id}</dd>
+                </>
+              )}
+            </dl>
+            {/* Right: warehouse / storage */}
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 content-start">
+              <dt className="text-gray-500">Warehouse ID</dt>
+              <dd className="font-mono text-gray-700 truncate">{installReport?.warehouse?.id ?? "—"}</dd>
+              {installReport?.warehouse?.name && (
+                <>
+                  <dt className="text-gray-500">Name</dt>
+                  <dd className="font-medium text-gray-700 truncate">{installReport.warehouse.name}</dd>
+                </>
+              )}
+              {installReport?.warehouse?.size && (
+                <>
+                  <dt className="text-gray-500">Size</dt>
+                  <dd className="font-medium text-gray-700">{installReport.warehouse.size}</dd>
+                </>
+              )}
+              <dt className="text-gray-500">State</dt>
+              <dd className="font-medium text-gray-700">{installReport?.warehouse?.state ?? "—"}</dd>
+              <dt className="text-gray-500">Source</dt>
+              <dd className="font-medium text-gray-700">{installReport?.warehouse?.source ?? "—"}</dd>
+              <dt className="text-gray-500">Storage</dt>
+              <dd className="font-mono text-gray-700 truncate">
+                {installReport?.storage_location
+                  ? `${installReport.storage_location.catalog}.${installReport.storage_location.schema}`
+                  : "—"}
+              </dd>
+              {installReport?.storage_location?.catalog_source && (
+                <>
+                  <dt className="text-gray-500">Cat. source</dt>
+                  <dd className="font-medium text-gray-700">{installReport.storage_location.catalog_source}</dd>
+                </>
+              )}
+              {installReport?.storage_location?.schema_source && (
+                <>
+                  <dt className="text-gray-500">Sch. source</dt>
+                  <dd className="font-medium text-gray-700">{installReport.storage_location.schema_source}</dd>
+                </>
+              )}
+            </dl>
+          </div>
         )}
       </div>
 
@@ -508,7 +497,7 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
 
       {/* Check results grouped by category */}
       {grouped.length > 0 && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {grouped.map(g => (
             <CategorySection key={g.category} category={g.category} checks={g.checks} />
           ))}
@@ -516,11 +505,11 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
       )}
 
       {!hasRun && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center">
-          <svg className="mx-auto mb-2 h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex items-center gap-3">
+          <svg className="h-5 w-5 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
           </svg>
-          <p className="text-sm text-gray-500">Click <strong>Run Diagnostics</strong> to check permissions, materialized views, and data availability</p>
+          <p className="text-xs text-gray-500">Click <strong>Run Diagnostics</strong> to check permissions, materialized views, and data availability</p>
         </div>
       )}
     </div>

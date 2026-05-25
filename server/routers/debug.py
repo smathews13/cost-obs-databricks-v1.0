@@ -585,7 +585,7 @@ def _tab_apps() -> dict:
         result = execute_query(
             "SELECT COUNT(*) AS cnt FROM system.billing.usage "
             "WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) "
-            "AND sku_name LIKE '%Apps%' LIMIT 1",
+            "AND billing_origin_product = 'APPS' LIMIT 1",
             None, no_cache=True
         )
         cnt = int((result or [{}])[0].get("cnt", 0))

@@ -120,7 +120,7 @@ export function SettingsConfig({
       noCacheRef.current = false;
       return fetch(url).then(r => r.json()).catch(() => null);
     },
-    staleTime: 10 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,  // matches server _TABLES_CACHE_TTL (15 min)
   });
 
   // Register the poll callback on every render so it always has current closures.

@@ -34,7 +34,33 @@ def _require_admin(request: Request) -> str:
 # In-process cache for /api/settings/tables — expensive parallel SQL + owner lookups
 _tables_cache: dict | None = None
 _tables_cache_ts: float = 0.0
-_TABLES_CACHE_TTL = 5 * 60  # 5 minutes
+_TABLES_CACHE_TTL = 15 * 60  # 15 minutes — prewarm fills this at startup; 5 min expired too fast
+
+# Separate long-lived cache for table owner lookups (SDK REST call per table).
+# Owners rarely change — 1-hour TTL means re-checks after the tables cache expires
+# skip the 7 SDK calls entirely, cutting non-cached load time by ~1-2 s.
+_owner_cache: dict[str, str | None] = {}
+_owner_cache_ts: dict[str, float] = {}
+_OWNER_CACHE_TTL = 60 * 60  # 1 hour
+
+
+def _get_table_owner_cached(fqn: str) -> str | None:
+    """Fetch table owner via Unity Catalog REST API with a 1-hour in-process cache."""
+    cached_at = _owner_cache_ts.get(fqn, 0.0)
+    if fqn in _owner_cache and (time.time() - cached_at) < _OWNER_CACHE_TTL:
+        return _owner_cache[fqn]
+    plain = fqn.replace("`", "")
+    try:
+        from server.db import get_workspace_client
+        info = get_workspace_client().tables.get(plain)
+        owner = info.owner or None
+        logger.debug(f"[owner] SP client {plain} -> {owner!r}")
+    except Exception as e:
+        logger.debug(f"[owner] SP client {plain} failed: {e}")
+        owner = None
+    _owner_cache[fqn] = owner
+    _owner_cache_ts[fqn] = time.time()
+    return owner
 
 
 def _prewarm_tables_cache() -> None:
@@ -517,18 +543,8 @@ async def get_tables_status(request: Request, no_cache: bool = False):
         finally:
             _user_token.reset(tok)
 
-    def _get_table_owner(fqn: str) -> str | None:
-        plain = fqn.replace("`", "")
-        # Use SP client only — user token lacks unity-catalog scope in Apps,
-        # so the user SDK call always fails and just adds latency.
-        try:
-            from server.db import get_workspace_client
-            info = get_workspace_client().tables.get(plain)
-            logger.debug(f"[owner] SP client {plain} -> {info.owner!r}")
-            return info.owner or None
-        except Exception as e:
-            logger.debug(f"[owner] SP client {plain} failed: {e}")
-            return None
+    # Owner lookups use the module-level cached function — avoids repeating SDK REST
+    # calls on every non-cached tables check (owners change rarely; TTL = 1 hour).
 
     def _check_table_inner(table_name: str, fqn: str, table_type: str) -> dict:
         # Owner is fetched in a separate parallel pool — not here — to avoid
@@ -588,13 +604,12 @@ async def get_tables_status(request: Request, no_cache: bool = False):
     ]
 
     results = []
-    _TABLE_CHECK_TIMEOUT = 25  # seconds — keeps total request under proxy timeout limits
+    _TABLE_CHECK_TIMEOUT = 12  # seconds — was 25; fail-fast on cold warehouse for better UX
     # Submit SQL checks AND owner lookups into the same pool so they run concurrently.
-    # Previously _get_table_owner (an SDK REST call) ran sequentially before each SQL
-    # query, adding 1–3 s per table to the critical path.
+    # Owner lookups hit the module-level cache (1h TTL) so are instant on re-checks.
     with ThreadPoolExecutor(max_workers=14) as ex:
         sql_futures = {ex.submit(check_table, name, fqn, ttype): (name, fqn, ttype) for name, fqn, ttype in tasks}
-        owner_futures = {name: ex.submit(_get_table_owner, fqn) for name, fqn, _ in tasks}
+        owner_futures = {name: ex.submit(_get_table_owner_cached, fqn) for name, fqn, _ in tasks}
         try:
             for fut in as_completed(sql_futures, timeout=_TABLE_CHECK_TIMEOUT):
                 results.append(fut.result())
@@ -611,10 +626,9 @@ async def get_tables_status(request: Request, no_cache: bool = False):
                     })
             logger.warning("Table status check timed out — warehouse likely cold")
         # Merge owner results — all have been running in parallel with SQL checks.
-        # Use a single shared deadline (3 s from now) so we don't block serially
-        # for up to 5 s × 7 tables = 35 s in the worst case.
+        # Cached owners resolve in microseconds; uncached REST calls get 1.5 s shared.
         import time as _t
-        _owner_deadline = _t.monotonic() + 3.0
+        _owner_deadline = _t.monotonic() + 1.5
         for r in results:
             try:
                 _remaining = max(0.0, _owner_deadline - _t.monotonic())

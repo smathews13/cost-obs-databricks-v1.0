@@ -523,6 +523,10 @@ export function SettingsConfig({
                       // Billing source data has 1-3 day ingestion lag — flag only if notably stale
                       const veryStale = t.days_behind != null && t.days_behind > 7;
                       const stale = t.days_behind != null && t.days_behind > 4;
+                      // billing.usage has a known Databricks-side 1-3 day processing lag.
+                      // Treat ≤4d behind as current for those tables so users aren't alarmed
+                      // after a fresh rebuild that correctly reflects the source data.
+                      const billingSource = RETENTION[t.name]?.includes("billing.usage") ?? false;
                       const missing = t.exists === false && !t.optional;
                       const notConfigured = t.exists === false && t.optional;
                       const unknown = t.exists === null;
@@ -600,7 +604,9 @@ export function SettingsConfig({
                               t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} align="right" /></> : <span className="text-gray-300">—</span>
                             ) : t.days_behind === 0 ? (
                               <span className="text-green-600 font-medium">Today</span>
-                            ) : t.days_behind <= 3 ? (
+                            ) : billingSource && t.days_behind <= 4 ? (
+                              <span className="text-green-600 font-medium" title={`Databricks billing data has a ${t.days_behind}-day ingestion delay — this table is current`}>Up to date</span>
+                            ) : t.days_behind <= 4 ? (
                               <span className="text-gray-500">{t.days_behind}d behind</span>
                             ) : t.days_behind <= 7 ? (
                               <span className="text-amber-600 font-medium">{t.days_behind}d behind</span>
@@ -639,7 +645,10 @@ export function SettingsConfig({
               };
               return (
                 <div className="mt-4">
-                  <p className="mb-2 text-xs font-medium text-gray-600">Refresh History</p>
+                  <div className="mb-2 flex items-baseline justify-between">
+                    <p className="text-xs font-medium text-gray-600">Refresh History</p>
+                    <p className="text-[10px] text-gray-400">Last 5 runs tracked</p>
+                  </div>
                   {history.length === 0 ? (
                     <p className="text-xs text-gray-400 italic px-1">No rebuild runs recorded yet. History will appear here after the first manual or nightly rebuild.</p>
                   ) : (
@@ -653,7 +662,7 @@ export function SettingsConfig({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white">
-                          {[...history].reverse().map((entry, i) => (
+                          {[...history].reverse().slice(0, 5).map((entry, i) => (
                             <tr key={i} className={entry.status === "error" ? "bg-red-50" : entry.status === "partial_error" ? "bg-amber-50" : ""}>
                               <td className="px-3 py-1.5 text-gray-600 font-mono text-[11px]">{fmtTs(entry.timestamp)}</td>
                               <td className="px-3 py-1.5 text-gray-500 capitalize">{entry.trigger}</td>

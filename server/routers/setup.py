@@ -54,11 +54,17 @@ SYSTEM_TABLE_GRANTS = [
     ("SELECT",      "TABLE",   "system.query.history"),
     ("USE SCHEMA",  "SCHEMA",  "system.compute"),
     ("SELECT",      "TABLE",   "system.compute.clusters"),
+    ("SELECT",      "TABLE",   "system.compute.warehouses"),
+    ("SELECT",      "TABLE",   "system.compute.warehouse_events"),
     ("USE SCHEMA",  "SCHEMA",  "system.lakeflow"),
+    ("SELECT",      "TABLE",   "system.lakeflow.jobs"),
     ("SELECT",      "TABLE",   "system.lakeflow.pipelines"),
     ("SELECT",      "TABLE",   "system.lakeflow.job_run_timeline"),
     ("USE SCHEMA",  "SCHEMA",  "system.serving"),
     ("SELECT",      "TABLE",   "system.serving.served_entities"),
+    ("USE SCHEMA",  "SCHEMA",  "system.access"),
+    ("SELECT",      "TABLE",   "system.access.audit"),
+    ("SELECT",      "TABLE",   "system.access.workspaces_latest"),
 ]
 
 

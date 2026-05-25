@@ -605,15 +605,34 @@ async def get_apps_dashboard_bundle(
         raise
 
 
+def _empty_bundle(params: dict, active_only: bool) -> dict[str, Any]:
+    """Return a valid zero-data bundle — used when workspace filter finds no Apps rows."""
+    return {
+        "summary": {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "app_count": 0, "days_in_range": 1, "avg_daily_spend": 0},
+        "apps": {"apps": [], "total_spend": 0, "total_app_count": 0, "active_count": 0, "inactive_count": 0,
+                 "inactive_summary": {"count": 0, "total_spend": 0, "total_dbus": 0, "percentage": 0},
+                 "unregistered_summary": {"count": 0, "total_spend": 0, "total_dbus": 0, "percentage": 0}},
+        "timeseries": {"timeseries": [], "categories": ["Total"]},
+        "connected_artifacts": [],
+        "workspaces": [],
+        "active_only": active_only,
+        "start_date": params["start_date"],
+        "end_date": params["end_date"],
+    }
+
+
 async def _get_apps_dashboard_bundle_inner(
     params: dict, id_list: list | None, active_only: bool, req_start: float
 ) -> dict[str, Any]:
     import time as _time
     _endpoint = f"apps:dashboard-bundle:{'active' if active_only else 'all'}"
     _dkey = bundle_cache_key(_endpoint, params["start_date"], params["end_date"], id_list)
-    if (_dcached := delta_cache_get(_dkey)) is not None:
-        logger.info("apps/dashboard-bundle cache hit (%.1fs)", _time.time() - req_start)
-        return _dcached
+    try:
+        if (_dcached := delta_cache_get(_dkey)) is not None:
+            logger.info("apps/dashboard-bundle cache hit (%.1fs)", _time.time() - req_start)
+            return _dcached
+    except Exception as _ce:
+        logger.debug("apps/dashboard-bundle cache read failed (non-fatal): %s", _ce)
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     def _ws(sql: str) -> str:
@@ -655,114 +674,129 @@ async def _get_apps_dashboard_bundle_inner(
 
     results = await asyncio.to_thread(execute_queries_parallel, queries, 75.0)
 
-    # Build workspace lookup per app_id (name → id mapping)
-    workspace_rows = results.get("workspaces", []) or []
-    app_workspace_map: dict[str, list[str]] = {}  # app_id → [workspace_name, ...]
-    all_workspaces: dict[str, str] = {}  # workspace_name → workspace_id
-    for row in workspace_rows:
-        app_id = row.get("app_id", "")
-        ws_name = str(row.get("workspace_name", ""))
-        ws_id = str(row.get("workspace_id", ""))
-        if app_id not in app_workspace_map:
-            app_workspace_map[app_id] = []
-        if ws_name not in app_workspace_map[app_id]:
-            app_workspace_map[app_id].append(ws_name)
-        all_workspaces[ws_name] = ws_id
+    try:
+        # Build workspace lookup per app_id (name → id mapping)
+        workspace_rows = results.get("workspaces", []) or []
+        app_workspace_map: dict[str, list[str]] = {}  # app_id → [workspace_name, ...]
+        all_workspaces: dict[str, str] = {}  # workspace_name → workspace_id
+        for row in workspace_rows:
+            app_id = row.get("app_id", "")
+            ws_name = str(row.get("workspace_name", ""))
+            ws_id = str(row.get("workspace_id", ""))
+            if app_id not in app_workspace_map:
+                app_workspace_map[app_id] = []
+            if ws_name not in app_workspace_map[app_id]:
+                app_workspace_map[app_id].append(ws_name)
+            all_workspaces[ws_name] = ws_id
 
-    # Get days_in_range from the raw summary (needed for avg calc)
-    summary_data = results.get("summary", [])
-    days_in_range = 1
-    if summary_data:
-        days_in_range = summary_data[0].get("days_in_range") or 1
+        # Get days_in_range from the raw summary (needed for avg calc)
+        summary_data = results.get("summary", []) or []
+        days_in_range = 1
+        if summary_data:
+            days_in_range = summary_data[0].get("days_in_range") or 1
 
-    # Process apps with name resolution + active/inactive split
-    raw_apps = results.get("apps", []) or []
-    sku_rows = results.get("sku_breakdown", []) or []
-    apps_result = _process_apps(raw_apps, active_only, params["end_date"], registry, sku_rows)
+        # Process apps with name resolution + active/inactive split
+        raw_apps = results.get("apps", []) or []
+        sku_rows = results.get("sku_breakdown", []) or []
+        apps_result = _process_apps(raw_apps, active_only, params["end_date"], registry, sku_rows)
 
-    # Attach workspace names to each processed app
-    for app in apps_result["apps"]:
-        app["workspace_names"] = app_workspace_map.get(app["app_id"], [])
+        # Attach workspace names to each processed app
+        for app in apps_result["apps"]:
+            app["workspace_names"] = app_workspace_map.get(app["app_id"], [])
 
-    # Build summary from registered apps only (not all billing UUIDs)
-    reg_spend = apps_result["total_spend"]
-    reg_dbus = sum(a["total_dbus"] for a in apps_result["apps"])
-    summary = {
-        "total_dbus": reg_dbus,
-        "total_spend": reg_spend,
-        "workspace_count": len(all_workspaces),
-        "app_count": apps_result["total_app_count"],
-        "days_in_range": days_in_range,
-        "avg_daily_spend": reg_spend / days_in_range if days_in_range > 0 else 0,
-    }
+        # Build summary from registered apps only (not all billing UUIDs)
+        reg_spend = float(apps_result.get("total_spend") or 0)
+        reg_dbus = sum(float(a.get("total_dbus") or 0) for a in apps_result.get("apps", []))
+        summary = {
+            "total_dbus": reg_dbus,
+            "total_spend": reg_spend,
+            "workspace_count": len(all_workspaces),
+            "app_count": int(apps_result.get("total_app_count") or 0),
+            "days_in_range": days_in_range,
+            "avg_daily_spend": reg_spend / days_in_range if days_in_range > 0 else 0,
+        }
 
-    # Format timeseries — single aggregate line
-    timeseries_data = results.get("timeseries", []) or []
-    timeseries = sorted(
-        [
-            {"date": str(row.get("usage_date")), "Total": float(row.get("total_spend") or 0)}
-            for row in timeseries_data
-        ],
-        key=lambda x: x["date"],
-    )
+        # Format timeseries — single aggregate line
+        timeseries_data = results.get("timeseries", []) or []
+        timeseries = sorted(
+            [
+                {"date": str(row.get("usage_date")), "Total": float(row.get("total_spend") or 0)}
+                for row in timeseries_data
+            ],
+            key=lambda x: x["date"],
+        )
 
-    # Use stale resources immediately; refresh in background
-    resources_by_app = _app_resources_cache
-    asyncio.create_task(asyncio.to_thread(_get_app_resources))
-    connected_artifacts: list[dict[str, Any]] = []
-    for uid, entry in registry.items():
-        app_name = entry["name"]
-        for res in resources_by_app.get(app_name, []):
+        # Use stale resources immediately; refresh in background
+        resources_by_app = _app_resources_cache
+        try:
+            asyncio.create_task(asyncio.to_thread(_get_app_resources))
+        except Exception:
+            pass
+        connected_artifacts: list[dict[str, Any]] = []
+        for uid, entry in registry.items():
+            app_name = entry.get("name", uid)
+            for res in resources_by_app.get(app_name, []):
+                connected_artifacts.append({
+                    "app_id": uid,
+                    "app_name": app_name,
+                    "artifact_name": str(res.get("name", "")),
+                    "artifact_type": str(res.get("type", "")),
+                    "artifact_description": str(res.get("description", "")),
+                })
+
+        # Add service principal run_as identities from billing
+        sp_rows = results.get("service_principals", []) or []
+        seen_sp: set[tuple[str, str]] = set()
+        for row in sp_rows:
+            app_id = str(row.get("app_id", ""))
+            run_as = str(row.get("run_as", ""))
+            if not app_id or not run_as:
+                continue
+            key = (app_id, run_as)
+            if key in seen_sp:
+                continue
+            seen_sp.add(key)
+            app_name = registry.get(app_id, {}).get("name", app_id)
             connected_artifacts.append({
-                "app_id": uid,
+                "app_id": app_id,
                 "app_name": app_name,
-                "artifact_name": res["name"],
-                "artifact_type": res["type"],
-                "artifact_description": res["description"],
+                "artifact_name": run_as,
+                "artifact_type": "SERVICE_PRINCIPAL",
+                "artifact_description": "Run-as identity",
             })
 
-    # Add service principal run_as identities from billing as SERVICE_PRINCIPAL artifacts.
-    # Show all non-null run_as values from billing — the SQL already filters IS NOT NULL.
-    sp_rows = results.get("service_principals", []) or []
-    seen_sp: set[tuple[str, str]] = set()
-    for row in sp_rows:
-        app_id = str(row.get("app_id", ""))
-        run_as = str(row.get("run_as", ""))
-        if not app_id or not run_as:
-            continue
-        key = (app_id, run_as)
-        if key in seen_sp:
-            continue
-        seen_sp.add(key)
-        app_name = registry.get(app_id, {}).get("name", app_id)
-        connected_artifacts.append({
-            "app_id": app_id,
-            "app_name": app_name,
-            "artifact_name": run_as,
-            "artifact_type": "SERVICE_PRINCIPAL",
-            "artifact_description": "Run-as identity",
-        })
+        _resp = {
+            "summary": summary,
+            "apps": apps_result,
+            "timeseries": {"timeseries": timeseries, "categories": ["Total"]},
+            "connected_artifacts": connected_artifacts,
+            "workspaces": [{"id": str(ws_id), "name": str(ws_name)} for ws_name, ws_id in sorted(all_workspaces.items(), key=lambda x: x[0])],
+            "active_only": active_only,
+            "start_date": params["start_date"],
+            "end_date": params["end_date"],
+        }
+        # Use short TTL when registry was cold so next request gets properly filtered data
+        cache_ttl = 60 if not registry else (600 if id_list else 1800)
+        try:
+            delta_cache_put(_dkey, _endpoint, _resp, ttl_seconds=cache_ttl)
+        except Exception:
+            pass
+        import time as _time
+        logger.info(
+            "apps/dashboard-bundle OK: %.1fs workspaces=%s apps=%d",
+            _time.time() - req_start, id_list or "all",
+            apps_result.get("total_app_count", 0),
+        )
+        return _resp
 
-    _resp = {
-        "summary": summary,
-        "apps": apps_result,
-        "timeseries": {"timeseries": timeseries, "categories": ["Total"]},
-        "connected_artifacts": connected_artifacts,
-        "workspaces": [{"id": ws_id, "name": ws_name} for ws_name, ws_id in sorted(all_workspaces.items(), key=lambda x: x[0])],
-        "active_only": active_only,
-        "start_date": params["start_date"],
-        "end_date": params["end_date"],
-    }
-    # Use short TTL when registry was cold so next request gets properly filtered data
-    cache_ttl = 60 if not registry else (600 if id_list else 1800)
-    delta_cache_put(_dkey, _endpoint, _resp, ttl_seconds=cache_ttl)
-    import time as _time
-    logger.info(
-        "apps/dashboard-bundle OK: %.1fs workspaces=%s apps=%d",
-        _time.time() - req_start, id_list or "all",
-        apps_result.get("total_app_count", 0),
-    )
-    return _resp
+    except Exception as proc_exc:
+        import time as _time
+        logger.error(
+            "apps/dashboard-bundle processing failed after %.1fs (workspaces=%s): %s",
+            _time.time() - req_start, id_list or "all", proc_exc, exc_info=True,
+        )
+        # Return empty bundle rather than surfacing a 500 — workspace may simply have no apps
+        return _empty_bundle(params, active_only)
 
 
 # ── KPI Trend (registered-apps-only) ─────────────────────────────────

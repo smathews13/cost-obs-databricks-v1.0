@@ -496,7 +496,7 @@ def prewarm_all_tabs():
         logger.warning(f"Background cache pre-warming failed (non-fatal): {e}")
 
 
-def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> dict:
+def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 180, force_full: bool = False) -> dict:
     """Run CREATE OR REPLACE TABLE for all MV tables. Returns results dict."""
     import json
     import os
@@ -524,15 +524,24 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
         catalog, schema = get_catalog_schema()
         # If lookback_days differs from the last run, force a full rebuild so the
         # incremental MERGE path doesn't silently ignore the extended window.
-        prev_lookback = None
-        try:
-            with open(log_path) as _lf:
-                prev_lookback = json.load(_lf).get("lookback_days")
-        except Exception:
-            pass
-        force_full = prev_lookback is not None and prev_lookback != lookback_days
-        if force_full:
-            logger.info(f"lookback_days changed ({prev_lookback} → {lookback_days}) — forcing full rebuild")
+        # force_full=True when the caller explicitly requests it (e.g. UI Rebuild button).
+        # Otherwise detect a window change from the log so the scheduled nightly refresh
+        # auto-promotes to full rebuild when lookback_days was changed in Settings.
+        if not force_full:
+            prev_lookback = None
+            try:
+                with open(log_path) as _lf:
+                    prev_lookback = json.load(_lf).get("lookback_days")
+            except Exception:
+                pass
+            # If prev_lookback is unknown (no log) or differs, force full so the
+            # incremental MERGE doesn't silently leave the table at the old window.
+            if prev_lookback is None or prev_lookback != lookback_days:
+                force_full = True
+                reason = "no prior log" if prev_lookback is None else f"window changed {prev_lookback}→{lookback_days}"
+                logger.info(f"Forcing full rebuild: {reason}")
+        else:
+            logger.info(f"Full rebuild forced by caller (lookback={lookback_days}d)")
         results = refresh_materialized_views(catalog, schema, lookback_days=lookback_days, force_full_rebuild=force_full)
         mv_timings = results.pop("__mv_timings__", {})
         duration = round(time.monotonic() - refresh_start, 1)
@@ -573,6 +582,23 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
         _db_user_token.reset(ctx_tok)
         try:
             os.makedirs(log_dir, exist_ok=True)
+            # Append this run to refresh_history (keep last 20)
+            history_entry = {
+                "timestamp": start_utc,
+                "status": log_data.get("status", "error"),
+                "duration_seconds": log_data.get("duration_seconds", 0),
+                "lookback_days": lookback_days,
+                "trigger": "manual" if force_full else "scheduled",
+            }
+            if log_data.get("error"):
+                history_entry["error"] = log_data["error"][:200]
+            prev_history: list = []
+            try:
+                with open(log_path) as _lf:
+                    prev_history = json.load(_lf).get("refresh_history", [])
+            except Exception:
+                pass
+            log_data["refresh_history"] = (prev_history + [history_entry])[-20:]
             with open(log_tmp, "w") as f:
                 json.dump(log_data, f)
             os.replace(log_tmp, log_path)

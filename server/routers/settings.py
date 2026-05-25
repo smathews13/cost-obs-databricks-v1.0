@@ -612,6 +612,8 @@ async def get_tables_status(request: Request, no_cache: bool = False):
             "hours_since_refresh": round(_hours, 1),
             "stale": _hours > 26,
             "status": _log.get("status", "unknown"),
+            "lookback_days": _log.get("lookback_days"),
+            "refresh_history": _log.get("refresh_history", []),
         }
         if _log.get("error"):
             refresh_status["error"] = _log["error"]
@@ -748,18 +750,20 @@ async def save_catalog_settings(body: dict):
 
 
 @router.post("/refresh-mvs")
-async def trigger_mv_refresh(background_tasks: BackgroundTasks, lookback_days: int = 180):
+async def trigger_mv_refresh(background_tasks: BackgroundTasks, lookback_days: int = 180, force_full: bool = True):
     """Kick off an MV rebuild in the background and return immediately.
 
-    lookback_days: how many days of history to include (default 730 = 2 years).
+    lookback_days: how many days of history to include (default 180 = 6 months).
+    force_full: when True (default for UI-triggered rebuilds), bypass incremental MERGE
+                and always run full CREATE OR REPLACE for every table.
     """
     global _tables_cache, _tables_cache_ts
     from server.app import _run_mv_refresh
     # Clear cache immediately so the next Status poll reflects fresh SQL results
     _tables_cache = None
     _tables_cache_ts = 0.0
-    background_tasks.add_task(_run_mv_refresh, lookback_days=lookback_days)
-    return {"status": "queued", "lookback_days": lookback_days}
+    background_tasks.add_task(_run_mv_refresh, lookback_days=lookback_days, force_full=force_full)
+    return {"status": "queued", "lookback_days": lookback_days, "force_full": force_full}
 
 
 @router.get("/auth-status")

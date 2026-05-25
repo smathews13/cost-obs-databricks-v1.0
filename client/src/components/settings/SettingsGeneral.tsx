@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppSettings } from "../SettingsDialog";
 
 interface ScheduleSettings {
@@ -15,19 +16,22 @@ interface SettingsGeneralProps {
   setSaveStatus: (status: string | null) => void;
 }
 
+const SCHEDULE_DEFAULTS: ScheduleSettings = { enabled: true, frequency: "nightly", hour_utc: 5, lookback_days: 180 };
+
 export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setSaveStatus }: SettingsGeneralProps) {
-  const [schedule, setSchedule] = useState<ScheduleSettings>({ enabled: true, frequency: "nightly", hour_utc: 5, lookback_days: 180 });
+  const queryClient = useQueryClient();
   const [scheduleStatus, setScheduleStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/settings/schedule")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setSchedule(d); })
-      .catch(() => {});
-  }, []);
+  const { data: scheduleData } = useQuery<ScheduleSettings>({
+    queryKey: ["settings-schedule"],
+    queryFn: () => fetch("/api/settings/schedule").then(r => r.ok ? r.json() : SCHEDULE_DEFAULTS).catch(() => SCHEDULE_DEFAULTS),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const schedule: ScheduleSettings = scheduleData ?? SCHEDULE_DEFAULTS;
 
   const saveSchedule = async (next: ScheduleSettings) => {
-    setSchedule(next);
+    queryClient.setQueryData(["settings-schedule"], next);
     try {
       const res = await fetch("/api/settings/schedule", {
         method: "POST",

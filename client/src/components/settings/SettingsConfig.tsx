@@ -38,6 +38,8 @@ let _mvDeadline = 0;
 let _mvPollInterval: ReturnType<typeof setInterval> | null = null;
 // Active poll callback updated by each mounted component instance
 let _mvPollCallback: (() => Promise<void>) | null = null;
+// Last rebuild result: null = no recent rebuild, "success"/"partial_error"/"error"
+let _mvLastResult: string | null = null;
 
 export function SettingsConfig({
   configLoading,
@@ -48,6 +50,7 @@ export function SettingsConfig({
 }: SettingsConfigProps) {
   const queryClient = useQueryClient();
   const [mvRefreshing, setMvRefreshing] = useState(_mvRefreshing);
+  const [mvLastResult, setMvLastResult] = useState<string | null>(_mvLastResult);
   const [lookbackDays, setLookbackDays] = useState(180);
   const noCacheRef = useRef(false);
 
@@ -87,7 +90,16 @@ export function SettingsConfig({
       hours_since_refresh: number;
       stale: boolean;
       status: string;
+      lookback_days?: number | null;
       error?: string;
+      refresh_history?: Array<{
+        timestamp: string;
+        status: string;
+        duration_seconds: number;
+        lookback_days: number;
+        trigger: "manual" | "scheduled";
+        error?: string;
+      }>;
     } | null;
     tables: Array<{
       name: string;
@@ -121,7 +133,13 @@ export function SettingsConfig({
       if (_mvPollInterval) { clearInterval(_mvPollInterval); _mvPollInterval = null; }
       _mvRefreshing = false;
       setMvRefreshing(false);
+      // Capture result status for success/error badge
+      const status = result.data?.refresh_status?.status ?? null;
+      _mvLastResult = status;
+      setMvLastResult(status);
       queryClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
+      // Auto-dismiss the result badge after 30 seconds
+      setTimeout(() => { _mvLastResult = null; setMvLastResult(null); }, 30_000);
     }
   };
 
@@ -139,8 +157,10 @@ export function SettingsConfig({
     if (_mvRefreshing) return;
     _mvPrevRefreshTime = tablesStatus?.refresh_status?.last_refresh_utc ?? null;
     _mvRefreshing = true;
+    _mvLastResult = null;
     _mvDeadline = Date.now() + 15 * 60 * 1000;
     setMvRefreshing(true);
+    setMvLastResult(null);
     try {
       await fetch(`/api/settings/refresh-mvs?lookback_days=${lookbackDays}`, { method: "POST" });
     } catch {
@@ -399,6 +419,26 @@ export function SettingsConfig({
               </div>
             </div>
 
+            {/* Rebuild result badge — shown for 30s after completion */}
+            {!mvRefreshing && mvLastResult === "success" && (
+              <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2.5 text-xs text-green-800 flex items-center gap-2">
+                <svg className="h-3.5 w-3.5 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span><span className="font-medium">Rebuild complete.</span> All materialized views updated successfully.</span>
+                <button onClick={() => { _mvLastResult = null; setMvLastResult(null); }} className="ml-auto text-green-600 hover:text-green-800">✕</button>
+              </div>
+            )}
+            {!mvRefreshing && (mvLastResult === "partial_error" || mvLastResult === "error") && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800 flex items-center gap-2">
+                <svg className="h-3.5 w-3.5 shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                <span><span className="font-medium">Rebuild {mvLastResult === "partial_error" ? "partially failed" : "failed"}.</span> Check the error below for details.</span>
+                <button onClick={() => { _mvLastResult = null; setMvLastResult(null); }} className="ml-auto text-red-600 hover:text-red-800">✕</button>
+              </div>
+            )}
+
             {/* Rebuild error banner */}
             {!mvRefreshing && tablesStatus?.refresh_status?.status && ["error", "partial_error"].includes(tablesStatus.refresh_status.status) && (
               <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800 flex gap-2 items-start">
@@ -577,6 +617,69 @@ export function SettingsConfig({
             ) : (
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">Could not retrieve table status</div>
             )}
+
+            {/* Refresh history */}
+            {(() => {
+              const history = tablesStatus?.refresh_status?.refresh_history;
+              if (!history?.length) return null;
+              const fmtWindow = (d: number) => {
+                if (d === 180) return "6 months";
+                if (d === 365) return "1 year";
+                if (d === 730) return "2 years";
+                if (d === 1095) return "3 years";
+                return `${d} days`;
+              };
+              const fmtDuration = (s: number) => {
+                if (s < 60) return `${Math.round(s)}s`;
+                return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+              };
+              const fmtTs = (ts: string) => {
+                try {
+                  return new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+                } catch { return ts; }
+              };
+              return (
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-medium text-gray-600">Refresh History</p>
+                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-100 text-xs">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          {(["Date / Time", "Trigger", "Window", "Duration", "Result"] as const).map(h => (
+                            <th key={h} className={`px-3 py-2 font-medium text-gray-500 ${h === "Date / Time" || h === "Trigger" ? "text-left" : "text-right"}`}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {[...history].reverse().map((entry, i) => (
+                          <tr key={i} className={entry.status === "error" ? "bg-red-50" : entry.status === "partial_error" ? "bg-amber-50" : ""}>
+                            <td className="px-3 py-1.5 text-gray-600 font-mono text-[11px]">{fmtTs(entry.timestamp)}</td>
+                            <td className="px-3 py-1.5 text-gray-500 capitalize">{entry.trigger}</td>
+                            <td className="px-3 py-1.5 text-right text-gray-500">{fmtWindow(entry.lookback_days)}</td>
+                            <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">{fmtDuration(entry.duration_seconds)}</td>
+                            <td className="px-3 py-1.5 text-right">
+                              {entry.status === "success" ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Success
+                                </span>
+                              ) : entry.status === "partial_error" ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700" title={entry.error}>
+                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Partial
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[10px] font-medium text-red-700" title={entry.error}>
+                                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />Error
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Drop all materialized views */}
             {(() => {

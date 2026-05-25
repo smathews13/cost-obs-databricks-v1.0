@@ -509,7 +509,7 @@ def _tab_kpis() -> dict:
     try:
         result = execute_query(
             f"SELECT COUNT(*) AS cnt FROM {catalog}.{schema}.daily_query_stats "
-            f"WHERE query_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
+            f"WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
             None, no_cache=True
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
@@ -552,13 +552,20 @@ def _tab_aiml() -> dict:
         result = execute_query(
             "SELECT COUNT(*) AS cnt FROM system.billing.usage "
             "WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) "
-            "AND (sku_name LIKE '%Model Serving%' OR sku_name LIKE '%Foundation Model%' "
-            "     OR sku_name LIKE '%Inference%' OR sku_name LIKE '%Vector Search%') LIMIT 1",
+            "AND usage_quantity > 0 "
+            "AND (billing_origin_product = 'MODEL_SERVING' "
+            "     OR billing_origin_product = 'VECTOR_SEARCH' "
+            "     OR sku_name LIKE '%ANTHROPIC%' "
+            "     OR sku_name LIKE '%OPENAI%' "
+            "     OR sku_name LIKE '%GEMINI%' "
+            "     OR sku_name LIKE '%SERVERLESS_REAL_TIME_INFERENCE%' "
+            "     OR sku_name LIKE '%INFERENCE%' "
+            "     OR sku_name LIKE '%FINE_TUNING%') LIMIT 1",
             None, no_cache=True
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
         if cnt == 0:
-            return {"status": "warn", "detail": "No AI/ML usage rows in last 30 days — AIML tab will show $0", "root_cause": "No Model Serving, Foundation Model, or Vector Search usage detected", "fix": "AIML tab only shows data if your account uses Model Serving, Foundation Model APIs, or Vector Search. This may be expected if those features aren't in use."}
+            return {"status": "warn", "detail": "No AI/ML usage rows in last 30 days — AIML tab will show $0", "root_cause": "No Model Serving, Foundation Model APIs, or Vector Search usage detected in last 30 days", "fix": "AIML tab only shows data if your account uses Model Serving, Foundation Model APIs, or Vector Search. This may be expected if those features aren't in use."}
         return {"status": "pass", "detail": f"{cnt:,} AI/ML billing rows in last 30 days"}
     except Exception as e:
         return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "Missing permission on system.billing.usage", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}

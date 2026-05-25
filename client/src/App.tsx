@@ -456,19 +456,25 @@ function Dashboard() {
   });
   const wsFilterList = (wsListData?.workspaces ?? []).map(w => ({ workspace_id: w.id, workspace_name: w.name }));
 
-  // Settings data - prefetch in background so permissions/config tabs load instantly
-  useQuery({ queryKey: ["user-permissions"], queryFn: async () => { const r = await fetch("/api/settings/user-permissions"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
-  useQuery({ queryKey: ["app-config"], queryFn: async () => { const r = await fetch("/api/settings/config"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
-  useQuery({ queryKey: ["warehouses"], queryFn: async () => { const r = await fetch("/api/settings/warehouses"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
-  useQuery({ queryKey: ["cloud-provider"], queryFn: async () => { const r = await fetch("/api/settings/cloud-provider"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 30 * 60 * 1000 });
-  useQuery({ queryKey: ["cloud-connections"], queryFn: async () => { const r = await fetch("/api/settings/cloud-connections"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
-  useQuery({ queryKey: ["settings-account-prices"], queryFn: async () => { const r = await fetch("/api/settings/account-prices"); return r.ok ? r.json() : { available: false, prices: [], source: null, count: 0 }; }, staleTime: 5 * 60 * 1000 });
-  useQuery({ queryKey: ["settings-catalog"], queryFn: async () => { const r = await fetch("/api/settings/catalog"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
-  useQuery({ queryKey: ["settings-auth-status"], queryFn: async () => { const r = await fetch("/api/settings/auth-status"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
-  // settings-tables-status is NOT pre-fetched here — the check runs SQL queries
-  // against every app table and can return stale false-negatives if it fires before
-  // the background MV build completes. It fetches on demand when the user opens
-  // Settings → Config and clicks Status.
+  // Settings data — all prefetched in the background after the main bundle loads.
+  // `enabled` gates each query on `!!bundle` so settings requests don't race the
+  // critical-path billing queries on cold start.
+  const _settingsReady = !!bundle;
+  useQuery({ queryKey: ["user-permissions"],      enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/user-permissions"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["app-config"],             enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/config"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
+  // settings-install-report: same endpoint as app-config but separate key used by SettingsDebugger
+  useQuery({ queryKey: ["settings-install-report"], enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/config"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["warehouses"],             enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/warehouses"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["cloud-provider"],         enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/cloud-provider"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 30 * 60 * 1000 });
+  useQuery({ queryKey: ["cloud-connections"],      enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/cloud-connections"); if (!r.ok) throw new Error("Failed"); return r.json(); }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["settings-account-prices"], enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/account-prices"); return r.ok ? r.json() : { available: false, prices: [], source: null, count: 0 }; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["settings-catalog"],       enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/catalog"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["settings-auth-status"],   enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/auth-status"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["settings-schedule"],      enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/settings/schedule"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["setup-workspace-filter"], enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/setup/workspace-filter"); return r.ok ? r.json() : null; }, staleTime: 5 * 60 * 1000 });
+  useQuery({ queryKey: ["billing", "account"],     enabled: _settingsReady, queryFn: async () => { const r = await fetch("/api/billing/account"); return r.ok ? r.json() : null; }, staleTime: Infinity });
+  // settings-tables-status is NOT pre-fetched — it runs SQL against every app table
+  // and returns stale false-negatives if it fires before the background MV build completes.
 
   // Memoize infra data transformations to avoid re-creating arrays on every render
   const infraViewData = useMemo(() => infraCosts ? {

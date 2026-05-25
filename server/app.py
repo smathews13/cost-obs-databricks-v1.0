@@ -371,7 +371,7 @@ def setup_materialized_views():
         import json as _json
         import threading
         from datetime import datetime, timezone
-        _log_path = "/tmp/mv_refresh_log.json"
+        _log_path = os.path.join(os.path.dirname(__file__), "..", ".settings", "mv_refresh_log.json")
         _hours_since = float("inf")
         try:
             with open(_log_path) as _lf:
@@ -678,6 +678,17 @@ def startup_tasks():
 
     # Step 7: Pre-warm ALL tabs (slower queries, runs after alerts)
     prewarm_all_tabs()
+
+    # Step 8: Pre-warm tables status cache so Settings panel loads instantly on first open.
+    # Runs last — by this point the warehouse is warm and billing queries are cached.
+    if _setup_complete:
+        try:
+            from server.routers.settings import _prewarm_tables_cache
+            logger.info("Pre-warming tables status cache...")
+            _prewarm_tables_cache()
+            logger.info("Tables status cache pre-warm complete")
+        except Exception as e:
+            logger.warning(f"Tables status cache pre-warm failed (non-fatal): {e}")
 
 
 @asynccontextmanager

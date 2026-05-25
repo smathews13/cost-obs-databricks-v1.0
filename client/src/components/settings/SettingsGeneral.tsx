@@ -248,6 +248,9 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
             <span className="text-xs text-green-600">{scheduleStatus}</span>
           )}
         </div>
+        <p className="mb-2 text-xs text-gray-500">
+          Rebuild history and run status are tracked in the <span className="font-medium text-gray-600">Storage Location &amp; Tables</span> section of the <span className="font-medium text-gray-600">Config</span> tab.
+        </p>
         <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
           {/* Enable toggle */}
           <div className="flex items-center justify-between px-4 py-3">

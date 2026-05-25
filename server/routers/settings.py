@@ -36,6 +36,32 @@ _tables_cache: dict | None = None
 _tables_cache_ts: float = 0.0
 _TABLES_CACHE_TTL = 5 * 60  # 5 minutes
 
+
+def _prewarm_tables_cache() -> None:
+    """Populate the tables status cache proactively at startup.
+
+    Called from startup_tasks() after the warehouse is warm so that the first
+    user to open the Config tab sees instant results instead of a 10-30s spinner.
+    Runs in a background thread — creates its own event loop to call the async
+    endpoint, which is safe for non-main threads.
+    """
+    global _tables_cache, _tables_cache_ts
+    if _tables_cache is not None and (time.time() - _tables_cache_ts) < _TABLES_CACHE_TTL:
+        return  # already warm
+    import asyncio
+
+    class _FakeRequest:
+        class headers:
+            @staticmethod
+            def get(key, default=""):
+                return default
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(get_tables_status(_FakeRequest(), no_cache=True))
+    finally:
+        loop.close()
+
 # File-based storage (fallback / dev only — production uses Delta tables)
 SETTINGS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
 CLOUD_CONNECTIONS_FILE = os.path.join(SETTINGS_DIR, "cloud_connections.json")

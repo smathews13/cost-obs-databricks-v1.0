@@ -1020,23 +1020,29 @@ def execute_queries_parallel(
     start_time = time.time()
     results: dict[str, list[dict[str, Any]] | None] = {}
 
+    def _timed(name: str, fn: Callable[[], list[dict[str, Any]]]) -> Callable[[], list[dict[str, Any]]]:
+        def wrapped() -> list[dict[str, Any]]:
+            t0 = time.time()
+            result = fn()
+            rows = len(result) if isinstance(result, list) else -1
+            logger.info("✓ %s: %.2fs rows=%d", name, time.time() - t0, rows)
+            return result
+        return wrapped
+
     # Use ThreadPoolExecutor for parallel execution
     # Max 6 workers to avoid overwhelming the warehouse
     with ThreadPoolExecutor(max_workers=10) as executor:
-        # Submit all queries
+        # Submit all queries with per-query timing wrappers
         future_to_name = {
-            executor.submit(func): name
+            executor.submit(_timed(name, func)): name
             for name, func in query_funcs
         }
 
         # Collect results as they complete
         for future in as_completed(future_to_name):
             name = future_to_name[future]
-            query_start = time.time()
             try:
                 results[name] = future.result()
-                query_elapsed = time.time() - query_start
-                logger.info(f"✓ {name}: {query_elapsed:.2f}s")
             except Exception as e:
                 # Expected structural errors (missing grants, schema differences,
                 # optional tables) — log at WARNING to reduce noise.

@@ -14,7 +14,7 @@ _SP_UUID_RE = re.compile(
 )
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from server.db import execute_query, execute_queries_parallel, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
@@ -290,10 +290,12 @@ FROM apps_usage
 """
 
 
-def _query_app_workspaces(params: dict[str, Any]) -> list[dict[str, Any]]:
+def _query_app_workspaces(params: dict[str, Any], ws_clause: str = "") -> list[dict[str, Any]]:
     """Query workspace info per app, falling back to IDs if name table is inaccessible."""
+    sql = wf.inject_ws_filter(APPS_WORKSPACES, ws_clause)
+    fallback = wf.inject_ws_filter(APPS_WORKSPACES_FALLBACK, ws_clause)
     try:
-        rows = execute_query(APPS_WORKSPACES, params)
+        rows = execute_query(sql, params)
         if rows:
             sample = rows[0]
             logger.info("App workspace sample: workspace_id=%s, workspace_name=%s",
@@ -302,7 +304,7 @@ def _query_app_workspaces(params: dict[str, Any]) -> list[dict[str, Any]]:
     except Exception as e:
         logger.warning("Could not query workspace names (system.access.workspaces_latest may not be accessible): %s", e)
         try:
-            return execute_query(APPS_WORKSPACES_FALLBACK, params)
+            return execute_query(fallback, params)
         except Exception:
             return []
 
@@ -583,7 +585,17 @@ async def get_apps_dashboard_bundle(
         id_list or "all", active_only,
     )
     try:
-        return await _get_apps_dashboard_bundle_inner(params, id_list, active_only, _req_start)
+        return await asyncio.wait_for(
+            _get_apps_dashboard_bundle_inner(params, id_list, active_only, _req_start),
+            timeout=90.0,
+        )
+    except asyncio.TimeoutError:
+        _elapsed = _time.time() - _req_start
+        logger.error(
+            "apps/dashboard-bundle TIMED OUT after %.1fs: workspaces=%s",
+            _elapsed, id_list or "all",
+        )
+        raise HTTPException(status_code=504, detail="Apps dashboard query timed out — try a shorter date range or fewer workspace filters")
     except Exception as exc:
         _elapsed = _time.time() - _req_start
         logger.error(
@@ -637,7 +649,7 @@ async def _get_apps_dashboard_bundle_inner(
         ("apps", lambda: execute_query(_ws(APPS_BY_APP_FULL), params)),
         ("timeseries", lambda: execute_query(filtered_timeseries, params)),
         ("sku_breakdown", lambda: execute_query(_ws(APPS_BY_APP_SKU), params)),
-        ("workspaces", lambda: _query_app_workspaces(params)),
+        ("workspaces", lambda: _query_app_workspaces(params, ws_clause)),
         ("service_principals", lambda: execute_query(_ws(APPS_SERVICE_PRINCIPALS), params)),
     ]
 

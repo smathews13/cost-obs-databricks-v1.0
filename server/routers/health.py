@@ -12,6 +12,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/ping")
+async def ping() -> dict[str, bool]:
+    """Zero-cost keepalive — no DB, no setup check. Used by client heartbeat."""
+    return {"ok": True}
+
+
 @router.get("/health")
 async def health_check() -> dict[str, Any]:
     """Basic health check endpoint - fast response for load balancers."""

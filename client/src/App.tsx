@@ -85,6 +85,21 @@ import type { DateRange } from "@/types/billing";
 import { generateCostReport } from "@/utils/pdfExport";
 import { generateCostCSV } from "@/utils/csvExport";
 
+// Keep the Databricks Apps pod warm while the tab is open.
+// Cold starts take 30s–1min; a lightweight ping every 4 min prevents idle suspension.
+function useKeepAlive() {
+  useEffect(() => {
+    const ping = () => fetch("/api/ping", { method: "GET" }).catch(() => {});
+    const interval = setInterval(ping, 4 * 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === "visible") ping(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+}
+
 type ViewTab = "dbu" | "sql" | "infra" | "kpis" | "aiml" | "apps" | "tagging" | "use-cases" | "alerts" | "forecasting" | "users-groups" | "contract";
 
 const queryClient = new QueryClient({
@@ -185,6 +200,7 @@ function SpGrantsBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
 }
 
 function Dashboard() {
+  useKeepAlive();
   const [appSettings, setAppSettings] = useState<AppSettings>(loadAppSettings);
   const defaultRange = useDefaultDateRange(appSettings.defaultDateRangeDays);
   const [dateRange, setDateRange] = useState<DateRange>(defaultRange);

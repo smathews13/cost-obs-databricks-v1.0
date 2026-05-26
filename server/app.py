@@ -63,7 +63,13 @@ class UserAuthMiddleware:
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware for request/response logging with correlation IDs."""
 
+    _SILENT_PATHS = {"/api/ping", "/api/health"}
+
     async def dispatch(self, request: Request, call_next):
+        # Skip logging for high-frequency keepalive / health endpoints
+        if request.url.path in self._SILENT_PATHS:
+            return await call_next(request)
+
         # Generate request ID for correlation
         request_id = str(uuid.uuid4())[:8]
         start_time = time.time()

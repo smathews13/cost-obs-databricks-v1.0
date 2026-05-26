@@ -687,15 +687,33 @@ function Dashboard() {
                       </div>
                     )}
                     <div className="flex flex-col leading-none">
-                      <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">Workspace</span>
+                      <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">
+                        {(selectedWorkspaceIds.length === 0 ? wsFilterList.length : selectedWorkspaceIds.length) > 1 ? "Workspaces" : "Workspace"}
+                      </span>
                       <div className="flex items-center gap-1 mt-0.5">
                         {selectedWorkspaceIds.length === 0 ? (
-                          <span
-                            className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
-                            style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
-                          >
-                            All
-                          </span>
+                          // All workspaces selected — show names if pool ≤ 2, else "All"
+                          wsFilterList.length <= 2
+                            ? wsFilterList.map((w) => {
+                                const label = w.workspace_name || w.workspace_id;
+                                return (
+                                  <span
+                                    key={w.workspace_id}
+                                    className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90 whitespace-nowrap"
+                                    style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+                                  >
+                                    {label}
+                                  </span>
+                                );
+                              })
+                            : (
+                              <span
+                                className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
+                                style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+                              >
+                                All
+                              </span>
+                            )
                         ) : selectedWorkspaceIds.length <= 2
                           ? selectedWorkspaceIds.map((id) => {
                               const ws = wsFilterList.find((w) => w.workspace_id === id);
@@ -703,8 +721,7 @@ function Dashboard() {
                               return (
                                 <span
                                   key={id}
-                                  title={label}
-                                  className="max-w-[120px] truncate rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
+                                  className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90 whitespace-nowrap"
                                   style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
                                 >
                                   {label}

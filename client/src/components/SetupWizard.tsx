@@ -149,7 +149,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
   const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
   const [readinessError, setReadinessError] = useState<string | null>(null);
   const [grantRunning, setGrantRunning] = useState(false);
-  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[] } | null>(null);
+  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[]; scriptHint?: string } | null>(null);
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -255,7 +255,10 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
       const message = ok
         ? `${body.applied ?? 0} grant(s) applied for ${body.sp_client_id ?? "SP"}.`
         : (body.errors?.[0] ?? body.detail ?? "Grant run completed with errors — check server logs.");
-      setGrantResult({ ok, message, errors: body.errors });
+      const scriptHint = !ok && body.system_grants_need_script
+        ? `python perms.py ${body.sp_client_id ?? "<sp_client_id>"}`
+        : undefined;
+      setGrantResult({ ok, message, errors: body.errors, scriptHint });
     if (ok) {
       setVerifyingGrants(true);
       setGrantVerifyElapsed(0);
@@ -920,7 +923,7 @@ interface WizardPermissionsStepProps {
   onRecheck: (forceRefresh?: boolean) => void;
   onAutoGrant: () => Promise<void>;
   autoGrantRunning: boolean;
-  autoGrantResult: { ok: boolean; message: string; errors?: string[] } | null;
+  autoGrantResult: { ok: boolean; message: string; errors?: string[]; scriptHint?: string } | null;
   verifyingGrants: boolean;
   grantVerifyElapsed: number;
 }

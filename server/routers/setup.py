@@ -88,19 +88,10 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
 
     p = sp_client_id  # principal name in GRANT statements
 
-    # Build (sql, label) pairs for every privilege we need to apply.
+    # App schema grants only — system table grants are handled by _grant_system_via_uc_api.
+    # Running system GRANT as the SP always fails (SP is not a metastore admin), so
+    # including them here just inflates the "applied" count with fake successes.
     grant_stmts: list[tuple[str, str]] = [
-        (f"GRANT USE CATALOG ON CATALOG `system` TO `{p}`", "CATALOG/system"),
-    ]
-    for _, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
-        parts = obj_name.split(".")
-        q = ".".join(f"`{part}`" for part in parts)
-        if obj_type == "SCHEMA":
-            grant_stmts.append((f"GRANT USE SCHEMA ON SCHEMA {q} TO `{p}`", f"SCHEMA/{obj_name}"))
-        elif obj_type == "TABLE":
-            grant_stmts.append((f"GRANT SELECT ON TABLE {q} TO `{p}`", f"TABLE/{obj_name}"))
-
-    grant_stmts += [
         (f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{p}`",                           f"CATALOG/{catalog}"),
         (f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{p}`",                         f"CREATE_SCHEMA/{catalog}"),
         (f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                  f"SCHEMA/{catalog}.{schema}"),
@@ -112,35 +103,20 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
     ok = failed = 0
     errors: list[str] = []
 
-    # Always run grants as SP — the forwarded user token lacks the sql OAuth
-    # scope in Databricks Apps, causing every warehouse request to fail with
-    # "Error during request to server" before execute_query's scope-error retry
-    # can kick in (the retry only triggers on "required scopes" in the message).
-    # Clearing the user token forces get_connection() to use the SP M2M token,
-    # which has sql scope and can execute GRANT statements.
-    #
-    # Permission/request errors are treated as non-fatal (ok += 1) because:
-    # - System table grants fail if SP isn't metastore admin, but SP may already
-    #   have system table access from workspace-level grants (Permissions step
-    #   shows green if it does).
-    # - App catalog grants fail if SP isn't the catalog owner, but ensure-catalog
-    #   already granted USE CATALOG + CREATE SCHEMA via the user's token.
     from server.db import execute_query as _exec, _user_token as _exec_tok
     for sql_stmt, label in grant_stmts:
-        ctx = _exec_tok.set("")  # force SP auth — clear user token for this call
+        ctx = _exec_tok.set("")  # force SP auth for sql scope
         try:
             _exec(sql_stmt, no_cache=True)
             ok += 1
             logger.info(f"SQL GRANT ok: {label} → {p}")
         except Exception as e:
             err_lower = str(e).lower()
-            if any(kw in err_lower for kw in (
-                "not found", "does not exist", "already",
-                "permission", "privilege", "denied", "insufficient",
-                "error during request",
-            )):
+            # "already" = already granted (idempotent, non-fatal).
+            # "not found"/"does not exist" = catalog/schema not created yet (non-fatal, wizard handles it).
+            if any(kw in err_lower for kw in ("already", "not found", "does not exist")):
                 ok += 1
-                logger.debug(f"GRANT skipped (pre-existing / not grantable): {label}: {e}")
+                logger.debug(f"GRANT skipped (pre-existing or not yet created): {label}: {e}")
             else:
                 msg = _clean_sdk_error(str(e))
                 logger.warning(f"SQL GRANT failed: {label}: {msg}")
@@ -508,13 +484,12 @@ def _grant_system_via_uc_api(user_token: str, sp_id: str) -> dict:
             logger.info(f"UC API system grant ok: {label} → {sp_id}")
         except Exception as e:
             err_lower = str(e).lower()
-            if any(kw in err_lower for kw in (
-                "already", "permission", "privilege", "denied", "insufficient",
-                "not authorized", "unauthorized", "forbidden",
-                "required scopes", "unity-catalog", "scope",
-            )):
+            # Only "already" is truly non-fatal (privilege already granted).
+            # Everything else — including INSUFFICIENT_PERMISSIONS, scope errors,
+            # unauthorized — is a real failure: the grant was NOT applied.
+            if "already" in err_lower:
                 ok += 1
-                logger.debug(f"UC API system grant skipped (pre-existing or token scope): {label}: {e}")
+                logger.debug(f"UC API system grant already exists: {label}")
             else:
                 msg = _clean_sdk_error(str(e))
                 logger.warning(f"UC API system grant failed: {label}: {msg}")
@@ -558,6 +533,11 @@ async def grant_sp_system_access(request: Request) -> dict[str, Any]:
     total_failed = app_result["failed"] + sys_result["failed"]
     all_errors = app_result.get("errors", []) + sys_result.get("errors", [])
 
+    # If all system table grants failed, the likely cause is that the forwarded
+    # user OAuth token lacks the scope needed for the UC REST API, OR the user
+    # is not a metastore admin. Guide them to the permissions script.
+    system_grants_need_script = sys_result["failed"] > 0
+
     return {
         "ok": total_failed == 0,
         "status": "ok" if total_failed == 0 else "partial",
@@ -567,6 +547,7 @@ async def grant_sp_system_access(request: Request) -> dict[str, Any]:
         "applied": total_applied,
         "failed": total_failed,
         "errors": all_errors,
+        "system_grants_need_script": system_grants_need_script,
     }
 
 

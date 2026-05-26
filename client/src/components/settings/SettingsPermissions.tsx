@@ -32,7 +32,7 @@ export function SettingsPermissions() {
   const [newAdmin, setNewAdmin] = useState("");
   const [newConsumer, setNewConsumer] = useState("");
   const [grantRunning, setGrantRunning] = useState(false);
-  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[] } | null>(null);
+  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[]; scriptHint?: string } | null>(null);
   const [readinessOpen, setReadinessOpen] = useState(false);
 
   const { data: permissions, isLoading } = useQuery<UserPermissions>({
@@ -110,7 +110,10 @@ export function SettingsPermissions() {
         const summary = body.failed
           ? `${body.failed} grant(s) failed, ${body.applied ?? 0} applied.`
           : (body.reason ?? body.detail ?? "Grant run completed — check server logs.");
-        setGrantResult({ ok: false, message: summary, errors: allErrors });
+        const scriptHint = body.system_grants_need_script
+          ? `System table grants require a metastore admin. Run the permissions script as a workspace admin:\n\npython perms.py ${body.sp_client_id ?? "<sp_client_id>"}`
+          : undefined;
+        setGrantResult({ ok: false, message: summary, errors: allErrors, scriptHint });
       }
     } catch {
       setGrantResult({ ok: false, message: "Network error running grants." });
@@ -411,6 +414,12 @@ export function SettingsPermissions() {
                         <li key={i} className="break-all">{e}</li>
                       ))}
                     </ul>
+                  )}
+                  {grantResult.scriptHint && (
+                    <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 font-normal">
+                      <p className="font-medium text-amber-900 mb-1">Run manually as a metastore admin:</p>
+                      <code className="block text-[10px] font-mono whitespace-pre-wrap break-all">{grantResult.scriptHint}</code>
+                    </div>
                   )}
                 </div>
               )}

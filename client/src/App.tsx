@@ -971,20 +971,20 @@ function Dashboard() {
 
             <SummaryCards
               data={summary}
-              isLoading={false}
+              isLoading={bundleLoading}
               startDate={dateRange.startDate}
               endDate={dateRange.endDate}
               workspaceIds={_wsIds}
             />
 
-            <SpendChart data={timeseries} isLoading={false} />
+            <SpendChart data={timeseries} isLoading={bundleLoading} />
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <ProductBreakdown data={products} isLoading={false} workspaces={workspaces?.workspaces} dateRange={dateRange} />
+              <ProductBreakdown data={products} isLoading={bundleLoading} workspaces={workspaces?.workspaces} dateRange={dateRange} />
               <SKUBreakdown data={skuBreakdown} isLoading={skuLoading} workspaces={workspaces?.workspaces} dateRange={dateRange} />
             </div>
 
-            <WorkspaceTable data={workspaces} isLoading={false} host={accountInfo?.host} />
+            <WorkspaceTable data={workspaces} isLoading={bundleLoading} host={accountInfo?.host} />
 
             <InteractiveBreakdown data={interactiveBreakdown} isLoading={interactiveLoading} host={accountInfo?.host} />
 

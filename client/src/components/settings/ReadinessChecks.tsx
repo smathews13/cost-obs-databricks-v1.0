@@ -70,7 +70,7 @@ interface ReadinessChecksProps {
   onRecheck: (forceRefresh?: boolean) => void;
   onAutoGrant?: () => Promise<void>;
   autoGrantRunning?: boolean;
-  autoGrantResult?: { ok: boolean; message: string; errors?: string[] } | null;
+  autoGrantResult?: { ok: boolean; message: string; errors?: string[]; scriptHint?: string } | null;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -241,6 +241,12 @@ export function ReadinessChecks({
                       <li key={i} className="break-all">{e}</li>
                     ))}
                   </ul>
+                )}
+                {autoGrantResult.scriptHint && (
+                  <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 font-normal">
+                    <p className="font-medium text-amber-900 mb-1">Run as a metastore admin:</p>
+                    <code className="block text-[10px] font-mono break-all">{autoGrantResult.scriptHint}</code>
+                  </div>
                 )}
               </div>
             )}

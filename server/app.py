@@ -751,6 +751,11 @@ async def lifespan(app: FastAPI):
             try:
                 from server.routers.settings import load_schedule_settings
                 sched = load_schedule_settings()
+                # Clear first_iteration unconditionally so re-enabling later doesn't re-trigger catch-up
+                is_first = first_iteration
+                if first_iteration:
+                    first_iteration = False
+
                 if not sched.get("enabled", True):
                     await asyncio.sleep(3600)  # check again in 1h
                     continue
@@ -761,8 +766,7 @@ async def lifespan(app: FastAPI):
 
                 # On startup, check if we missed the scheduled run while the pod was suspended.
                 # If today's scheduled time has passed and the last rebuild was before it, run now.
-                if first_iteration:
-                    first_iteration = False
+                if is_first:
                     scheduled_today = now.replace(hour=hour_utc, minute=0, second=0, microsecond=0)
                     if now > scheduled_today:
                         should_run_today = (

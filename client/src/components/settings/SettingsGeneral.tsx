@@ -28,8 +28,9 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
     staleTime: 5 * 60 * 1000,
   });
 
-  const [localSchedule, setLocalSchedule] = useState<ScheduleSettings>(SCHEDULE_DEFAULTS);
-  const scheduleSynced = useRef(false);
+  // Initialize from cache (warm) or defaults (cold); useEffect syncs once when data loads.
+  const [localSchedule, setLocalSchedule] = useState<ScheduleSettings>(() => scheduleData ?? SCHEDULE_DEFAULTS);
+  const scheduleSynced = useRef(!!scheduleData);
 
   useEffect(() => {
     if (scheduleData && !scheduleSynced.current) {
@@ -39,6 +40,7 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
   }, [scheduleData]);
 
   const updateSchedule = (next: ScheduleSettings) => {
+    scheduleSynced.current = true;  // prevent data load from overwriting user edit
     setLocalSchedule(next);
     onScheduleChange(next);
   };

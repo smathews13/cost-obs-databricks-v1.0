@@ -32,7 +32,8 @@ export function SettingsPermissions() {
   const [newAdmin, setNewAdmin] = useState("");
   const [newConsumer, setNewConsumer] = useState("");
   const [grantRunning, setGrantRunning] = useState(false);
-  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[]; scriptHint?: string; grants_sql?: string; obo_scope_missing?: boolean } | null>(null);
+  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[]; grants_sql?: string; obo_scope_missing?: boolean } | null>(null);
+  const [grantSqlCopied, setGrantSqlCopied] = useState(false);
   const [readinessOpen, setReadinessOpen] = useState(false);
 
   const { data: permissions, isLoading } = useQuery<UserPermissions>({
@@ -427,9 +428,21 @@ export function SettingsPermissions() {
                   )}
                   {grantResult.grants_sql && (
                     <div className="mt-2 space-y-1">
-                      <p className="text-[10px] font-medium text-amber-900">
-                        Run as metastore admin — Copy and run the SQL below, then click Re-check.
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-medium text-amber-900">
+                          Run as metastore admin — Copy and run the SQL below, then click Re-check.
+                        </p>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(grantResult.grants_sql!);
+                            setGrantSqlCopied(true);
+                            setTimeout(() => setGrantSqlCopied(false), 1800);
+                          }}
+                          className="shrink-0 rounded px-2 py-0.5 text-[10px] font-medium bg-gray-700 text-white hover:bg-gray-600"
+                        >
+                          {grantSqlCopied ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
                       <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-gray-900 px-3 py-2 text-[10px] leading-relaxed text-green-400">
                         {grantResult.grants_sql}
                       </pre>

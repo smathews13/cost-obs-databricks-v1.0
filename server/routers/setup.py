@@ -444,16 +444,16 @@ async def get_bootstrap_state() -> dict[str, Any]:
 
 def _build_system_grants_sql(sp_id: str) -> str:
     """Return the full set of system table GRANT statements as a copyable SQL block."""
-    lines = [f"GRANT USE CATALOG ON CATALOG `system` TO `{sp_id}`;"]
+    lines = []
     for privilege, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
         parts = obj_name.split(".")
         q = ".".join(f"`{p}`" for p in parts)
-        if obj_type == "SCHEMA":
+        if obj_type == "CATALOG":
+            lines.append(f"GRANT USE CATALOG ON CATALOG {q} TO `{sp_id}`;")
+        elif obj_type == "SCHEMA":
             lines.append(f"GRANT USE SCHEMA ON SCHEMA {q} TO `{sp_id}`;")
         elif obj_type == "TABLE":
             lines.append(f"GRANT SELECT ON TABLE {q} TO `{sp_id}`;")
-        elif obj_type == "CATALOG":
-            lines.append(f"GRANT USE CATALOG ON CATALOG {q} TO `{sp_id}`;")
     return "\n".join(lines)
 
 
@@ -485,18 +485,16 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
                 "errors": ["Warehouse not configured — complete warehouse setup first"],
                 "needs_admin": False, "obo_scope_missing": False}
 
-    grant_stmts: list[tuple[str, str]] = [
-        (f"GRANT USE CATALOG ON CATALOG `system` TO `{sp_id}`", "CATALOG/system"),
-    ]
+    grant_stmts: list[tuple[str, str]] = []
     for privilege, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
         parts = obj_name.split(".")
         q = ".".join(f"`{p}`" for p in parts)
-        if obj_type == "SCHEMA":
+        if obj_type == "CATALOG":
+            grant_stmts.append((f"GRANT USE CATALOG ON CATALOG {q} TO `{sp_id}`", f"CATALOG/{obj_name}"))
+        elif obj_type == "SCHEMA":
             grant_stmts.append((f"GRANT USE SCHEMA ON SCHEMA {q} TO `{sp_id}`", f"SCHEMA/{obj_name}"))
         elif obj_type == "TABLE":
             grant_stmts.append((f"GRANT SELECT ON TABLE {q} TO `{sp_id}`", f"TABLE/{obj_name}"))
-        elif obj_type == "CATALOG":
-            grant_stmts.append((f"GRANT USE CATALOG ON CATALOG {q} TO `{sp_id}`", f"CATALOG/{obj_name}"))
 
     ok = failed = 0
     errors: list[str] = []

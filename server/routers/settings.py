@@ -629,11 +629,12 @@ async def get_tables_status(request: Request, no_cache: bool = False):
         try:
             max_expr = date_expr_overrides.get(table_name, "MAX(usage_date)")
             min_expr = min_date_expr_overrides.get(table_name, "MIN(usage_date)")
-            rows = execute_query(f"SELECT {max_expr} as max_date, {min_expr} as min_date FROM {fqn}")
+            rows = execute_query(f"SELECT {max_expr} as max_date, {min_expr} as min_date, COUNT(*) as row_count FROM {fqn}")
             if not rows:
                 return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": None, "max_date": None, "days_behind": None, "owner": None}
             max_date = rows[0].get("max_date")
             min_date = rows[0].get("min_date")
+            row_count = rows[0].get("row_count")
             max_date_str = str(max_date) if max_date else None
             min_date_str = str(min_date) if min_date else None
             days_behind = None
@@ -644,7 +645,7 @@ async def get_tables_status(request: Request, no_cache: bool = False):
                     days_behind = delta.days
                 except Exception:
                     pass
-            return {"name": table_name, "table_type": table_type, "exists": True, "row_count": None, "min_date": min_date_str, "max_date": max_date_str, "days_behind": days_behind, "owner": None}
+            return {"name": table_name, "table_type": table_type, "exists": True, "row_count": row_count, "min_date": min_date_str, "max_date": max_date_str, "days_behind": days_behind, "owner": None}
         except Exception as e:
             err = str(e)
             if _table_not_found(err):

@@ -732,6 +732,21 @@ async def lifespan(app: FastAPI):
     async def _daily_mv_refresh_loop():
         from datetime import datetime, timezone, timedelta
         import fcntl
+        import json as _sched_json
+
+        def _last_rebuild_dt():
+            _log = os.path.join(os.path.dirname(__file__), "..", ".settings", "mv_refresh_log.json")
+            try:
+                with open(_log) as f:
+                    d = _sched_json.load(f)
+                    ts = d.get("last_refresh_utc")
+                    if ts:
+                        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:
+                pass
+            return None
+
+        first_iteration = True
         while True:
             try:
                 from server.routers.settings import load_schedule_settings
@@ -742,13 +757,45 @@ async def lifespan(app: FastAPI):
 
                 hour_utc = sched.get("hour_utc", 5)
                 frequency = sched.get("frequency", "nightly")
-
                 now = datetime.now(timezone.utc)
+
+                # On startup, check if we missed the scheduled run while the pod was suspended.
+                # If today's scheduled time has passed and the last rebuild was before it, run now.
+                if first_iteration:
+                    first_iteration = False
+                    scheduled_today = now.replace(hour=hour_utc, minute=0, second=0, microsecond=0)
+                    if now > scheduled_today:
+                        should_run_today = (
+                            frequency == "nightly"
+                            or (frequency == "weekly" and now.weekday() == 0)
+                            or (frequency == "monthly" and now.day == 1)
+                        )
+                        if should_run_today:
+                            last_dt = _last_rebuild_dt()
+                            if last_dt is None or last_dt < scheduled_today:
+                                logger.info(f"Missed scheduled rebuild at {hour_utc:02d}:00 UTC — running catch-up now")
+                                lock_path = "/tmp/cost-obs-mv-refresh.lock"
+                                try:
+                                    with open(lock_path, "w") as lf:
+                                        fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                                        lookback_days = sched.get("lookback_days", 180)
+                                        await asyncio.get_running_loop().run_in_executor(
+                                            None, lambda: _run_mv_refresh(lookback_days=lookback_days)
+                                        )
+                                        logger.info("Catch-up rebuild complete")
+                                        fcntl.flock(lf, fcntl.LOCK_UN)
+                                except BlockingIOError:
+                                    logger.info("Catch-up rebuild: another worker already running — skipping")
+                                except Exception as _e:
+                                    logger.error(f"Catch-up rebuild failed: {_e}")
+                                # Re-read now after potential rebuild
+                                now = datetime.now(timezone.utc)
+
                 next_run = now.replace(hour=hour_utc, minute=0, second=0, microsecond=0)
                 if next_run <= now:
                     next_run += timedelta(days=1)
                 wait = (next_run - now).total_seconds()
-                logger.info(f"Next MV refresh in {wait/3600:.1f}h ({frequency} at {hour_utc:02d}:00 UTC)")
+                logger.info(f"Next MV rebuild in {wait/3600:.1f}h ({frequency} at {hour_utc:02d}:00 UTC)")
                 await asyncio.sleep(max(wait, 0))
 
                 # Re-read settings in case they changed while sleeping
@@ -765,7 +812,7 @@ async def lifespan(app: FastAPI):
                     or (frequency == "monthly" and now.day == 1)
                 )
                 if not should_run:
-                    logger.info(f"Skipping refresh (frequency={frequency}, weekday={now.weekday()}, day={now.day})")
+                    logger.info(f"Skipping rebuild (frequency={frequency}, weekday={now.weekday()}, day={now.day})")
                     continue
 
                 lock_path = "/tmp/cost-obs-mv-refresh.lock"
@@ -773,18 +820,18 @@ async def lifespan(app: FastAPI):
                     with open(lock_path, "w") as lf:
                         fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
                         lookback_days = sched.get("lookback_days", 180)
-                        logger.info(f"Running scheduled MV refresh ({frequency}, lookback={lookback_days}d)...")
+                        logger.info(f"Running scheduled rebuild ({frequency}, lookback={lookback_days}d)...")
                         await asyncio.get_running_loop().run_in_executor(
                             None, lambda: _run_mv_refresh(lookback_days=lookback_days)
                         )
-                        logger.info("Scheduled MV refresh complete")
+                        logger.info("Scheduled rebuild complete")
                         fcntl.flock(lf, fcntl.LOCK_UN)
                 except BlockingIOError:
-                    logger.info("MV refresh already running in another worker — skipping")
+                    logger.info("Rebuild already running in another worker — skipping")
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"MV refresh scheduler error: {e}")
+                logger.error(f"MV rebuild scheduler error: {e}")
                 await asyncio.sleep(3600)  # retry in 1h on unexpected error
 
     scheduler_task = asyncio.create_task(_daily_mv_refresh_loop())

@@ -423,8 +423,8 @@ function Dashboard() {
   const _wsIds = selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined;
 
   // DBU tab sub-queries: pipelines, interactive, SKU are account-wide → always preload.
-  // sqlBreakdown: secondary fetch — starts as soon as primary bundle returns (not tab-gated).
-  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, !!bundle);
+  // sqlBreakdown fires in parallel with bundle — not gated so workspace filter changes don't stall it.
+  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, true);
   const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, _wsIds, true);
   const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, _wsIds, true);
   const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, _wsIds, true);

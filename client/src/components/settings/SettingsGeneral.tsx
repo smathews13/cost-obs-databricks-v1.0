@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { AppSettings } from "../SettingsDialog";
 
 interface ScheduleSettings {
@@ -9,43 +9,38 @@ interface ScheduleSettings {
   lookback_days: number;
 }
 
+export type { ScheduleSettings };
+
 interface SettingsGeneralProps {
   localSettings: AppSettings;
   updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
   saveStatus: string | null;
   setSaveStatus: (status: string | null) => void;
+  onScheduleChange: (s: ScheduleSettings) => void;
 }
 
 const SCHEDULE_DEFAULTS: ScheduleSettings = { enabled: true, frequency: "nightly", hour_utc: 5, lookback_days: 180 };
 
-export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setSaveStatus }: SettingsGeneralProps) {
-  const queryClient = useQueryClient();
-  const [scheduleStatus, setScheduleStatus] = useState<string | null>(null);
-
+export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setSaveStatus, onScheduleChange }: SettingsGeneralProps) {
   const { data: scheduleData } = useQuery<ScheduleSettings>({
     queryKey: ["settings-schedule"],
     queryFn: () => fetch("/api/settings/schedule").then(r => r.ok ? r.json() : SCHEDULE_DEFAULTS).catch(() => SCHEDULE_DEFAULTS),
     staleTime: 5 * 60 * 1000,
   });
 
-  const schedule: ScheduleSettings = scheduleData ?? SCHEDULE_DEFAULTS;
+  const [localSchedule, setLocalSchedule] = useState<ScheduleSettings>(SCHEDULE_DEFAULTS);
+  const scheduleSynced = useRef(false);
 
-  const saveSchedule = async (next: ScheduleSettings) => {
-    queryClient.setQueryData(["settings-schedule"], next);
-    try {
-      const res = await fetch("/api/settings/schedule", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
-      });
-      if (res.ok) {
-        setScheduleStatus("Schedule saved");
-        setTimeout(() => setScheduleStatus(null), 2500);
-      }
-    } catch {
-      setScheduleStatus("Save failed");
-      setTimeout(() => setScheduleStatus(null), 3000);
+  useEffect(() => {
+    if (scheduleData && !scheduleSynced.current) {
+      setLocalSchedule(scheduleData);
+      scheduleSynced.current = true;
     }
+  }, [scheduleData]);
+
+  const updateSchedule = (next: ScheduleSettings) => {
+    setLocalSchedule(next);
+    onScheduleChange(next);
   };
 
   const HOUR_OPTIONS = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
@@ -237,19 +232,16 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
         </div>
       </div>
 
-      {/* ── Table Refresh Schedule ────────────────── */}
+      {/* ── Rebuild Schedule ────────────────── */}
       <div>
         <div className="flex items-center gap-2 mb-3">
           <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          <h4 className="text-sm font-semibold text-gray-900">Table Refresh Schedule</h4>
-          {scheduleStatus && (
-            <span className="text-xs text-green-600">{scheduleStatus}</span>
-          )}
+          <h4 className="text-sm font-semibold text-gray-900">Rebuild Schedule</h4>
         </div>
         <p className="mb-2 text-xs text-gray-500">
-          Rebuild history and run status are tracked in the <span className="font-medium text-gray-600">Storage Location &amp; Tables</span> section of the <span className="font-medium text-gray-600">Config</span> tab.
+          Rebuild history is tracked in the <span className="font-medium text-gray-600">Storage Location &amp; Tables</span> section of the <span className="font-medium text-gray-600">Config</span> tab.
         </p>
         <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
           {/* Enable toggle */}
@@ -261,12 +253,12 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
             <label className="relative cursor-pointer">
               <input
                 type="checkbox"
-                checked={schedule.enabled}
-                onChange={e => saveSchedule({ ...schedule, enabled: e.target.checked })}
+                checked={localSchedule.enabled}
+                onChange={e => updateSchedule({ ...localSchedule, enabled: e.target.checked })}
                 className="sr-only"
               />
-              <div className={`h-6 w-11 rounded-full transition-colors ${schedule.enabled ? "" : "bg-gray-300"}`} style={schedule.enabled ? { backgroundColor: '#FF3621' } : {}} />
-              <div className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${schedule.enabled ? "translate-x-5" : "translate-x-0"}`} />
+              <div className={`h-6 w-11 rounded-full transition-colors ${localSchedule.enabled ? "" : "bg-gray-300"}`} style={localSchedule.enabled ? { backgroundColor: '#FF3621' } : {}} />
+              <div className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${localSchedule.enabled ? "translate-x-5" : "translate-x-0"}`} />
             </label>
           </div>
           {/* Frequency */}
@@ -276,9 +268,9 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
               <div className="text-xs text-gray-500">How often to rebuild tables</div>
             </div>
             <select
-              value={schedule.frequency}
-              onChange={e => saveSchedule({ ...schedule, frequency: e.target.value as ScheduleSettings["frequency"] })}
-              disabled={!schedule.enabled}
+              value={localSchedule.frequency}
+              onChange={e => updateSchedule({ ...localSchedule, frequency: e.target.value as ScheduleSettings["frequency"] })}
+              disabled={!localSchedule.enabled}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
             >
               <option value="nightly">Nightly</option>
@@ -293,9 +285,9 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
               <div className="text-xs text-gray-500">Hour to run the rebuild (UTC)</div>
             </div>
             <select
-              value={schedule.hour_utc}
-              onChange={e => saveSchedule({ ...schedule, hour_utc: Number(e.target.value) })}
-              disabled={!schedule.enabled}
+              value={localSchedule.hour_utc}
+              onChange={e => updateSchedule({ ...localSchedule, hour_utc: Number(e.target.value) })}
+              disabled={!localSchedule.enabled}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
             >
               {HOUR_OPTIONS.map(h => (
@@ -310,9 +302,9 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
               <div className="text-xs text-gray-500">How far back to pull data on each rebuild</div>
             </div>
             <select
-              value={schedule.lookback_days}
-              onChange={e => saveSchedule({ ...schedule, lookback_days: Number(e.target.value) })}
-              disabled={!schedule.enabled}
+              value={localSchedule.lookback_days}
+              onChange={e => updateSchedule({ ...localSchedule, lookback_days: Number(e.target.value) })}
+              disabled={!localSchedule.enabled}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
             >
               <option value={180}>6 months (default)</option>

@@ -1,0 +1,8 @@
+[allowlist]
+  description = "Ignore false positives in compiled frontend build artifacts"
+  paths = [
+    '''static/assets/.*\.js''',
+  ]
+  regexes = [
+    '''getDerivedStateFrom''',
+  ]

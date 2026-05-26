@@ -368,9 +368,9 @@ export function SettingsConfig({
             <div className="flex items-center justify-between mb-2">
               <div>
                 {tablesStatus?.refresh_status === null || tablesStatus?.refresh_status === undefined ? (
-                  <span className="text-xs text-gray-500">Last refresh: none</span>
+                  <span className="text-xs text-gray-500">Never rebuilt</span>
                 ) : tablesStatus.refresh_status.status === "error" ? (
-                  <span className="text-xs text-red-500">Last refresh failed</span>
+                  <span className="text-xs text-red-500">Last rebuild failed</span>
                 ) : tablesStatus.refresh_status.stale ? (
                   <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
                     Stale (&gt;26h)
@@ -378,8 +378,8 @@ export function SettingsConfig({
                 ) : (
                   <span className="text-xs text-gray-500">
                     {tablesStatus.refresh_status.hours_since_refresh < 1
-                      ? "Refreshed <1h ago"
-                      : `Refreshed ${tablesStatus.refresh_status.hours_since_refresh}h ago`}
+                      ? "Rebuilt <1h ago"
+                      : `Rebuilt ${tablesStatus.refresh_status.hours_since_refresh}h ago`}
                   </span>
                 )}
               </div>
@@ -568,12 +568,21 @@ export function SettingsConfig({
                               }
                               const currentIdentity = authStatus?.sp_display_name || authStatus?.sp_client_id;
                               const mismatch = !!(currentIdentity && !t.owner.includes(currentIdentity) && !currentIdentity.includes(t.owner));
+                              const label = t.owner.length > 16 ? t.owner.slice(0, 16) + "…" : t.owner;
+                              if (mismatch) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-mono font-semibold text-amber-700" title={`Owned by a different principal than the current app identity (${currentIdentity}). Rebuild may require explicit permissions.\n\nOwner: ${t.owner}`}>
+                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                                    {label}
+                                    <span className="opacity-60">SP</span>
+                                  </span>
+                                );
+                              }
                               return (
-                                <span
-                                  className={mismatch ? "text-amber-600 font-medium" : "text-gray-400"}
-                                  title={mismatch ? `Owned by a different principal than the current app identity (${currentIdentity}). Rebuild may require explicit permissions.` : t.owner}
-                                >
-                                  {t.owner.length > 28 ? t.owner.slice(0, 28) + "…" : t.owner}
+                                <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-mono font-semibold text-green-700" title={t.owner}>
+                                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                  {label}
+                                  <span className="opacity-60">SP</span>
                                 </span>
                               );
                             })() : t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} /></> : <span className="text-gray-300">—</span>}
@@ -646,8 +655,8 @@ export function SettingsConfig({
               return (
                 <div className="mt-4">
                   <div className="mb-2 flex items-baseline justify-between">
-                    <p className="text-xs font-medium text-gray-600">Refresh History</p>
-                    <p className="text-[10px] text-gray-400">Last 5 runs tracked</p>
+                    <p className="text-xs font-medium text-gray-600">Rebuild History</p>
+                    <p className="text-[10px] text-gray-400">Last 5 rebuilds tracked</p>
                   </div>
                   {history.length === 0 ? (
                     <p className="text-xs text-gray-400 italic px-1">No rebuild runs recorded yet. History will appear here after the first manual or nightly rebuild.</p>

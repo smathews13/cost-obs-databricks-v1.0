@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
+import type { ScheduleSettings } from "./settings/SettingsGeneral";
 import { SetupWizard } from "./SetupWizard";
 
 export interface TabVisibility {
@@ -123,9 +124,11 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSettingsChange, tabVisibility, appSettings }: SettingsDialogProps) {
+  const rqClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<"tabs" | "general" | "config" | "accuracy-checks" | "permissions" | "debugger" | "setup">("general");
   const [localVisibility, setLocalVisibility] = useState<TabVisibility>(tabVisibility);
   const [localSettings, setLocalSettings] = useState<AppSettings>(appSettings);
+  const [pendingSchedule, setPendingSchedule] = useState<ScheduleSettings | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [generalDirty, setGeneralDirty] = useState(false);
   const contentScrollRef = useRef<HTMLDivElement>(null);
@@ -168,6 +171,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
       setLocalVisibility(tabVisibility);
       setLocalSettings(appSettings);
       setGeneralDirty(false);
+      setPendingSchedule(null);
     }
   }, [isOpen, tabVisibility, appSettings]);
 
@@ -216,6 +220,16 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
     saveAppSettings(localSettings);
     onSettingsChange(localSettings);
     setGeneralDirty(false);
+    if (pendingSchedule) {
+      rqClient.setQueryData(["settings-schedule"], pendingSchedule);
+      fetch("/api/settings/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pendingSchedule),
+        signal: AbortSignal.timeout(10000),
+      }).catch(() => {});
+      setPendingSchedule(null);
+    }
     fetch(
       `/api/alerts/setup-databricks-alerts?spike_threshold_percent=${localSettings.alertSpikePercent}&daily_threshold_amount=${localSettings.alertDailyBudget}&workspace_threshold_amount=${localSettings.alertWorkspaceBudget}`,
       { method: "POST", signal: AbortSignal.timeout(10000) }
@@ -357,6 +371,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 updateSetting={updateSetting}
                 saveStatus={saveStatus}
                 setSaveStatus={setSaveStatus}
+                onScheduleChange={(s) => { setPendingSchedule(s); setGeneralDirty(true); }}
               />
             )}
             {activeSection === "tabs" && (

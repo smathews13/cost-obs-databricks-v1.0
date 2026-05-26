@@ -88,7 +88,7 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
 
     p = sp_client_id  # principal name in GRANT statements
 
-    # App schema grants only — system table grants are handled by _grant_system_via_uc_api.
+    # App schema grants only — system table grants are handled by _grant_system_via_user_sql.
     # Running system GRANT as the SP always fails (SP is not a metastore admin), so
     # including them here just inflates the "applied" count with fake successes.
     grant_stmts: list[tuple[str, str]] = [
@@ -336,7 +336,7 @@ async def get_setup_status() -> dict[str, Any]:
                 finally:
                     _db_user_token.reset(tok)
                 if _sp_id_snap:
-                    _grant_system_via_uc_api(_token_snap, _sp_id_snap)
+                    _grant_system_via_user_sql(_token_snap, _sp_id_snap)
             _threading.Thread(target=_bg_grant, daemon=True).start()
 
     # Core tables exist (checked above) and setup_done.json is present (either
@@ -786,12 +786,8 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
             finally:
                 _db_user_token.reset(pre_tok)
 
-            # System table grants via UC REST API — SQL GRANT on system.* requires
-            # metastore admin which the SP does not have. _grant_sp_schema_access
-            # silently swallows those permission errors. Call the UC API path here
-            # using the user's metastore-admin token so grants actually land.
             if sp_id:
-                sys_grant = _grant_system_via_uc_api(user_token, sp_id)
+                sys_grant = _grant_system_via_user_sql(user_token, sp_id)
                 logger.info(
                     f"System table grants (UC API): ok={sys_grant['ok']} "
                     f"applied={sys_grant['applied']} failed={sys_grant['failed']}"

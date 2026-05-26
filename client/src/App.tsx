@@ -686,23 +686,53 @@ function Dashboard() {
                         </span>
                       </div>
                     )}
-                    <div className="flex flex-col leading-none">
-                      <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">
-                        {(selectedWorkspaceIds.length === 0 ? wsFilterList.length : selectedWorkspaceIds.length) > 1 ? "Workspaces" : "Workspace"}
-                      </span>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        {selectedWorkspaceIds.length === 0 ? (
-                          // All workspaces selected — show names if pool ≤ 2, else "All"
-                          wsFilterList.length <= 2
-                            ? wsFilterList.map((w) => {
-                                const label = w.workspace_name || w.workspace_id;
+                    {wsListLoading ? (
+                      <div className="flex flex-col leading-none">
+                        <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">Workspace</span>
+                        <div className="mt-0.5 h-5 w-24 animate-pulse rounded" style={{ backgroundColor: "rgba(255,255,255,0.15)" }} />
+                      </div>
+                    ) : wsFilterList.length > 0 ? (
+                      <div className="flex flex-col leading-none">
+                        <span className="text-[9px] font-medium uppercase tracking-wide opacity-50">
+                          {(selectedWorkspaceIds.length === 0 ? wsFilterList.length : selectedWorkspaceIds.length) > 1 ? "Workspaces" : "Workspace"}
+                        </span>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          {selectedWorkspaceIds.length === 0 ? (
+                            // All workspaces selected — show names if pool ≤ 2, else "All"
+                            wsFilterList.length <= 2
+                              ? wsFilterList.map((w) => {
+                                  const lbl = w.workspace_name || w.workspace_id;
+                                  return (
+                                    <span
+                                      key={w.workspace_id}
+                                      title={lbl}
+                                      className="max-w-[150px] truncate rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
+                                      style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+                                    >
+                                      {lbl}
+                                    </span>
+                                  );
+                                })
+                              : (
+                                <span
+                                  className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
+                                  style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+                                >
+                                  All
+                                </span>
+                              )
+                          ) : selectedWorkspaceIds.length <= 2
+                            ? selectedWorkspaceIds.map((id) => {
+                                const ws = wsFilterList.find((w) => w.workspace_id === id);
+                                const lbl = ws?.workspace_name || id;
                                 return (
                                   <span
-                                    key={w.workspace_id}
-                                    className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90 whitespace-nowrap"
+                                    key={id}
+                                    title={lbl}
+                                    className="max-w-[150px] truncate rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
                                     style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
                                   >
-                                    {label}
+                                    {lbl}
                                   </span>
                                 );
                               })
@@ -711,34 +741,13 @@ function Dashboard() {
                                 className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
                                 style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
                               >
-                                All
+                                {selectedWorkspaceIds.length} workspaces
                               </span>
                             )
-                        ) : selectedWorkspaceIds.length <= 2
-                          ? selectedWorkspaceIds.map((id) => {
-                              const ws = wsFilterList.find((w) => w.workspace_id === id);
-                              const label = ws?.workspace_name || id;
-                              return (
-                                <span
-                                  key={id}
-                                  className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90 whitespace-nowrap"
-                                  style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
-                                >
-                                  {label}
-                                </span>
-                              );
-                            })
-                          : (
-                            <span
-                              className="rounded px-2 py-0.5 text-[10px] font-medium text-white/90"
-                              style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
-                            >
-                              {selectedWorkspaceIds.length} workspaces
-                            </span>
-                          )
-                        }
+                          }
+                        </div>
                       </div>
-                    </div>
+                    ) : null}
                   </>
                 ) : (
                   <span className="text-sm opacity-75">Loading account info...</span>

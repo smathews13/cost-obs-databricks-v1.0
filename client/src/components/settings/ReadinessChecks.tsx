@@ -70,7 +70,7 @@ interface ReadinessChecksProps {
   onRecheck: (forceRefresh?: boolean) => void;
   onAutoGrant?: () => Promise<void>;
   autoGrantRunning?: boolean;
-  autoGrantResult?: { ok: boolean; message: string; errors?: string[]; scriptHint?: string } | null;
+  autoGrantResult?: { ok: boolean; message: string; errors?: string[]; scriptHint?: string; grants_sql?: string; obo_scope_missing?: boolean } | null;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -242,10 +242,22 @@ export function ReadinessChecks({
                     ))}
                   </ul>
                 )}
-                {autoGrantResult.scriptHint && (
-                  <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 font-normal">
-                    <p className="font-medium text-amber-900 mb-1">Run as a metastore admin:</p>
-                    <code className="block text-[10px] font-mono break-all">{autoGrantResult.scriptHint}</code>
+                {autoGrantResult.obo_scope_missing && (
+                  <p className="mt-1 text-[10px] text-amber-700 font-normal">
+                    OBO scope missing — this app is not configured with the <code className="font-mono">sql</code> user authorization scope, so forwarded user tokens cannot execute SQL.
+                  </p>
+                )}
+                {autoGrantResult.grants_sql && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-[10px] font-medium text-amber-900">
+                      Run as metastore admin — Copy and run the SQL below, then click Re-check.
+                    </p>
+                    <div className="relative">
+                      <CopyButton text={autoGrantResult.grants_sql} />
+                      <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-gray-900 px-3 py-2 text-[10px] leading-relaxed text-green-400">
+                        {autoGrantResult.grants_sql}
+                      </pre>
+                    </div>
                   </div>
                 )}
               </div>

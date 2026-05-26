@@ -442,62 +442,117 @@ async def get_bootstrap_state() -> dict[str, Any]:
     return _create_task_state.copy()
 
 
-def _grant_system_via_uc_api(user_token: str, sp_id: str) -> dict:
-    """Grant SP access to system tables via UC REST API using the calling user's token.
+def _build_system_grants_sql(sp_id: str) -> str:
+    """Return the full set of system table GRANT statements as a copyable SQL block."""
+    lines = [f"GRANT USE CATALOG ON CATALOG `system` TO `{sp_id}`;"]
+    for privilege, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
+        parts = obj_name.split(".")
+        q = ".".join(f"`{p}`" for p in parts)
+        if obj_type == "SCHEMA":
+            lines.append(f"GRANT USE SCHEMA ON SCHEMA {q} TO `{sp_id}`;")
+        elif obj_type == "TABLE":
+            lines.append(f"GRANT SELECT ON TABLE {q} TO `{sp_id}`;")
+        elif obj_type == "CATALOG":
+            lines.append(f"GRANT USE CATALOG ON CATALOG {q} TO `{sp_id}`;")
+    return "\n".join(lines)
 
-    SQL GRANT on system.* requires metastore admin. The forwarded user token
-    lacks the `sql` OAuth scope (needed to talk to the SQL warehouse), so we
-    can't run GRANT SQL via the warehouse as the user. Instead we call the UC
-    REST API directly — that endpoint uses the user's token for auth and doesn't
-    require the `sql` scope.
+
+def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
+    """Try SQL GRANT on system tables using the calling user's forwarded token.
+
+    Uses databricks.sql.connect() directly with the forwarded token — the
+    documented Apps pattern for user-auth + sql scope.  Opportunistic: works
+    when the app has user auth + sql scope configured AND the user is a
+    metastore admin.  Expected to fail in other configurations.
+
+    Returns {"ok", "applied", "failed", "errors", "needs_admin", "obo_scope_missing"}.
+    needs_admin=True  → user lacks privilege; surface copyable SQL for an admin.
+    obo_scope_missing → token absent or sql scope not configured on the app.
     """
+    if not user_token:
+        return {"ok": False, "applied": 0, "failed": 0,
+                "errors": ["No forwarded user token available"],
+                "needs_admin": False, "obo_scope_missing": True}
+
     host = os.getenv("DATABRICKS_HOST", "")
-    if not host or not user_token or not sp_id:
+    http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
+    if not http_path:
+        wh_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
+        if wh_id:
+            http_path = f"/sql/1.0/warehouses/{wh_id}"
+    if not host or not http_path:
         return {"ok": False, "applied": 0, "failed": 0,
-                "errors": ["Missing host/user_token/sp_id for UC API system grants"]}
+                "errors": ["Warehouse not configured — complete warehouse setup first"],
+                "needs_admin": False, "obo_scope_missing": False}
 
-    try:
-        from databricks.sdk import WorkspaceClient as _WC
-        user_w = _WC(host=host, token=user_token, auth_type="pat")
-    except Exception as e:
-        return {"ok": False, "applied": 0, "failed": 0,
-                "errors": [f"Could not build user WorkspaceClient: {_clean_sdk_error(str(e))}"]}
-
-    # Map SYSTEM_TABLE_GRANTS to UC REST API securable_type and privilege
-    uc_type_map = {"CATALOG": "catalog", "SCHEMA": "schema", "TABLE": "table"}
+    grant_stmts: list[tuple[str, str]] = [
+        (f"GRANT USE CATALOG ON CATALOG `system` TO `{sp_id}`", "CATALOG/system"),
+    ]
+    for privilege, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
+        parts = obj_name.split(".")
+        q = ".".join(f"`{p}`" for p in parts)
+        if obj_type == "SCHEMA":
+            grant_stmts.append((f"GRANT USE SCHEMA ON SCHEMA {q} TO `{sp_id}`", f"SCHEMA/{obj_name}"))
+        elif obj_type == "TABLE":
+            grant_stmts.append((f"GRANT SELECT ON TABLE {q} TO `{sp_id}`", f"TABLE/{obj_name}"))
+        elif obj_type == "CATALOG":
+            grant_stmts.append((f"GRANT USE CATALOG ON CATALOG {q} TO `{sp_id}`", f"CATALOG/{obj_name}"))
 
     ok = failed = 0
     errors: list[str] = []
+    needs_admin = False
+    obo_scope_missing = False
 
-    for privilege, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
-        securable = uc_type_map.get(obj_type)
-        if not securable:
-            continue
-        label = f"{obj_type}/{obj_name}"
-        try:
-            user_w.api_client.do(
-                "PATCH",
-                f"/api/2.1/unity-catalog/permissions/{securable}/{obj_name}",
-                body={"changes": [{"principal": sp_id, "add": [privilege]}]},
-            )
-            ok += 1
-            logger.info(f"UC API system grant ok: {label} → {sp_id}")
-        except Exception as e:
-            err_lower = str(e).lower()
-            # Only "already" is truly non-fatal (privilege already granted).
-            # Everything else — including INSUFFICIENT_PERMISSIONS, scope errors,
-            # unauthorized — is a real failure: the grant was NOT applied.
-            if "already" in err_lower:
-                ok += 1
-                logger.debug(f"UC API system grant already exists: {label}")
-            else:
-                msg = _clean_sdk_error(str(e))
-                logger.warning(f"UC API system grant failed: {label}: {msg}")
-                errors.append(f"{label}: {msg}")
-                failed += 1
+    sql_host = host.removeprefix("https://").removeprefix("http://")
+    try:
+        from databricks import sql as dbsql
+        conn = dbsql.connect(
+            server_hostname=sql_host,
+            http_path=http_path,
+            access_token=user_token,
+        )
+    except Exception as e:
+        err_lower = str(e).lower()
+        if any(kw in err_lower for kw in ("scope", "oauth", "token", "auth")):
+            obo_scope_missing = True
+        logger.warning(f"User SQL GRANT connect failed: {_clean_sdk_error(str(e))}")
+        return {"ok": False, "applied": 0, "failed": len(grant_stmts),
+                "errors": [_clean_sdk_error(str(e))],
+                "needs_admin": False, "obo_scope_missing": obo_scope_missing}
 
-    logger.info(f"UC API system grants: {ok} ok, {failed} failed for {sp_id}")
-    return {"ok": failed == 0, "applied": ok, "failed": failed, "errors": errors}
+    try:
+        with conn.cursor() as cursor:
+            for sql_stmt, label in grant_stmts:
+                try:
+                    cursor.execute(sql_stmt)
+                    ok += 1
+                    logger.info(f"User SQL GRANT ok: {label} → {sp_id}")
+                except Exception as e:
+                    err_lower = str(e).lower()
+                    if "already" in err_lower:
+                        ok += 1
+                        logger.debug(f"User SQL GRANT already exists: {label}")
+                    elif any(kw in err_lower for kw in (
+                        "insufficient", "permission", "denied",
+                        "unauthorized", "forbidden",
+                    )):
+                        needs_admin = True
+                        failed += 1
+                        errors.append(f"{label}: {_clean_sdk_error(str(e))}")
+                    elif any(kw in err_lower for kw in ("scope", "required scopes", "oauth")):
+                        obo_scope_missing = True
+                        failed += 1
+                        errors.append(f"{label}: {_clean_sdk_error(str(e))}")
+                    else:
+                        failed += 1
+                        errors.append(f"{label}: {_clean_sdk_error(str(e))}")
+    finally:
+        conn.close()
+
+    logger.info(f"User SQL system grants: {ok} ok, {failed} failed "
+                f"(needs_admin={needs_admin}, obo_scope_missing={obo_scope_missing})")
+    return {"ok": failed == 0, "applied": ok, "failed": failed, "errors": errors,
+            "needs_admin": needs_admin, "obo_scope_missing": obo_scope_missing}
 
 
 @router.post("/grant-sp-system-access")
@@ -524,19 +579,18 @@ async def grant_sp_system_access(request: Request) -> dict[str, Any]:
     finally:
         _db_user_token.reset(pre_tok)
 
-    # System table grants use the UC REST API with the user's token — SQL GRANT
-    # on system.* requires metastore admin privilege, and the user has that.
-    # The forwarded user token lacks sql scope so we can't use the warehouse.
-    sys_result = _grant_system_via_uc_api(user_token, sp_id)
+    # System table grants — try as the calling user via SQL warehouse (requires
+    # user auth + sql scope + metastore admin).  Opportunistic: fall back to
+    # copyable SQL when token lacks scope or user lacks privilege.
+    sys_result = _grant_system_via_user_sql(user_token, sp_id)
 
     total_applied = app_result["applied"] + sys_result["applied"]
     total_failed = app_result["failed"] + sys_result["failed"]
     all_errors = app_result.get("errors", []) + sys_result.get("errors", [])
 
-    # If all system table grants failed, the likely cause is that the forwarded
-    # user OAuth token lacks the scope needed for the UC REST API, OR the user
-    # is not a metastore admin. Guide them to the permissions script.
-    system_grants_need_script = sys_result["failed"] > 0
+    # Build copyable SQL for any failed system grants so the UI can surface it
+    # with a "Run as metastore admin" label.
+    grants_sql = _build_system_grants_sql(sp_id) if sys_result["failed"] > 0 else None
 
     return {
         "ok": total_failed == 0,
@@ -547,7 +601,9 @@ async def grant_sp_system_access(request: Request) -> dict[str, Any]:
         "applied": total_applied,
         "failed": total_failed,
         "errors": all_errors,
-        "system_grants_need_script": system_grants_need_script,
+        "needs_admin": sys_result.get("needs_admin", False),
+        "obo_scope_missing": sys_result.get("obo_scope_missing", False),
+        "grants_sql": grants_sql,
     }
 
 

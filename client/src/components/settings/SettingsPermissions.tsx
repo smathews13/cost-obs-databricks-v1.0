@@ -32,7 +32,7 @@ export function SettingsPermissions() {
   const [newAdmin, setNewAdmin] = useState("");
   const [newConsumer, setNewConsumer] = useState("");
   const [grantRunning, setGrantRunning] = useState(false);
-  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[]; scriptHint?: string } | null>(null);
+  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[]; scriptHint?: string; grants_sql?: string; obo_scope_missing?: boolean } | null>(null);
   const [readinessOpen, setReadinessOpen] = useState(false);
 
   const { data: permissions, isLoading } = useQuery<UserPermissions>({
@@ -110,10 +110,15 @@ export function SettingsPermissions() {
         const summary = body.failed
           ? `${body.failed} grant(s) failed, ${body.applied ?? 0} applied.`
           : (body.reason ?? body.detail ?? "Grant run completed — check server logs.");
-        const scriptHint = body.system_grants_need_script
-          ? `System table grants require a metastore admin. Run the permissions script as a workspace admin:\n\npython perms.py ${body.sp_client_id ?? "<sp_client_id>"}`
-          : undefined;
-        setGrantResult({ ok: false, message: summary, errors: allErrors, scriptHint });
+        setGrantResult({
+          ok: false,
+          message: body.needs_admin
+            ? "Automatic grant failed — your current identity could not apply the required permissions."
+            : summary,
+          errors: allErrors,
+          grants_sql: body.grants_sql ?? undefined,
+          obo_scope_missing: body.obo_scope_missing ?? false,
+        });
       }
     } catch {
       setGrantResult({ ok: false, message: "Network error running grants." });
@@ -415,10 +420,19 @@ export function SettingsPermissions() {
                       ))}
                     </ul>
                   )}
-                  {grantResult.scriptHint && (
-                    <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 font-normal">
-                      <p className="font-medium text-amber-900 mb-1">Run manually as a metastore admin:</p>
-                      <code className="block text-[10px] font-mono whitespace-pre-wrap break-all">{grantResult.scriptHint}</code>
+                  {grantResult.obo_scope_missing && (
+                    <p className="mt-1 text-[10px] text-amber-700 font-normal">
+                      OBO scope missing — this app is not configured with the <code className="font-mono">sql</code> user authorization scope.
+                    </p>
+                  )}
+                  {grantResult.grants_sql && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-[10px] font-medium text-amber-900">
+                        Run as metastore admin — Copy and run the SQL below, then click Re-check.
+                      </p>
+                      <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-gray-900 px-3 py-2 text-[10px] leading-relaxed text-green-400">
+                        {grantResult.grants_sql}
+                      </pre>
                     </div>
                   )}
                 </div>

@@ -114,7 +114,7 @@ export function Footer() {
         {/* Copyright */}
         <div className="mt-6 border-t border-gray-200 pt-4">
           <p className="text-center text-xs text-gray-500">
-            Built with Databricks Apps • Powered by System Tables • Data refreshed every 24 hours
+            Built with Databricks Apps • Powered by System Tables
           </p>
         </div>
       </div>

@@ -1460,7 +1460,7 @@ def load_schedule_settings() -> dict:
         if rows and rows[0].get("settings_json"):
             return {**_SCHEDULE_DEFAULTS, **json.loads(rows[0]["settings_json"])}
     except Exception as e:
-        logger.warning("Could not load schedule settings from Delta: %s", e)
+        logger.warning("Could not load schedule settings from Delta (storage may not be configured yet): %s", e)
 
     # Fallback: local file (dev / first run before table exists)
     try:
@@ -1611,7 +1611,7 @@ def _load_pricing_settings() -> dict:
         if rows and rows[0].get("settings_json"):
             return json.loads(rows[0]["settings_json"])
     except Exception as e:
-        logger.warning("Could not load pricing settings from Delta: %s", e)
+        logger.warning("Could not load pricing settings from Delta (storage may not be configured yet): %s", e)
 
     try:
         with open(PRICING_SETTINGS_FILE) as f:

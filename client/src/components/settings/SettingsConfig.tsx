@@ -566,8 +566,12 @@ export function SettingsConfig({
                               if (t.owner.toLowerCase() === "unknown") {
                                 return <span className="italic text-gray-400" title="Owner could not be resolved by Unity Catalog">unknown</span>;
                               }
-                              const currentIdentity = authStatus?.sp_display_name || authStatus?.sp_client_id;
-                              const mismatch = !!(currentIdentity && !t.owner.includes(currentIdentity) && !currentIdentity.includes(t.owner));
+                              // UC stores owners as client ID (UUID) — compare against sp_client_id,
+                              // not sp_display_name which is a human-readable name and won't match.
+                              const currentIdentity = authStatus?.sp_client_id || authStatus?.sp_display_name;
+                              const ownerLower = t.owner.toLowerCase();
+                              const idLower = (currentIdentity || "").toLowerCase();
+                              const mismatch = !!(currentIdentity && !ownerLower.includes(idLower) && !idLower.includes(ownerLower));
                               const label = t.owner.length > 16 ? t.owner.slice(0, 16) + "…" : t.owner;
                               if (mismatch) {
                                 return (

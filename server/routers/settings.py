@@ -144,6 +144,20 @@ def _ensure_webhook_table() -> None:
     )
 
 
+def _ensure_schedule_table() -> None:
+    _ensure_config_table(
+        f"CREATE TABLE IF NOT EXISTS {_config_table('app_schedule_settings')} "
+        f"(settings_json STRING, updated_at TIMESTAMP) USING DELTA"
+    )
+
+
+def _ensure_pricing_table() -> None:
+    _ensure_config_table(
+        f"CREATE TABLE IF NOT EXISTS {_config_table('app_pricing_settings')} "
+        f"(settings_json STRING, updated_at TIMESTAMP) USING DELTA"
+    )
+
+
 # ── Workspace filter pool (survives deploys via Delta) ────────────────────────
 
 def _ensure_workspace_filter_table() -> None:
@@ -1426,11 +1440,40 @@ async def save_user_permissions(request: Request, data: UserPermissionsModel) ->
 _SCHEDULE_DEFAULTS: dict = {"enabled": True, "frequency": "nightly", "hour_utc": 5, "lookback_days": 180}
 
 
+def _save_schedule_to_table(settings: dict) -> None:
+    from server.db import execute_write
+    _ensure_schedule_table()
+    table = _config_table("app_schedule_settings")
+    execute_write(f"DELETE FROM {table}", None)
+    execute_write(
+        f"INSERT INTO {table} (settings_json, updated_at) VALUES (:s, current_timestamp())",
+        {"s": json.dumps(settings)},
+    )
+
+
 def load_schedule_settings() -> dict:
+    """Load schedule settings — Delta first (survives redeploys), file fallback."""
+    try:
+        from server.db import execute_query
+        table = _config_table("app_schedule_settings")
+        rows = execute_query(f"SELECT settings_json FROM {table} LIMIT 1", None, no_cache=True)
+        if rows and rows[0].get("settings_json"):
+            return {**_SCHEDULE_DEFAULTS, **json.loads(rows[0]["settings_json"])}
+    except Exception as e:
+        logger.warning("Could not load schedule settings from Delta: %s", e)
+
+    # Fallback: local file (dev / first run before table exists)
     try:
         if os.path.exists(SCHEDULE_SETTINGS_FILE):
             with open(SCHEDULE_SETTINGS_FILE) as f:
-                return {**_SCHEDULE_DEFAULTS, **json.load(f)}
+                data = json.load(f)
+            # Migrate to Delta opportunistically
+            try:
+                _save_schedule_to_table(data)
+                logger.info("Migrated schedule settings from file to Delta")
+            except Exception:
+                pass
+            return {**_SCHEDULE_DEFAULTS, **data}
     except Exception:
         pass
     return dict(_SCHEDULE_DEFAULTS)
@@ -1454,6 +1497,10 @@ async def save_schedule_endpoint(request: Request, data: dict) -> dict:
         settings["frequency"] = "nightly"
     if settings["lookback_days"] not in (180, 365, 730, 1095):
         settings["lookback_days"] = 180
+    try:
+        _save_schedule_to_table(settings)
+    except Exception as e:
+        logger.warning("Could not save schedule settings to Delta: %s", e)
     os.makedirs(SETTINGS_DIR, exist_ok=True)
     with open(SCHEDULE_SETTINGS_FILE, "w") as f:
         json.dump(settings, f, indent=2)
@@ -1544,15 +1591,46 @@ async def get_account_prices() -> dict[str, Any]:
 
 # ── Pricing Mode ──────────────────────────────────────────────────────────────
 
+def _save_pricing_to_table(settings: dict) -> None:
+    from server.db import execute_write
+    _ensure_pricing_table()
+    table = _config_table("app_pricing_settings")
+    execute_write(f"DELETE FROM {table}", None)
+    execute_write(
+        f"INSERT INTO {table} (settings_json, updated_at) VALUES (:s, current_timestamp())",
+        {"s": json.dumps(settings)},
+    )
+
+
 def _load_pricing_settings() -> dict:
+    """Load pricing settings — Delta first (survives redeploys), file fallback."""
+    try:
+        from server.db import execute_query
+        table = _config_table("app_pricing_settings")
+        rows = execute_query(f"SELECT settings_json FROM {table} LIMIT 1", None, no_cache=True)
+        if rows and rows[0].get("settings_json"):
+            return json.loads(rows[0]["settings_json"])
+    except Exception as e:
+        logger.warning("Could not load pricing settings from Delta: %s", e)
+
     try:
         with open(PRICING_SETTINGS_FILE) as f:
-            return json.load(f)
+            data = json.load(f)
+        try:
+            _save_pricing_to_table(data)
+            logger.info("Migrated pricing settings from file to Delta")
+        except Exception:
+            pass
+        return data
     except (FileNotFoundError, json.JSONDecodeError):
         return {"use_account_prices": False}
 
 
 def _save_pricing_settings(settings: dict) -> None:
+    try:
+        _save_pricing_to_table(settings)
+    except Exception as e:
+        logger.warning("Could not save pricing settings to Delta: %s", e)
     os.makedirs(SETTINGS_DIR, exist_ok=True)
     with open(PRICING_SETTINGS_FILE, "w") as f:
         json.dump(settings, f)

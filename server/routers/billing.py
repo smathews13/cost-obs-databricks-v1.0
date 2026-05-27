@@ -12,6 +12,7 @@ from cachetools import TTLCache
 from fastapi import APIRouter, Query
 
 from server.db import execute_query, execute_queries_parallel, get_catalog_schema, get_host_url, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
+from server import cache_ttls
 from server.queries import (
     ACCOUNT_INFO,
     AWS_COST_BY_INSTANCE_TYPE,
@@ -59,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 # Stale fallback: stores the last successful non-zero kpis_response per date-range key so
 # transient failures (warehouse cold-start, lakeflow replication gap) never show 0s.
-_kpis_stale: TTLCache = TTLCache(maxsize=500, ttl=3600)
+_kpis_stale: TTLCache = TTLCache(maxsize=500, ttl=cache_ttls.STALE_KPI)
 
 
 def _ensure_list(val: Any) -> list:
@@ -91,9 +92,10 @@ def _ensure_list(val: Any) -> list:
     except (TypeError, ValueError):
         return []
 
-# Cache for MV availability check (check every 5 minutes)
+# Cache for MV availability check — re-check after 30 min once confirmed available.
+# MVs don't disappear except during an explicit rebuild; 5-min polling was wasteful.
 _mv_cache: dict[str, Any] = {"available": None, "checked_at": 0}
-_MV_CHECK_INTERVAL = 300  # 5 minutes
+_MV_CHECK_INTERVAL = 1800  # 30 minutes
 
 
 def _check_mv_available() -> bool:

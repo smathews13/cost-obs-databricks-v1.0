@@ -736,6 +736,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Warehouse setup during lifespan failed (non-fatal): {e}")
 
+    # Restore refresh log from Delta synchronously BEFORE starting the scheduler.
+    # startup_tasks also does this, but it runs in an executor thread and can lose
+    # the race against the scheduler's first-iteration catch-up check — causing a
+    # spurious "missed rebuild" catch-up on every pod restart/redeploy.
+    try:
+        from server.routers.settings import restore_refresh_log_from_delta
+        restore_refresh_log_from_delta()
+        logger.info("Refresh log restored from Delta (pre-scheduler)")
+    except Exception as _rle:
+        logger.warning("Pre-scheduler refresh log restore failed (non-fatal): %s", _rle)
+
     # Remaining startup tasks run in background
     asyncio.get_running_loop().run_in_executor(None, startup_tasks)
 

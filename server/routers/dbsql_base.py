@@ -15,6 +15,7 @@ from fastapi import APIRouter, Query
 
 from server.db import execute_query, get_catalog_schema, get_host_url, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
+from server import cache_ttls
 
 logger = logging.getLogger(__name__)
 
@@ -626,7 +627,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             "start_date": start_date,
             "end_date": end_date,
         }
-        delta_cache_put(_dkey, f"dbsql:{table_name}:dashboard-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+        delta_cache_put(_dkey, f"dbsql:{table_name}:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
         return _resp
 
     # Expose check_mv_status for prpr-specific endpoints

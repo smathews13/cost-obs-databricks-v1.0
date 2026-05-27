@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 
 from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
+from server import cache_ttls
 
 
 def query_with_fallback(enriched_sql: str, fallback_sql: str, query_params: dict, label: str = "query") -> list[dict[str, Any]]:
@@ -1033,5 +1034,5 @@ async def get_aiml_dashboard_bundle(
         "start_date": params["start_date"],
         "end_date": params["end_date"],
     }
-    delta_cache_put(_dkey, "aiml:dashboard-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+    delta_cache_put(_dkey, "aiml:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
     return _resp

@@ -19,6 +19,7 @@ from fastapi.responses import Response
 
 from server.db import execute_query, execute_queries_parallel, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
+from server import cache_ttls
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -941,7 +942,7 @@ async def get_apps_kpi_trend(
             "trend": trend,
         },
     }
-    delta_cache_put(_dkey, "apps:kpi-trend", _resp, ttl_seconds=1800)
+    delta_cache_put(_dkey, "apps:kpi-trend", _resp, ttl_seconds=cache_ttls.TREND)
     return _resp
 
 

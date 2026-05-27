@@ -6,13 +6,19 @@ Guidelines for Claude Code when working on this codebase.
 
 ## Git workflow
 
-- After every `git commit`: push to **both** `origin` and `test-mirror`
-  ```
+- After every `git commit`: push to **origin only**
+
+  ```bash
   git push origin main
-  gh auth switch --user smathews13 && git push test-mirror main && gh auth switch --user sam-mathews_data
   ```
-- **Never** push to `external` automatically — that is manual only via `bash sync-mirror.sh`
-- `external` = `smathews13/cost-obs-databricks` (customer-facing, deliberate review required)
+
+- To publish to the public v1 mirror (customer-facing, deliberate review required):
+
+  ```bash
+  bash sync-mirror.sh
+  ```
+
+  This builds the frontend, clears the tsbuildinfo cache, and pushes to `smathews13/cost-obs-databricks-v1.0`.
 
 ---
 

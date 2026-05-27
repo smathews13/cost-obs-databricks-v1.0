@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from server.db import execute_query, bundle_cache_key, delta_cache_get, delta_cache_put
+from server import cache_ttls
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -430,7 +431,7 @@ async def get_aws_actual_dashboard_bundle(
         "end_date": end_date,
     }
     try:
-        delta_cache_put(_dkey, "aws_actual/dashboard-bundle", _resp, ttl_seconds=1800)
+        delta_cache_put(_dkey, "aws_actual/dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE)
     except Exception as _ce:
         logger.debug("Delta cache write failed for aws_actual/dashboard-bundle: %s", _ce)
     return _resp

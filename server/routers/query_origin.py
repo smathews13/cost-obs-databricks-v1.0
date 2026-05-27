@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from server.db import execute_query, execute_queries_parallel, get_catalog_schema, bundle_cache_key, delta_cache_get, delta_cache_put
+from server import cache_ttls
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -515,7 +516,7 @@ async def get_origin_bundle(
         "end_date": end_date,
     }
     try:
-        delta_cache_put(_dkey, "query_origin/bundle", _resp, ttl_seconds=1800)
+        delta_cache_put(_dkey, "query_origin/bundle", _resp, ttl_seconds=cache_ttls.BUNDLE)
     except Exception as _ce:
         logger.debug("Delta cache write failed for query_origin/bundle: %s", _ce)
     return _resp

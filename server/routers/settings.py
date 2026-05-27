@@ -1477,7 +1477,15 @@ def load_schedule_settings() -> dict:
             return {**_SCHEDULE_DEFAULTS, **data}
     except Exception:
         pass
-    return dict(_SCHEDULE_DEFAULTS)
+
+    # Neither Delta nor file — persist defaults to Delta so they survive the next redeploy
+    defaults = dict(_SCHEDULE_DEFAULTS)
+    try:
+        _save_schedule_to_table(defaults)
+        logger.info("Initialized schedule settings in Delta with defaults")
+    except Exception:
+        pass
+    return defaults
 
 
 @router.get("/schedule")
@@ -1624,7 +1632,16 @@ def _load_pricing_settings() -> dict:
             pass
         return data
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"use_account_prices": False}
+        pass
+
+    # Neither Delta nor file — persist defaults to Delta so they survive the next redeploy
+    defaults = {"use_account_prices": False}
+    try:
+        _save_pricing_to_table(defaults)
+        logger.info("Initialized pricing settings in Delta with defaults")
+    except Exception:
+        pass
+    return defaults
 
 
 def _save_pricing_settings(settings: dict) -> None:

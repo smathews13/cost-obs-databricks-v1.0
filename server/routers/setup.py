@@ -36,44 +36,63 @@ _TASK_STATE_FILE = os.path.join(SETTINGS_DIR, "build_progress.json")
 
 
 def _persist_task_state() -> None:
-    """Best-effort write of current task state to disk for pod-restart recovery."""
+    """Best-effort write of current task state to disk and DBFS for pod-restart recovery."""
+    payload = {k: v for k, v in _create_task_state.items() if k != "started_at"}
+    payload["saved_at"] = __import__("datetime").datetime.utcnow().isoformat()
     try:
         os.makedirs(SETTINGS_DIR, exist_ok=True)
-        payload = {k: v for k, v in _create_task_state.items() if k != "started_at"}
-        payload["saved_at"] = __import__("datetime").datetime.utcnow().isoformat()
         with open(_TASK_STATE_FILE, "w") as fh:
             json.dump(payload, fh)
     except Exception as exc:
-        logger.debug("Could not persist task state: %s", exc)
+        logger.debug("Could not persist task state to file: %s", exc)
+    try:
+        from server.db import write_dbfs_build_state
+        write_dbfs_build_state(payload)
+    except Exception as exc:
+        logger.debug("Could not persist task state to DBFS: %s", exc)
 
 
 def _restore_task_state() -> None:
-    """On startup restore last-known task state. 'running' → 'interrupted'; 'done'/'idle' → 'idle'."""
+    """On startup restore last-known task state. 'running' → 'interrupted'; 'done'/'idle' → 'idle'.
+
+    Priority: local .settings/build_progress.json (fast) → DBFS fallback (survives pod restart).
+    """
+    saved: dict | None = None
     try:
         with open(_TASK_STATE_FILE) as fh:
             saved = json.load(fh)
-        status = saved.get("status", "idle")
-        if status == "running":
-            _create_task_state.update({
-                "status": "interrupted",
-                "error": None,
-                "started_at": None,
-                "elapsed_seconds": None,
-                "table_progress": saved.get("table_progress", {}),
-            })
-            logger.info("Restored interrupted task state from previous pod session")
-        elif status == "error":
-            _create_task_state.update({
-                "status": "error",
-                "error": saved.get("error"),
-                "started_at": None,
-                "elapsed_seconds": None,
-                "table_progress": saved.get("table_progress", {}),
-            })
     except FileNotFoundError:
-        pass
+        try:
+            from server.db import read_dbfs_build_state
+            saved = read_dbfs_build_state()
+            if saved:
+                logger.info("Restored build task state from DBFS (pod restart recovery)")
+        except Exception as exc:
+            logger.debug("Could not read DBFS build state: %s", exc)
     except Exception as exc:
-        logger.debug("Could not restore task state: %s", exc)
+        logger.debug("Could not restore task state from file: %s", exc)
+
+    if not saved:
+        return
+
+    status = saved.get("status", "idle")
+    if status == "running":
+        _create_task_state.update({
+            "status": "interrupted",
+            "error": None,
+            "started_at": None,
+            "elapsed_seconds": None,
+            "table_progress": saved.get("table_progress", {}),
+        })
+        logger.info("Restored interrupted task state from previous pod session")
+    elif status == "error":
+        _create_task_state.update({
+            "status": "error",
+            "error": saved.get("error"),
+            "started_at": None,
+            "elapsed_seconds": None,
+            "table_progress": saved.get("table_progress", {}),
+        })
 
 
 _restore_task_state()

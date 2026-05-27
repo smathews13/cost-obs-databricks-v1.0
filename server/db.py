@@ -227,6 +227,30 @@ def read_dbfs_setup_complete() -> bool:
     return bool(_read_dbfs_settings().get("setup_complete"))
 
 
+def write_dbfs_build_state(state: dict) -> None:
+    """Persist build task state to DBFS so it survives pod restarts. Best-effort, non-fatal.
+
+    Merges into the shared DBFS settings JSON so a single file holds all
+    durable app state (setup_complete, catalog override, build_state).
+    """
+    try:
+        import base64
+        existing = _read_dbfs_settings()
+        existing["build_state"] = state
+        w = get_workspace_client()
+        content = base64.b64encode(json.dumps(existing).encode()).decode("ascii")
+        w.api_client.do("POST", "/api/2.0/dbfs/put",
+                        body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True})
+        logger.debug("DBFS build_state written (status=%s)", state.get("status"))
+    except Exception as e:
+        logger.debug("Could not write DBFS build_state (non-fatal): %s", e)
+
+
+def read_dbfs_build_state() -> dict | None:
+    """Return the last-persisted build task state from DBFS, or None if absent."""
+    return _read_dbfs_settings().get("build_state") or None
+
+
 def get_catalog_schema() -> tuple[str, str]:
     """Return the catalog and schema for cost observability tables.
 

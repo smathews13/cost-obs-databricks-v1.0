@@ -1438,7 +1438,7 @@ async def save_user_permissions(request: Request, data: UserPermissionsModel) ->
 
 # ── Refresh Schedule ─────────────────────────────────────────────────────────
 
-_SCHEDULE_DEFAULTS: dict = {"enabled": True, "frequency": "nightly", "hour_utc": 5, "lookback_days": 180}
+_SCHEDULE_DEFAULTS: dict = {"enabled": True, "frequency": "nightly", "hour_utc": 9, "lookback_days": 180}
 
 
 def _save_schedule_to_table(settings: dict) -> None:

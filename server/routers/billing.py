@@ -428,7 +428,7 @@ async def get_sql_breakdown(
             "end_date": params["end_date"],
             "using_materialized_views": use_mv,
         }
-        delta_cache_put(_dkey, "billing:sql-breakdown", _resp, ttl_seconds=1800)
+        delta_cache_put(_dkey, "billing:sql-breakdown", _resp, ttl_seconds=cache_ttls.BUNDLE)
         return _resp
     except Exception as e:
         # If query.history is not available, return empty result
@@ -537,7 +537,7 @@ async def get_pipeline_objects(
             "start_date": params["start_date"],
             "end_date": params["end_date"],
         }
-        delta_cache_put(_dkey, "billing:pipeline-objects", _resp, ttl_seconds=1800)
+        delta_cache_put(_dkey, "billing:pipeline-objects", _resp, ttl_seconds=cache_ttls.BUNDLE)
         return _resp
     except Exception as e:
         return {
@@ -603,7 +603,7 @@ async def get_interactive_breakdown(
             "start_date": params["start_date"],
             "end_date": params["end_date"],
         }
-        delta_cache_put(_dkey, "billing:interactive-breakdown", _resp, ttl_seconds=1800)
+        delta_cache_put(_dkey, "billing:interactive-breakdown", _resp, ttl_seconds=cache_ttls.BUNDLE)
         return _resp
     except Exception as e:
         return {
@@ -959,7 +959,7 @@ async def get_infra_bundle(
                 "end_date": params["end_date"],
             },
         }
-        delta_cache_put(_dkey, "billing:infra-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+        delta_cache_put(_dkey, "billing:infra-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
         return _resp
     except Exception as e:
         logger.error(f"Infra bundle error: {e}")
@@ -1086,7 +1086,7 @@ async def get_aws_costs_timeseries(
 
 _pipeline_names_cache: dict[str, str] | None = None
 _pipeline_names_cache_ts: float = 0
-_PIPELINE_CACHE_TTL = 3600  # 1 hour
+_PIPELINE_CACHE_TTL = cache_ttls.PIPELINE_NAMES
 
 
 def _get_pipeline_names() -> dict[str, str]:
@@ -1376,7 +1376,7 @@ async def get_dashboard_bundle_fast(
             if accurate_count > 0:
                 response["summary"]["workspace_count"] = accurate_count
 
-    delta_cache_put(_dkey, "billing:dashboard-bundle-fast", response, ttl_seconds=600 if id_list else 1800)
+    delta_cache_put(_dkey, "billing:dashboard-bundle-fast", response, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
     return response
 
 
@@ -1758,13 +1758,13 @@ async def get_sku_breakdown(
         "start_date": params["start_date"],
         "end_date": params["end_date"],
     }
-    delta_cache_put(_dkey, "billing:sku-breakdown", _resp, ttl_seconds=1800)
+    delta_cache_put(_dkey, "billing:sku-breakdown", _resp, ttl_seconds=cache_ttls.BUNDLE)
     return _resp
 
 
 _group_membership_cache: dict[str, list[str]] | None = None
 _group_membership_cache_ts: float = 0
-_GROUP_CACHE_TTL = 3600  # 1 hour
+_GROUP_CACHE_TTL = cache_ttls.GROUP_MEMBERSHIP
 
 
 def _get_cached_group_membership(w) -> dict[str, list[str]]:
@@ -2175,7 +2175,7 @@ async def get_kpis_bundle(
         },
     }
     # Anomaly surfaces need fresher data — cap at 5 min regardless of scope
-    delta_cache_put(_dkey, "billing:kpis-bundle", _kpis_resp, ttl_seconds=300)
+    delta_cache_put(_dkey, "billing:kpis-bundle", _kpis_resp, ttl_seconds=cache_ttls.KPI)
     return _kpis_resp
 
 
@@ -2199,7 +2199,7 @@ async def get_kpi_trend(
     if (_dcached := delta_cache_get(_dkey)) is not None:
         return _dcached
     def _resp(data: dict) -> dict:
-        delta_cache_put(_dkey, "billing:kpi-trend", data, ttl_seconds=1800)
+        delta_cache_put(_dkey, "billing:kpi-trend", data, ttl_seconds=cache_ttls.TREND)
         return data
 
     ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
@@ -2710,7 +2710,7 @@ async def get_platform_kpi_trend(
     if (_dcached := delta_cache_get(_dkey)) is not None:
         return _dcached
     def _resp(data: dict) -> dict:
-        delta_cache_put(_dkey, "billing:platform-kpi-trend", data, ttl_seconds=1800)
+        delta_cache_put(_dkey, "billing:platform-kpi-trend", data, ttl_seconds=cache_ttls.TREND)
         return data
 
     ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)

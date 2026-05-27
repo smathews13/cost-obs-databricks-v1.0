@@ -1,4 +1,4 @@
-# Cost Observability & Control for Databricks
+# **cost-obs** app for Databricks
 
 [![Deploy to Databricks](https://img.shields.io/badge/Deploy%20to-Databricks-FF3621?style=for-the-badge&logo=databricks&logoColor=white)](https://accounts.cloud.databricks.com/select-workspace?destination_url=/apps/install?repo_url=https://github.com/smathews13/cost-obs-databricks)
 

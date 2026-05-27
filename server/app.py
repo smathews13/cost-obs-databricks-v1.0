@@ -548,6 +548,9 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 180, for
 
     refresh_start = time.monotonic()
     start_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Capture trigger BEFORE force_full may be promoted by window-change detection.
+    # A scheduled run that promotes to full due to a window change is still "scheduled".
+    trigger = "manual" if force_full else "scheduled"
     results: dict = {}
     log_data: dict = {"last_refresh_utc": start_utc, "duration_seconds": 0, "mv_timings": {}, "status": "error", "error": "unknown"}
     try:
@@ -618,7 +621,7 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 180, for
                 "status": log_data.get("status", "error"),
                 "duration_seconds": log_data.get("duration_seconds", 0),
                 "lookback_days": lookback_days,
-                "trigger": "manual" if force_full else "scheduled",
+                "trigger": trigger,
             }
             if log_data.get("error"):
                 history_entry["error"] = log_data["error"][:200]

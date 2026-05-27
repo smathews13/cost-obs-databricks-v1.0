@@ -1,0 +1,437 @@
+import { useCallback, useState } from "react";
+import { formatIdentity } from "@/utils/identity";
+import { workspaceUrl } from "@/utils/formatters";
+import type { TaggingDashboardBundle } from "@/types/billing";
+
+export type UntaggedTab = "clusters" | "jobs" | "pipelines" | "warehouses" | "endpoints";
+
+function getClusterUrl(host: string | null | undefined, _clusterId: string, workspaceId?: string): string | null {
+  if (!host) return null;
+  const workspaceParam = workspaceId ? `?o=${workspaceId}` : '';
+  return workspaceUrl(host, `/compute/interactive${workspaceParam}`);
+}
+
+function getJobUrl(host: string | null | undefined, jobId: string, _workspaceId?: string): string | null {
+  if (!host || !jobId) return null;
+  return workspaceUrl(host, `/jobs/${jobId}`);
+}
+
+function getPipelineUrl(host: string | null | undefined, pipelineId: string, _workspaceId?: string): string | null {
+  if (!host || !pipelineId) return null;
+  return workspaceUrl(host, `/pipelines/${pipelineId}`);
+}
+
+function getWarehouseUrl(host: string | null | undefined, warehouseId: string, workspaceId?: string): string | null {
+  if (!host || !warehouseId) return null;
+  const workspaceParam = workspaceId ? `?o=${workspaceId}` : '';
+  return workspaceUrl(host, `/sql/warehouses/${warehouseId}${workspaceParam}`);
+}
+
+function getEndpointUrl(host: string | null | undefined, endpointName: string, workspaceId?: string): string | null {
+  if (!host || !endpointName) return null;
+  const workspaceParam = workspaceId ? `?o=${workspaceId}` : '';
+  return workspaceUrl(host, `/ml/endpoints/${endpointName}${workspaceParam}`);
+}
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+
+const formatNumber = (value: number) =>
+  new Intl.NumberFormat("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+
+interface SuggestedTag { key: string; usageCount: number; examples: string[] }
+interface UntaggedCounts { clusters: number; jobs: number; pipelines: number; warehouses: number; endpoints: number }
+
+interface UntaggedResourcesTableProps {
+  data: TaggingDashboardBundle;
+  host?: string | null;
+  suggestedTags: SuggestedTag[];
+  untaggedCounts: UntaggedCounts;
+  activeUntaggedTab: UntaggedTab;
+  onTabChange: (tab: UntaggedTab) => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  currentPage: number;
+  onPageChange: (p: number) => void;
+  sortField: string;
+  sortDirection: "asc" | "desc";
+  onSort: (field: string) => void;
+  showHistoricalUntagged: boolean;
+  onHistoricalToggle: (show: boolean) => void;
+  itemsPerPage: number;
+}
+
+const SUGGESTED_TAGS_KEY = "cost-obs-minimize-suggested-tags";
+
+export function UntaggedResourcesTable({
+  data, host, suggestedTags, untaggedCounts,
+  activeUntaggedTab, onTabChange,
+  searchQuery, onSearchChange,
+  currentPage, onPageChange,
+  sortField, sortDirection, onSort,
+  showHistoricalUntagged, onHistoricalToggle,
+  itemsPerPage,
+}: UntaggedResourcesTableProps) {
+  const [suggestedTagsMinimized, setSuggestedTagsMinimized] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(SUGGESTED_TAGS_KEY) === "true";
+    }
+    return false;
+  });
+
+  const handleSuggestedTagsMinimize = useCallback((minimized: boolean) => {
+    setSuggestedTagsMinimized(minimized);
+    if (minimized) {
+      localStorage.setItem(SUGGESTED_TAGS_KEY, "true");
+    } else {
+      localStorage.removeItem(SUGGESTED_TAGS_KEY);
+    }
+  }, []);
+
+  const tabs: { key: UntaggedTab; label: string; count: number }[] = [
+    { key: "clusters", label: "Clusters", count: untaggedCounts.clusters },
+    { key: "jobs", label: "Jobs", count: untaggedCounts.jobs },
+    { key: "pipelines", label: "SDP Pipelines", count: untaggedCounts.pipelines },
+    { key: "warehouses", label: "SQL Warehouses", count: untaggedCounts.warehouses },
+    { key: "endpoints", label: "Endpoints", count: untaggedCounts.endpoints },
+  ];
+
+  const getItems = () => {
+    switch (activeUntaggedTab) {
+      case "clusters": return data.untagged.clusters?.items || [];
+      case "jobs": return data.untagged.jobs?.items || [];
+      case "pipelines": return data.untagged.pipelines?.items || [];
+      case "warehouses": return data.untagged.warehouses?.items || [];
+      case "endpoints": return data.untagged.endpoints?.items || [];
+      default: return [];
+    }
+  };
+
+  const getResourceConfig = () => {
+    switch (activeUntaggedTab) {
+      case "clusters": return { nameKey: "cluster_name", idKey: "cluster_id", label: "Cluster" };
+      case "jobs": return { nameKey: "job_name", idKey: "job_id", label: "Job" };
+      case "pipelines": return { nameKey: "pipeline_name", idKey: "pipeline_id", label: "Pipeline" };
+      case "warehouses": return { nameKey: "warehouse_name", idKey: "warehouse_id", label: "Warehouse" };
+      case "endpoints": return { nameKey: "endpoint_name", idKey: "endpoint_name", label: "Endpoint" };
+      default: return { nameKey: "", idKey: "", label: "" };
+    }
+  };
+
+  const getExtraColumns = (): { key: string; label: string }[] => {
+    if (activeUntaggedTab === "clusters") return [{ key: "owner", label: "Owner" }];
+    return [];
+  };
+
+  const resourceConfig = getResourceConfig();
+  const extraColumns = getExtraColumns();
+  const allItems = getItems();
+
+  const isHistoricalItem = (item: any) => {
+    const name = item[resourceConfig.nameKey];
+    const id = item[resourceConfig.idKey];
+    return !name || name === id;
+  };
+  const historicalCount = allItems.filter(isHistoricalItem).length;
+  const activeItems = showHistoricalUntagged ? allItems : allItems.filter((item: any) => !isHistoricalItem(item));
+
+  const filteredItems = activeItems.filter((item: any) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return Object.values(item).some((val) => typeof val === "string" && val.toLowerCase().includes(query));
+  });
+
+  const sortedItems = [...filteredItems].sort((a: any, b: any) => {
+    const aVal = a[sortField];
+    const bVal = b[sortField];
+    const modifier = sortDirection === "asc" ? 1 : -1;
+    if (aVal == null && bVal == null) return 0;
+    if (aVal == null) return 1;
+    if (bVal == null) return -1;
+    if (typeof aVal === "string" && typeof bVal === "string") return aVal.localeCompare(bVal) * modifier;
+    return ((aVal as number) - (bVal as number)) * modifier;
+  });
+
+  const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedItems = sortedItems.slice(startIndex, startIndex + itemsPerPage);
+
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortField !== field) return <span className="ml-1 text-gray-300">↕</span>;
+    return <span className="ml-1">{sortDirection === "asc" ? "↑" : "↓"}</span>;
+  };
+
+  return (
+    <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">Untagged Resources</h3>
+        <span className="text-sm text-red-600">{formatCurrency(data.summary.untagged_spend)} untagged spend</span>
+      </div>
+
+      <div className="mb-4 border-b border-gray-200">
+        <nav className="-mb-px flex space-x-4 overflow-x-auto">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => onTabChange(tab.key)}
+              className={`whitespace-nowrap border-b-2 border-gray-200 px-1 py-2 text-sm font-medium ${
+                activeUntaggedTab === tab.key ? "text-[#FF3621]" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tab.label}
+              {tab.count > 0 && (
+                <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
+                  activeUntaggedTab === tab.key ? "bg-orange-100 text-orange-600" : "bg-gray-100 text-gray-600"
+                }`}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {suggestedTags.length > 0 && allItems.length > 0 && (
+        <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-4">
+          <div className="flex items-start gap-3">
+            <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <div className="flex-1">
+              <button className="flex w-full items-center justify-between" onClick={() => handleSuggestedTagsMinimize(!suggestedTagsMinimized)}>
+                <p className="text-sm font-medium text-orange-800">Suggested Tags for Your Environment</p>
+                <svg className={`h-4 w-4 text-orange-500 transition-transform ${suggestedTagsMinimized ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {!suggestedTagsMinimized && (
+                <>
+                  <p className="mt-1 text-xs text-orange-700">Based on tags already in use across your resources:</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {suggestedTags.map((tag) => (
+                      <div key={tag.key} className="group relative">
+                        <span className="inline-flex items-center rounded-full bg-orange-100 px-3 py-1 text-sm font-medium text-orange-800 cursor-help">
+                          {tag.key}
+                        </span>
+                        <div className="invisible absolute bottom-full left-0 z-10 mb-2 w-64 rounded-lg bg-gray-900 p-3 text-xs text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100">
+                          <p className="font-semibold text-orange-300 mb-1">{tag.key}</p>
+                          <p className="text-gray-300 mb-1">Used by {tag.usageCount} resources</p>
+                          {tag.examples.length > 0 && (
+                            <div>
+                              <p className="text-gray-500 text-[10px] uppercase">Example values:</p>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {tag.examples.map((ex, i) => (
+                                  <span key={i} className="rounded bg-gray-700 px-1.5 py-0.5">{ex}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-4 flex items-center gap-4">
+        <div className="relative flex-1">
+          <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder={`Search untagged ${activeUntaggedTab}...`}
+            value={searchQuery}
+            onChange={(e) => { onSearchChange(e.target.value); onPageChange(1); }}
+            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          />
+          {searchQuery && (
+            <button onClick={() => { onSearchChange(""); onPageChange(1); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-600">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer whitespace-nowrap">
+          <input type="checkbox" checked={showHistoricalUntagged}
+            onChange={(e) => { onHistoricalToggle(e.target.checked); onPageChange(1); }}
+            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+          Show historical ({historicalCount})
+          <span className="relative group ml-0.5">
+            <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <span className="absolute bottom-full right-0 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Resources whose names could not be resolved — likely deleted or from inaccessible workspaces</span>
+          </span>
+        </label>
+      </div>
+      {searchQuery && (
+        <p className="mb-2 text-xs text-gray-500">{filteredItems.length} result{filteredItems.length !== 1 ? "s" : ""} found</p>
+      )}
+
+      {sortedItems.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="cursor-pointer px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => onSort(resourceConfig.idKey)}>
+                  {resourceConfig.label} <SortIcon field={resourceConfig.idKey} />
+                </th>
+                {extraColumns.map((col) => (
+                  <th key={col.key} className="cursor-pointer px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => onSort(col.key)}>
+                    {col.label} <SortIcon field={col.key} />
+                  </th>
+                ))}
+                <th className="cursor-pointer px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => onSort("total_dbus")}>
+                  DBUs <SortIcon field="total_dbus" />
+                </th>
+                <th className="cursor-pointer px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => onSort("total_spend")}>
+                  Spend <SortIcon field="total_spend" />
+                </th>
+                <th className="cursor-pointer px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => onSort("days_active")}>
+                  Days Active <SortIcon field="days_active" />
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Suggested Tags</th>
+                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {paginatedItems.map((item: any, idx: number) => {
+                let resourceUrl: string | null = null;
+                const workspaceId = item.workspace_id;
+                switch (activeUntaggedTab) {
+                  case "clusters": resourceUrl = getClusterUrl(host, item.cluster_id, workspaceId); break;
+                  case "jobs": resourceUrl = getJobUrl(host, item.job_id, workspaceId); break;
+                  case "pipelines": resourceUrl = getPipelineUrl(host, item.pipeline_id, workspaceId); break;
+                  case "warehouses": resourceUrl = getWarehouseUrl(host, item.warehouse_id, workspaceId); break;
+                  case "endpoints": resourceUrl = getEndpointUrl(host, item.endpoint_name, workspaceId); break;
+                }
+
+                const rawName = item[resourceConfig.nameKey];
+                const displayId = item[resourceConfig.idKey];
+                const displayName = rawName || displayId || "-";
+                const hasDistinctName = rawName && rawName !== displayId;
+
+                return (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm">
+                      {resourceUrl ? (
+                        <div className="flex flex-col gap-0.5">
+                          <a href={resourceUrl} target="_blank" rel="noopener noreferrer" className="group flex max-w-xs items-center gap-1 truncate font-medium text-[#FF3621] hover:text-[#E02F1C]">
+                            <span className="truncate">{displayName}</span>
+                            <svg className="h-3 w-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                          {displayId && (hasDistinctName || activeUntaggedTab === "clusters" || activeUntaggedTab === "warehouses") && (
+                            <span className="max-w-xs truncate text-xs text-gray-500">{displayId}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="max-w-xs truncate font-medium text-gray-900">{displayName}</span>
+                          {displayId && (hasDistinctName || activeUntaggedTab === "clusters" || activeUntaggedTab === "warehouses") && (
+                            <span className="max-w-xs truncate text-xs text-gray-500">{displayId}</span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    {extraColumns.map((col) => (
+                      <td key={col.key} className="px-6 py-4 text-sm text-gray-600">
+                        {item[col.key] ? (
+                          col.key === "owner" ? (
+                            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={item[col.key]}>
+                              {formatIdentity(item[col.key])}
+                            </span>
+                          ) : (
+                            <span className="max-w-40 truncate block" title={item[col.key]}>{item[col.key]}</span>
+                          )
+                        ) : (
+                          <span className="text-xs text-gray-500">-</span>
+                        )}
+                      </td>
+                    ))}
+                    <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-500">{formatNumber(item.total_dbus)}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-900">{formatCurrency(item.total_spend)}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-500">{item.days_active}</td>
+                    <td className="px-6 py-4 text-sm">
+                      <div className="flex flex-wrap gap-1">
+                        {(() => {
+                          const tagMap: Record<string, string[]> = {
+                            clusters: ["team", "environment", "project"],
+                            jobs: ["pipeline", "owner", "schedule"],
+                            pipelines: ["data_domain", "tier", "team"],
+                            warehouses: ["department", "cost_center", "environment"],
+                            endpoints: ["model", "use_case", "team"],
+                          };
+                          return (tagMap[activeUntaggedTab] || ["team", "environment", "project"]).map((tag) => (
+                            <span key={tag} className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{tag}</span>
+                          ));
+                        })()}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-center">
+                      {resourceUrl && (
+                        <a href={resourceUrl} target="_blank" rel="noopener noreferrer" className="btn-brand inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-medium text-white transition-colors">
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                          </svg>
+                          Add Tag
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
+                <span className="font-medium">{Math.min(startIndex + itemsPerPage, sortedItems.length)}</span> of{" "}
+                <span className="font-medium">{sortedItems.length}</span> resources
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => onPageChange(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className="rounded border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50">
+                  Previous
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((page) => page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1))
+                  .map((page, idx, arr) => {
+                    const prevPage = arr[idx - 1];
+                    const showEllipsis = prevPage && page - prevPage > 1;
+                    return (
+                      <span key={page} className="flex items-center">
+                        {showEllipsis && <span className="px-2 py-1 text-gray-500">...</span>}
+                        <button
+                          onClick={() => onPageChange(page)}
+                          className={`rounded px-3 py-1 text-sm font-medium ${currentPage === page ? "text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                          style={currentPage === page ? { backgroundColor: '#FF3621' } : undefined}
+                        >
+                          {page}
+                        </button>
+                      </span>
+                    );
+                  })}
+                <button onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className="rounded border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50">
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex h-32 items-center justify-center text-gray-500">
+          {searchQuery
+            ? `No results for "${searchQuery}" in ${activeUntaggedTab}`
+            : `No untagged ${activeUntaggedTab} found - great job!`}
+        </div>
+      )}
+    </div>
+  );
+}

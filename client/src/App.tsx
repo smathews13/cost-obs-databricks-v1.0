@@ -77,6 +77,7 @@ import {
   useAppsDashboardBundle,
   useTaggingDashboardBundle,
   useDBSQLQueryCosts,
+  useDBSQLTopQueries,
   useInfraBundle,
   useKPIsBundle,
   useUsersGroupsBundle,
@@ -451,6 +452,7 @@ function Dashboard() {
   const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, true);
 
   const { data: dbsqlData, isLoading: dbsqlLoading, isFetching: dbsqlFetching } = useDBSQLQueryCosts(dateRange, _wsIds, true);
+  const { data: dbsqlTopQueriesData, isLoading: dbsqlTopQueriesLoading } = useDBSQLTopQueries(dateRange, _wsIds, true);
   const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, true);
 
   // Use Cases tab data - only fetch when feature is enabled
@@ -1117,6 +1119,8 @@ function Dashboard() {
             sqlBreakdownData={sqlBreakdown}
             queryData={dbsqlData}
             isLoading={sqlLoading || dbsqlLoading || dbsqlFetching}
+            topQueriesData={dbsqlTopQueriesData}
+            topQueriesLoading={dbsqlTopQueriesLoading}
             host={accountInfo?.host}
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}

@@ -24,6 +24,8 @@ interface SQLWarehousing360Props {
   sqlBreakdownData: GranularBreakdownResponse | undefined;
   queryData: DBSQLDashboardBundle | undefined;
   isLoading: boolean;
+  topQueriesData?: import("@/types/billing").TopQueriesResponse;
+  topQueriesLoading?: boolean;
   host?: string | null;
   startDate?: string;
   endDate?: string;
@@ -90,7 +92,7 @@ interface SourceQuery {
   source_url: string | null;
 }
 
-export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryData, isLoading, host, startDate, endDate, workspaceIds, workspaceNameMap }: SQLWarehousing360Props) {
+export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryData, isLoading, topQueriesData, topQueriesLoading, host, startDate, endDate, workspaceIds, workspaceNameMap }: SQLWarehousing360Props) {
   const [sortField, setSortField] = useState<SortField>("cost");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [queriesPage, setQueriesPage] = useState(1);
@@ -258,19 +260,19 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   }, [queryData?.timeseries]);
 
   const querySourceTypes = useMemo(() => {
-    if (!queryData?.top_queries?.queries) return [];
-    const types = new Set(queryData.top_queries.queries.map((q) => q.query_source_type));
+    if (!topQueriesData?.queries) return [];
+    const types = new Set(topQueriesData.queries.map((q) => q.query_source_type));
     return Array.from(types).sort();
-  }, [queryData?.top_queries]);
+  }, [topQueriesData]);
 
   const isHistoricalQuery = (q: { executed_by: string; statement_preview: string }) =>
     !q.executed_by || q.executed_by === "Unknown" || q.statement_preview === "N/A";
-  const allQueries = queryData?.top_queries?.queries || [];
+  const allQueries = topQueriesData?.queries || [];
   const historicalQueryCount = allQueries.filter(isHistoricalQuery).length;
 
   const filteredQueries = useMemo(() => {
-    if (!queryData?.top_queries?.queries) return [];
-    let queries = [...queryData.top_queries.queries];
+    if (!topQueriesData?.queries) return [];
+    let queries = [...topQueriesData.queries];
     if (!showHistoricalQueries) {
       queries = queries.filter((q) => !isHistoricalQuery(q));
     }
@@ -304,7 +306,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
       return sortDirection === "asc" ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
     return queries;
-  }, [queryData?.top_queries, sortField, sortDirection, showHistoricalQueries, querySourceFilter]);
+  }, [topQueriesData, sortField, sortDirection, showHistoricalQueries, querySourceFilter]);
 
   const searchedQueries = querySearch
     ? filteredQueries.filter(q =>
@@ -940,7 +942,12 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 </div>
               )}
             </div>
-            {sortedQueries.length > 0 ? (
+            {topQueriesLoading && sortedQueries.length === 0 ? (
+              <div className="flex h-32 items-center justify-center gap-3">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+                <span className="text-sm text-gray-500">Loading top queries...</span>
+              </div>
+            ) : sortedQueries.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">

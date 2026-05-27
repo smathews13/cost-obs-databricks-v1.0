@@ -589,6 +589,9 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         end_date: str = Query(default=None),
         workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
+        """Fast bundle — excludes top_queries so it returns as soon as summary/by_source/etc. are ready.
+        Top queries load separately via /top-queries to avoid blocking the initial tab render.
+        """
         start_date, end_date = _default_dates(start_date, end_date)
 
         status = await check_mv_status()
@@ -605,12 +608,11 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if (_dcached := delta_cache_get(_dkey)) is not None:
             return _dcached
 
-        summary, by_source, by_user, by_warehouse, top_queries, timeseries, wh_type_ts = await asyncio.gather(
+        summary, by_source, by_user, by_warehouse, timeseries, wh_type_ts = await asyncio.gather(
             get_summary(start_date, end_date, workspace_ids),
             get_by_source(start_date, end_date, workspace_ids),
             get_by_user(start_date, end_date, workspace_ids),
             get_by_warehouse(start_date, end_date, workspace_ids),
-            get_top_queries(start_date, end_date, 25, workspace_ids),
             get_timeseries(start_date, end_date, workspace_ids),
             get_warehouse_type_timeseries(start_date, end_date),
         )
@@ -621,7 +623,6 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             "by_source": by_source,
             "by_user": by_user,
             "by_warehouse": by_warehouse,
-            "top_queries": top_queries,
             "timeseries": timeseries,
             "warehouse_type_timeseries": wh_type_ts,
             "start_date": start_date,

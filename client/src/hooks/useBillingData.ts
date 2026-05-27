@@ -446,6 +446,16 @@ export function useDBSQLQueryCosts(dateRange?: DateRange, workspaceIds?: string[
   });
 }
 
+export function useDBSQLTopQueries(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
+  return useQuery<import("@/types/billing").TopQueriesResponse>({
+    queryKey: ["dbsql", "top-queries", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () =>
+      fetchJson(buildUrlWithWs("/api/dbsql/top-queries", dateRange, workspaceIds)),
+    staleTime: 5 * 60 * 1000,
+    enabled,
+  });
+}
+
 /**
  * Bundled infrastructure costs - fetches clusters, instance families, and timeseries
  * in a single request with server-side parallel execution.

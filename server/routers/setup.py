@@ -30,7 +30,53 @@ GENIE_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "genie_settings.json")
 SETUP_DONE_FILE = os.path.join(SETTINGS_DIR, "setup_done.json")
 
 # Simple in-process state for the background create-tables task
-_create_task_state: dict = {"status": "idle", "error": None, "started_at": None, "elapsed_seconds": None, "table_progress": {}}  # idle | running | done | error
+_create_task_state: dict = {"status": "idle", "error": None, "started_at": None, "elapsed_seconds": None, "table_progress": {}}  # idle | running | interrupted | done | error
+
+_TASK_STATE_FILE = os.path.join(SETTINGS_DIR, "build_progress.json")
+
+
+def _persist_task_state() -> None:
+    """Best-effort write of current task state to disk for pod-restart recovery."""
+    try:
+        os.makedirs(SETTINGS_DIR, exist_ok=True)
+        payload = {k: v for k, v in _create_task_state.items() if k != "started_at"}
+        payload["saved_at"] = __import__("datetime").datetime.utcnow().isoformat()
+        with open(_TASK_STATE_FILE, "w") as fh:
+            json.dump(payload, fh)
+    except Exception as exc:
+        logger.debug("Could not persist task state: %s", exc)
+
+
+def _restore_task_state() -> None:
+    """On startup restore last-known task state. 'running' → 'interrupted'; 'done'/'idle' → 'idle'."""
+    try:
+        with open(_TASK_STATE_FILE) as fh:
+            saved = json.load(fh)
+        status = saved.get("status", "idle")
+        if status == "running":
+            _create_task_state.update({
+                "status": "interrupted",
+                "error": None,
+                "started_at": None,
+                "elapsed_seconds": None,
+                "table_progress": saved.get("table_progress", {}),
+            })
+            logger.info("Restored interrupted task state from previous pod session")
+        elif status == "error":
+            _create_task_state.update({
+                "status": "error",
+                "error": saved.get("error"),
+                "started_at": None,
+                "elapsed_seconds": None,
+                "table_progress": saved.get("table_progress", {}),
+            })
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        logger.debug("Could not restore task state: %s", exc)
+
+
+_restore_task_state()
 
 # Core billing tables — must exist for the dashboard to be functional.
 # Used by get_setup_status to gate the "ready" state.
@@ -708,6 +754,7 @@ async def create_tables(
         _create_task_state["started_at"] = _time.monotonic()
         _create_task_state["elapsed_seconds"] = 0
         _create_task_state["table_progress"] = {t: "pending" for t in _MV_TABLES}
+        _persist_task_state()
         # Read the raw header token directly — _auth_mode may have been locked to "sp"
         # (e.g. after a scope error on a previous request), which forces _db_user_token
         # to "" even when x-forwarded-access-token IS present in the request.
@@ -811,6 +858,8 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
         # Phase 2: Build — no user token in context; all queries run as SP.
         def _on_table_event(table_name: str, event: str) -> None:
             _create_task_state["table_progress"][table_name] = event
+            if event in ("done", "error"):
+                _persist_task_state()
         results = create_materialized_views(catalog, schema, on_table_event=_on_table_event)
         logger.info(f"Table creation completed: {results}")
 
@@ -832,6 +881,7 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
             first_error = next(iter(all_errors.values()))
             _create_task_state["status"] = "error"
             _create_task_state["error"] = first_error.replace("error: ", "", 1)
+            _persist_task_state()
             return
 
         # Post-creation grants — schema now exists so schema-level privileges
@@ -871,10 +921,12 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
                 "Retry table creation in 1-2 minutes if grants were just applied."
             )
             logger.error(f"Phase 3 verification failed: {_create_task_state['error']}")
+        _persist_task_state()
 
     except Exception as e:
         _create_task_state["status"] = "error"
         _create_task_state["error"] = _clean_sdk_error(str(e))
+        _persist_task_state()
         logger.error(f"Table creation failed: {e}")
 
 

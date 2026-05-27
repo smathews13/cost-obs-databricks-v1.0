@@ -341,6 +341,9 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
           setCreating(false);
           const detail = status?.task?.error || "Table creation failed — check server logs for details.";
           setError(`Table creation failed: ${detail}`);
+        } else if (taskStatus === "interrupted") {
+          // Should not happen (new build overwrites state before first poll fires), but guard anyway.
+          setCreating(false);
         } else {
           const delay = status?.next_poll_ms ?? 5000;
           pollTimeout = setTimeout(schedulePoll, delay);
@@ -1061,12 +1064,30 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
     );
   }
 
+  const interrupted = setupStatus?.task?.status === "interrupted";
+  const tableProgress = setupStatus?.task?.table_progress ?? {};
+  const builtCount = Object.values(tableProgress).filter((s) => s === "done").length;
+  const totalCount = Object.keys(tableProgress).length;
+
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-600">
-        The app uses pre-aggregated materialized views for fast dashboard loading.
-        This step creates them with 6 months of historical data.
-      </p>
+      {interrupted && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-800 mb-1">Previous build was interrupted</p>
+          <p className="text-sm text-amber-700">
+            The app restarted while building materialized views.
+            {totalCount > 0 && ` ${builtCount} of ${totalCount} tables were built before the interruption.`}
+            {" "}Click "Create Tables" to rebuild from scratch.
+          </p>
+        </div>
+      )}
+
+      {!interrupted && (
+        <p className="text-sm text-gray-600">
+          The app uses pre-aggregated materialized views for fast dashboard loading.
+          This step creates them with 6 months of historical data.
+        </p>
+      )}
 
       {setupStatus && setupStatus.missing_tables.length > 0 && (
         <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">

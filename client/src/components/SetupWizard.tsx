@@ -328,6 +328,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
       // is written (post-wizard), so it is NOT a reliable success signal here.
       // Use next_poll_ms hint from server (5s during active build, 30s idle).
       let pollTimeout: ReturnType<typeof setTimeout>;
+      let safetyTimeout: ReturnType<typeof setTimeout>;
       let pollCancelled = false;
       const schedulePoll = async () => {
         if (pollCancelled) return;
@@ -335,14 +336,16 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
         if (pollCancelled) return;
         const taskStatus = status?.task?.status;
         if (taskStatus === "done") {
+          clearTimeout(safetyTimeout);
           setCreating(false);
           setTablesJustCreated(true);
         } else if (taskStatus === "error") {
+          clearTimeout(safetyTimeout);
           setCreating(false);
           const detail = status?.task?.error || "Table creation failed — check server logs for details.";
           setError(`Table creation failed: ${detail}`);
         } else if (taskStatus === "interrupted") {
-          // Should not happen (new build overwrites state before first poll fires), but guard anyway.
+          clearTimeout(safetyTimeout);
           setCreating(false);
         } else {
           const delay = status?.next_poll_ms ?? 5000;
@@ -351,8 +354,9 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
       };
       pollTimeout = setTimeout(schedulePoll, 2000);
 
-      // Safety timeout after 10 minutes
-      setTimeout(() => {
+      // Safety timeout after 10 minutes — cancelled on normal completion so it
+      // doesn't fire on the Complete step after a successful build.
+      safetyTimeout = setTimeout(() => {
         pollCancelled = true;
         clearTimeout(pollTimeout);
         setCreating(false);

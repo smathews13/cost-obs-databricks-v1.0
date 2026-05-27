@@ -730,8 +730,8 @@ async def _get_apps_dashboard_bundle_inner(
         resources_by_app = _app_resources_cache
         try:
             asyncio.create_task(asyncio.to_thread(_get_app_resources))
-        except Exception:
-            pass
+        except Exception as _task_exc:
+            logger.debug("Could not spawn app-resources background refresh: %s", _task_exc)
         connected_artifacts: list[dict[str, Any]] = []
         for uid, entry in registry.items():
             app_name = entry.get("name", uid)
@@ -779,8 +779,8 @@ async def _get_apps_dashboard_bundle_inner(
         cache_ttl = 60 if not registry else (600 if id_list else 1800)
         try:
             delta_cache_put(_dkey, _endpoint, _resp, ttl_seconds=cache_ttl)
-        except Exception:
-            pass
+        except Exception as _ce:
+            logger.debug("Delta cache write failed for apps/dashboard-bundle: %s", _ce)
         import time as _time
         logger.info(
             "apps/dashboard-bundle OK: %.1fs workspaces=%s apps=%d",

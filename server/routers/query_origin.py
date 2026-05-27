@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from server.db import execute_query, execute_queries_parallel, get_catalog_schema
+from server.db import execute_query, execute_queries_parallel, get_catalog_schema, bundle_cache_key, delta_cache_get, delta_cache_put
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -398,6 +398,14 @@ async def get_origin_bundle(
 ) -> dict[str, Any]:
     """Run all query origin data fetches in parallel — single round-trip for the SQL Origin tab."""
     start_date, end_date = _default_dates(start_date, end_date)
+
+    _dkey = bundle_cache_key("query_origin/bundle", start_date, end_date, None)
+    try:
+        if (_dcached := delta_cache_get(_dkey)) is not None:
+            return _dcached
+    except Exception as _ce:
+        logger.debug("Delta cache read failed for query_origin/bundle: %s", _ce)
+
     catalog, schema = get_catalog_schema()
     params = {"start_date": start_date, "end_date": end_date}
 
@@ -497,7 +505,7 @@ async def get_origin_bundle(
         }
     warehouses = sorted(wh_map.values(), key=lambda x: x["total_spend"], reverse=True)
 
-    return {
+    _resp = {
         "available": True,
         "has_cost_data": has_cost,
         "summary": {"origins": origins_summary, "total_spend": total_spend},
@@ -506,3 +514,8 @@ async def get_origin_bundle(
         "start_date": start_date,
         "end_date": end_date,
     }
+    try:
+        delta_cache_put(_dkey, "query_origin/bundle", _resp, ttl_seconds=1800)
+    except Exception as _ce:
+        logger.debug("Delta cache write failed for query_origin/bundle: %s", _ce)
+    return _resp

@@ -652,6 +652,15 @@ def startup_tasks():
     # Step 0: Set up dedicated warehouse (creates Large serverless warehouse if needed)
     setup_and_check_warehouse()
 
+    # Step 0a: Ping the warehouse immediately so it starts warming before later steps run.
+    # Serverless warehouses wake in ~15-30s; the ping runs early so prewarm hits a warm warehouse.
+    try:
+        from server.db import execute_query as _eq
+        _eq("SELECT 1", None, no_cache=True)
+        logger.info("Warehouse ping complete — warehouse is warm")
+    except Exception as _ping_exc:
+        logger.warning("Warehouse ping failed (non-fatal): %s", _ping_exc)
+
     # Step 0b: Enable system.access schema for workspace name resolution
     setup_system_access_schema()
 

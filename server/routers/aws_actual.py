@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from server.db import execute_query
+from server.db import execute_query, bundle_cache_key, delta_cache_get, delta_cache_put
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -394,7 +394,7 @@ async def get_aws_actual_dashboard_bundle(
     if not start_date:
         start_date = (date.today() - timedelta(days=30)).isoformat()
 
-    # Check status first
+    # Check status first — don't cache the unavailable response (status has its own TTL)
     status = await get_cur_status()
 
     if not status["cur_available"]:
@@ -405,6 +405,13 @@ async def get_aws_actual_dashboard_bundle(
             "end_date": end_date,
         }
 
+    _dkey = bundle_cache_key("aws_actual/dashboard-bundle", start_date, end_date, None)
+    try:
+        if (_dcached := delta_cache_get(_dkey)) is not None:
+            return _dcached
+    except Exception as _ce:
+        logger.debug("Delta cache read failed for aws_actual/dashboard-bundle: %s", _ce)
+
     # Fetch all data in parallel for 4x faster response
     summary, by_cluster, by_charge_type, timeseries = await asyncio.gather(
         get_aws_actual_summary(start_date, end_date),
@@ -413,7 +420,7 @@ async def get_aws_actual_dashboard_bundle(
         get_aws_costs_timeseries(start_date, end_date),
     )
 
-    return {
+    _resp = {
         "available": True,
         "summary": summary,
         "by_cluster": by_cluster,
@@ -422,3 +429,8 @@ async def get_aws_actual_dashboard_bundle(
         "start_date": start_date,
         "end_date": end_date,
     }
+    try:
+        delta_cache_put(_dkey, "aws_actual/dashboard-bundle", _resp, ttl_seconds=1800)
+    except Exception as _ce:
+        logger.debug("Delta cache write failed for aws_actual/dashboard-bundle: %s", _ce)
+    return _resp

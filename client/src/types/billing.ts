@@ -928,6 +928,8 @@ export interface QueryCostByWarehouse {
   warehouse_id: string;
   warehouse_name?: string;
   warehouse_type?: string;
+  warehouse_size?: string | null;
+  workspace_id?: string | null;
   query_count: number;
   unique_users: number;
   total_spend: number;

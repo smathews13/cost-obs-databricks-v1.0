@@ -754,7 +754,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   fontSize={12}
                 />
                 <Tooltip
-                  formatter={(value: any) => formatCurrency(Number(value))}
+                  formatter={(value: number | string | undefined) => formatCurrency(Number(value ?? 0))}
                   labelFormatter={(label) => {
                     const d = new Date(label);
                     return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });

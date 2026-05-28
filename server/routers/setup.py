@@ -47,7 +47,7 @@ def _persist_task_state() -> None:
         from server.db import write_dbfs_build_state
         write_dbfs_build_state(payload)
     except Exception as exc:
-        logger.debug("Could not persist task state to DBFS: %s", exc)
+        logger.warning("Could not persist task state to DBFS: %s", exc)
 
 
 def _restore_task_state() -> None:

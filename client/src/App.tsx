@@ -82,7 +82,7 @@ import {
   useKPIsBundle,
   useUsersGroupsBundle,
 } from "@/hooks/useBillingData";
-import type { DateRange } from "@/types/billing";
+import type { DateRange, WorkspaceBreakdown } from "@/types/billing";
 import { generateCostReport } from "@/utils/pdfExport";
 import { generateCostCSV } from "@/utils/csvExport";
 
@@ -398,7 +398,7 @@ function Dashboard() {
   }, [bundle?.workspaces, pricingMultiplier, applyPricing]);
 
   const workspaceNameMap = useMemo(() =>
-    workspaces?.workspaces?.reduce((m: Record<string, string>, w: any) => {
+    workspaces?.workspaces?.reduce((m: Record<string, string>, w: WorkspaceBreakdown) => {
       m[w.workspace_id] = w.workspace_name || w.workspace_id;
       return m;
     }, {} as Record<string, string>) ?? {}

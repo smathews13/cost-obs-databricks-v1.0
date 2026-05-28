@@ -27,8 +27,6 @@ interface SettingsConnectionsProps {
   cloudProvider: { provider: CloudProvider; host: string } | undefined;
   connections: CloudConnection[];
   connectionsLoading: boolean;
-  addMutation: any;
-  deleteMutation: any;
   saveStatus: string | null;
 }
 

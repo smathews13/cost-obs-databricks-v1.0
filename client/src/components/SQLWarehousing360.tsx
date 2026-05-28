@@ -17,7 +17,7 @@ import {
   LabelList,
 } from "recharts";
 import { format, parseISO } from "date-fns";
-import type { GranularBreakdownResponse, DBSQLDashboardBundle } from "@/types/billing";
+import type { GranularBreakdownResponse, DBSQLDashboardBundle, QueryCostByWarehouse } from "@/types/billing";
 import { KPITrendModal } from "./KPITrendModal";
 
 interface SQLWarehousing360Props {
@@ -705,12 +705,12 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
                 let warehouses = allWh;
                 if (warehouseSizeWsFilter !== "all") {
-                  warehouses = warehouses.filter((w: any) => w.workspace_id === warehouseSizeWsFilter);
+                  warehouses = warehouses.filter((w: QueryCostByWarehouse) => w.workspace_id === warehouseSizeWsFilter);
                 }
 
                 const bySize: Record<string, number> = {};
                 for (const w of warehouses) {
-                  const s = (w as any).warehouse_size || "UNKNOWN";
+                  const s = w.warehouse_size || "UNKNOWN";
                   if (s === "UNKNOWN") continue;
                   bySize[s] = (bySize[s] || 0) + 1;
                 }

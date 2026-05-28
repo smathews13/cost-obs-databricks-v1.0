@@ -3,6 +3,13 @@ import { formatIdentity } from "@/utils/identity";
 import { workspaceUrl } from "@/utils/formatters";
 import type { TaggingDashboardBundle } from "@/types/billing";
 
+type UntaggedItem = {
+  workspace_id: string;
+  total_dbus: number;
+  total_spend: number;
+  days_active: number;
+} & Record<string, unknown>;
+
 export type UntaggedTab = "clusters" | "jobs" | "pipelines" | "warehouses" | "endpoints";
 
 function getClusterUrl(host: string | null | undefined, _clusterId: string, workspaceId?: string): string | null {
@@ -125,23 +132,23 @@ export function UntaggedResourcesTable({
 
   const resourceConfig = getResourceConfig();
   const extraColumns = getExtraColumns();
-  const allItems = getItems();
+  const allItems = getItems() as unknown as UntaggedItem[];
 
-  const isHistoricalItem = (item: any) => {
+  const isHistoricalItem = (item: UntaggedItem) => {
     const name = item[resourceConfig.nameKey];
     const id = item[resourceConfig.idKey];
     return !name || name === id;
   };
   const historicalCount = allItems.filter(isHistoricalItem).length;
-  const activeItems = showHistoricalUntagged ? allItems : allItems.filter((item: any) => !isHistoricalItem(item));
+  const activeItems = showHistoricalUntagged ? allItems : allItems.filter((item: UntaggedItem) => !isHistoricalItem(item));
 
-  const filteredItems = activeItems.filter((item: any) => {
+  const filteredItems = activeItems.filter((item: UntaggedItem) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return Object.values(item).some((val) => typeof val === "string" && val.toLowerCase().includes(query));
   });
 
-  const sortedItems = [...filteredItems].sort((a: any, b: any) => {
+  const sortedItems = [...filteredItems].sort((a: UntaggedItem, b: UntaggedItem) => {
     const aVal = a[sortField];
     const bVal = b[sortField];
     const modifier = sortDirection === "asc" ? 1 : -1;
@@ -299,19 +306,19 @@ export function UntaggedResourcesTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
-              {paginatedItems.map((item: any, idx: number) => {
+              {paginatedItems.map((item: UntaggedItem, idx: number) => {
                 let resourceUrl: string | null = null;
                 const workspaceId = item.workspace_id;
                 switch (activeUntaggedTab) {
-                  case "clusters": resourceUrl = getClusterUrl(host, item.cluster_id, workspaceId); break;
-                  case "jobs": resourceUrl = getJobUrl(host, item.job_id, workspaceId); break;
-                  case "pipelines": resourceUrl = getPipelineUrl(host, item.pipeline_id, workspaceId); break;
-                  case "warehouses": resourceUrl = getWarehouseUrl(host, item.warehouse_id, workspaceId); break;
-                  case "endpoints": resourceUrl = getEndpointUrl(host, item.endpoint_name, workspaceId); break;
+                  case "clusters": resourceUrl = getClusterUrl(host, item.cluster_id as string, workspaceId); break;
+                  case "jobs": resourceUrl = getJobUrl(host, item.job_id as string, workspaceId); break;
+                  case "pipelines": resourceUrl = getPipelineUrl(host, item.pipeline_id as string, workspaceId); break;
+                  case "warehouses": resourceUrl = getWarehouseUrl(host, item.warehouse_id as string, workspaceId); break;
+                  case "endpoints": resourceUrl = getEndpointUrl(host, item.endpoint_name as string, workspaceId); break;
                 }
 
-                const rawName = item[resourceConfig.nameKey];
-                const displayId = item[resourceConfig.idKey];
+                const rawName = item[resourceConfig.nameKey] as string | null | undefined;
+                const displayId = item[resourceConfig.idKey] as string | null | undefined;
                 const displayName = rawName || displayId || "-";
                 const hasDistinctName = rawName && rawName !== displayId;
 
@@ -339,21 +346,24 @@ export function UntaggedResourcesTable({
                         </div>
                       )}
                     </td>
-                    {extraColumns.map((col) => (
+                    {extraColumns.map((col) => {
+                      const colVal = item[col.key] as string | null | undefined;
+                      return (
                       <td key={col.key} className="px-6 py-4 text-sm text-gray-600">
-                        {item[col.key] ? (
+                        {colVal ? (
                           col.key === "owner" ? (
-                            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={item[col.key]}>
-                              {formatIdentity(item[col.key])}
+                            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={colVal}>
+                              {formatIdentity(colVal)}
                             </span>
                           ) : (
-                            <span className="max-w-40 truncate block" title={item[col.key]}>{item[col.key]}</span>
+                            <span className="max-w-40 truncate block" title={colVal}>{colVal}</span>
                           )
                         ) : (
                           <span className="text-xs text-gray-500">-</span>
                         )}
                       </td>
-                    ))}
+                      );
+                    })}
                     <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-500">{formatNumber(item.total_dbus)}</td>
                     <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-900">{formatCurrency(item.total_spend)}</td>
                     <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-500">{item.days_active}</td>

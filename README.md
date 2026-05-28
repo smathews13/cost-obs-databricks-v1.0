@@ -12,7 +12,7 @@
 
 A full-stack Databricks App for account-level compute cost visibility, chargeback, and anomaly detection across your entire Databricks platform.
 
-Built on FastAPI + React, deployed as a [Databricks App](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html) with OAuth authentication and serverless compute built in. Supports **multi-cloud deployment** across AWS and Azure with automatic cloud detection.
+Built on FastAPI + React, deployed as a [Databricks App](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html) with service principal authentication and serverless compute built in. Supports **multi-cloud deployment** across AWS and Azure with automatic cloud detection.
 
 ---
 
@@ -118,10 +118,8 @@ Keep the first deployment minimal. Add optional cloud-cost or advanced integrati
 | `COST_OBS_CATALOG` | Set by setup wizard | Unity Catalog catalog for app-managed tables. When set, takes precedence over the wizard value |
 | `COST_OBS_SCHEMA` | Set by setup wizard | Schema name for app-managed tables. When set, takes precedence over the wizard value |
 | `COST_OBS_WORKSPACES` | All workspaces | Comma-separated workspace IDs to scope the dashboard |
-| `GENIE_SPACE_ID` | — | Genie Space ID for AI cost chat |
 | `AZURE_SUBSCRIPTION_ID` | — | Azure subscription ID (shown in account banner on Azure) |
 | `SMTP_HOST` / `SMTP_*` | — | Email alert configuration |
-| `ENDPOINT_NAME` + `PGHOST` | — | Lakebase connection (falls back to Delta tables if not set) |
 | `AWS_COST_CATALOG` / `AWS_COST_SCHEMA` | `billing` / `aws` | AWS CUR actual cost tables |
 | `AZURE_COST_CATALOG` / `AZURE_COST_SCHEMA` | `billing` / `azure` | Azure cost export tables |
 | `DATABRICKS_TOKEN` | — | Only needed for **local development** |
@@ -177,7 +175,7 @@ If anything is degraded, go to **Settings → Permissions** or **Settings → Co
 
 ### Minimum access for end users
 
-This deployment path uses the **app service principal** for SQL execution. End users do not need an OAuth consent flow for normal app usage.
+This deployment path uses the **app service principal** for SQL execution. End users do not need any additional authentication for normal app usage.
 
 Use **Settings → Permissions** to manage who can administer or view the app.
 
@@ -338,17 +336,15 @@ This system table is a private preview. Contact your Databricks account team to 
                       └────────────────────────────────────┘
                                         │
                       ┌─────────────────▼──────────────────┐
-                      │  Lakebase (optional, PostgreSQL 16) │
+                      │  Delta tables (app-managed)         │
                       │  App state: alerts, permissions,    │
                       │  settings, user preferences         │
-                      │  Falls back to Delta tables if not  │
-                      │  configured                         │
                       └────────────────────────────────────┘
 ```
 
 ### Authentication
 
-All dashboard queries run as the app's **service principal** (SP) using M2M OAuth. The SP is automatically granted access to the required system tables during the setup wizard's Permissions step. End users do not need an OAuth consent flow for normal app usage.
+All dashboard queries run as the app's **service principal** (SP). The SP is automatically granted access to the required system tables during the setup wizard's Permissions step. End users do not need any additional authentication for normal app usage.
 
 The catalog and schema created during setup are owned by the SP. The installing user receives `USE CATALOG`, `USE SCHEMA`, `SELECT`, and `MANAGE` grants automatically — giving them full visibility in the Unity Catalog browser and the ability to re-grant the SP on future redeploys.
 
@@ -481,7 +477,7 @@ All telemetry is queryable via SQL in your workspace.
 
 ## Security
 
-- All dashboard API endpoints are authenticated via Databricks OAuth (handled by the Databricks Apps platform)
+- All dashboard API endpoints are authenticated by the Databricks Apps platform
 - The `X-Forwarded-Email` header is used to identify the requesting user
 - Settings mutation endpoints (cloud connections, webhook config, user permissions) require **admin role** — enforced server-side before any state change
 - Webhook URLs are masked in API responses (never returned in plaintext after save)
@@ -495,7 +491,6 @@ cost-obs-databricks/
 ├── server/                      # FastAPI backend
 │   ├── app.py                   # Entry point, startup tasks, router registration
 │   ├── db.py                    # SQL connector, 4h TTL query cache, connection pool
-│   ├── postgres.py              # Lakebase PostgreSQL connection pool (optional)
 │   ├── materialized_views.py    # MV creation, refresh, and query templates
 │   ├── alerting.py              # Spike detection logic
 │   ├── alert_manager.py         # Alert persistence and delivery
@@ -566,8 +561,8 @@ Full interactive API docs at `http://localhost:8000/docs` (FastAPI Swagger UI).
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, Recharts, TanStack Query v5 |
 | Backend | Python 3.11+, FastAPI, Databricks SQL Connector, Databricks SDK 0.81+ |
 | Data | Databricks system tables (account-level), Unity Catalog, Delta materialized views |
-| Persistence | Lakebase (optional, Databricks-managed PostgreSQL 16); Delta table fallback |
-| Deployment | Databricks Apps (managed OAuth, serverless compute), multi-cloud (AWS + Azure) |
+| Persistence | Delta materialized views (app-managed), TTL in-memory cache |
+| Deployment | Databricks Apps (service principal auth, serverless compute), multi-cloud (AWS + Azure) |
 | Caching | TTLCache (4h query cache, 1h SDK cache), React Query (30min stale time) |
 
 ---

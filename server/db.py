@@ -172,16 +172,22 @@ def _read_dbfs_catalog_override() -> tuple[str, str]:
 
 
 def _write_dbfs_catalog_override(catalog: str, schema: str) -> None:
-    """Write catalog/schema to DBFS. Best-effort, non-fatal."""
+    """Write catalog/schema to DBFS. Best-effort, non-fatal.
+
+    Merges into the shared DBFS settings JSON so existing flags (setup_complete,
+    build_state) are preserved.  A plain overwrite here would destroy setup_complete
+    if called after the wizard completes (e.g. from POST /api/settings/catalog).
+    """
     try:
         import base64
+        existing = _read_dbfs_settings()
+        existing["catalog"] = catalog
+        existing["schema"] = schema
         w = get_workspace_client()
-        content_b64 = base64.b64encode(
-            json.dumps({"catalog": catalog, "schema": schema}).encode("utf-8")
-        ).decode("ascii")
+        content = base64.b64encode(json.dumps(existing).encode()).decode("ascii")
         w.api_client.do(
             "POST", "/api/2.0/dbfs/put",
-            body={"path": _DBFS_OVERRIDE_PATH, "contents": content_b64, "overwrite": True},
+            body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True},
         )
         logger.info("DBFS catalog override saved: %s.%s", catalog, schema)
     except Exception as e:

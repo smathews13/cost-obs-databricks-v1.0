@@ -350,6 +350,13 @@ async def get_setup_status() -> dict[str, Any]:
                 logger.info("setup_done.json auto-healed on redeploy")
             except Exception as e:
                 logger.warning(f"Could not auto-heal setup_done.json: {e}")
+            # Also restore the DBFS flag so future redeployments use the fast
+            # short-circuit instead of hitting UC API again.
+            try:
+                from server.db import write_dbfs_setup_complete as _write_dbfs_flag
+                _write_dbfs_flag()
+            except Exception as _dbfs_e:
+                logger.warning(f"Could not restore DBFS setup_complete during auto-heal: {_dbfs_e}")
         else:
             # No setup_done.json and no core tables — fresh deploy (env vars may be set
             # but wizard has never run) or tables were dropped. Wizard must run.

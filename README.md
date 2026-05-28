@@ -12,7 +12,7 @@
 
 A full-stack Databricks App for account-level compute cost visibility, chargeback, and anomaly detection across your entire Databricks platform.
 
-Built on FastAPI + React, deployed as a [Databricks App](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html) with service principal authentication and serverless compute built in. Supports **multi-cloud deployment** across AWS and Azure with automatic cloud detection.
+Built on FastAPI + React, deployed as a [Databricks App](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html) with service principal authentication and serverless compute built in. Supports **multi-cloud deployment** across AWS, Azure, and GCP with automatic cloud detection.
 
 ---
 
@@ -218,7 +218,7 @@ This system table is a private preview. Contact your Databricks account team to 
 
 ## What It Does
 
-### DBU Overview
+### $DBU Spend
 | Feature | Description |
 |---|---|
 | **Spend Over Time** | Daily spend timeseries by product category |
@@ -230,13 +230,6 @@ This system table is a private preview. Contact your Databricks account team to 
 | **ETL Breakdown** | Jobs and SDP pipeline spend with type filters, pagination, and historical toggle |
 | **Account Prices Toggle** | Switch between list prices and negotiated account prices (from `system.billing.account_prices`, private preview) |
 
-### KPIs & Trends
-| Feature | Description |
-|---|---|
-| **Platform KPIs** | Total spend, DBUs, successful runs, active clusters, workspaces, models served |
-| **KPI Drill-Downs** | Click any KPI to see daily/monthly trend lines in a modal |
-| **Spend Anomalies** | Largest day-over-day spend changes with date search and AI analysis |
-
 ### SQL
 | Feature | Description |
 |---|---|
@@ -247,18 +240,6 @@ This system table is a private preview. Contact your Databricks account team to 
 | **Query Source Breakdown** | Drill-down table by source type |
 | **Most Expensive Queries** | Top queries with historical toggle, pagination, and query profile links |
 | **Warehouse Rightsizing** | Automated recommendations to right-size overprovisioned warehouses based on `system.query.history` utilization heuristics |
-
-### Cloud Costs
-| Feature | Description |
-|---|---|
-| **Multi-Cloud Support** | Auto-detects AWS or Azure from workspace URL; displays cloud-specific logos, instance types, pricing links, and setup guides |
-| **Infrastructure KPIs** | Total cloud cost, DBU hours, avg active clusters/day, avg cluster cost — all derived from billing data |
-| **Cost Over Time** | Area chart of estimated infrastructure costs with instance family filter bubbles |
-| **Instance Family Usage** | DBU hours by EC2 (AWS) or VM series (Azure) instance family |
-| **Cluster Table** | Per-cluster cost attribution with instance types, pricing links, pagination, and historical toggle |
-| **Actual Costs Integration** | Toggle between estimated and actual costs when AWS CUR 2.0 or Azure Cost Management Export is configured |
-| **Cloud Integration Wizard** | In-app 5-step setup guide for both AWS and Azure actual cost integration |
-| **2025 Pricing** | Updated EC2 and Azure VM pricing covering: AWS m7i, r7i, c7i, i4i, g6; Azure Dv6, Ev5/v6, NC A100 v4, ND A100 v4, NVadsA10 v5 |
 
 ### AI/ML
 | Feature | Description |
@@ -291,10 +272,29 @@ This system table is a private preview. Contact your Databricks account team to 
 | **Product Breakdown** | Cost split by product category per user |
 | **User Growth Trend** | Active user count over time |
 
+### KPIs & Trends
+| Feature | Description |
+|---|---|
+| **Platform KPIs** | Total spend, DBUs, successful runs, active clusters, workspaces, models served |
+| **KPI Drill-Downs** | Click any KPI to see daily/monthly trend lines in a modal |
+| **Spend Anomalies** | Largest day-over-day spend changes with date search and AI analysis |
+
+### Cloud Costs
+| Feature | Description |
+|---|---|
+| **Multi-Cloud Support** | Auto-detects AWS, Azure, or GCP from workspace URL; displays cloud-specific logos, instance types, pricing links, and setup guides |
+| **Infrastructure KPIs** | Total cloud cost, DBU hours, avg active clusters/day, avg cluster cost — all derived from billing data |
+| **Cost Over Time** | Area chart of estimated infrastructure costs with instance family filter bubbles |
+| **Instance Family Usage** | DBU hours by EC2 (AWS), VM series (Azure), or machine type (GCP) instance family |
+| **Cluster Table** | Per-cluster cost attribution with instance types, pricing links, pagination, and historical toggle |
+| **Actual Costs Integration** | Toggle between estimated and actual costs when AWS CUR 2.0, Azure Cost Management Export, or GCP Billing Export is configured |
+| **Cloud Integration Wizard** | In-app 5-step setup guide for AWS, Azure, and GCP actual cost integration |
+| **2025 Pricing** | Updated EC2 and Azure VM pricing covering: AWS m7i, r7i, c7i, i4i, g6; Azure Dv6, Ev5/v6, NC A100 v4, ND A100 v4, NVadsA10 v5 |
+
 ### Settings
 | Feature | Description |
 |---|---|
-| **General** | Date range selection and display preferences |
+| **General** | Date range selection, display preferences, and automatic refresh schedule |
 | **Configuration** | Table status and rebuild |
 | **Permissions** | System table access checks and service principal grant management |
 | **User Permissions** | Admin-only management of who has admin vs. read-only access to the app |
@@ -383,9 +383,11 @@ Tables are built automatically when the setup wizard completes. The dashboard wo
 
 ### Keeping Tables Fresh
 
-Tables are **not** automatically refreshed on a schedule. Refresh whenever you want to pull in the latest billing data.
+Tables are automatically refreshed on a nightly schedule (default: 05:00 UTC). The scheduler runs incremental updates using MERGE INTO, so only new data is processed after the initial full build — refresh times after the first run are typically under a minute for most deployments.
 
-To refresh: go to **Settings → Config → Rebuild**. This rebuilds all 6 tables from the latest `system.*` data and typically takes 3–8 minutes. Progress is shown in real time.
+The refresh frequency and scheduled time are configurable under **Settings → General**. Options include nightly (default) and every 6 hours.
+
+To rebuild on demand, go to **Settings → Config → Rebuild**. This triggers a full rebuild of all 6 tables from the latest `system.*` data and typically takes 3–8 minutes. Progress is shown in real time.
 
 Tables can be dropped and recreated at any time with no data loss — all source data lives in `system.*` tables managed by Databricks.
 
@@ -403,50 +405,6 @@ Tables can be dropped and recreated at any time with no data loss — all source
 
 ---
 
-## Local Development
-
-### Prerequisites
-- Python 3.11+
-- [Bun](https://bun.sh) (frontend)
-- Databricks workspace with system tables enabled
-- A SQL warehouse HTTP path
-
-### Setup
-
-```bash
-# Clone
-git clone https://github.com/smathews13/cost-obs-databricks
-cd cost-obs-databricks
-
-# Backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-
-# Frontend
-cd client && bun install && cd ..
-```
-
-### Start Dev Servers
-
-```bash
-# Backend (port 8000)
-source .venv/bin/activate
-DATABRICKS_HOST=https://your-workspace.cloud.databricks.com \
-DATABRICKS_TOKEN=dapi... \
-DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/your-id \
-COST_OBS_CATALOG=my_catalog \
-COST_OBS_SCHEMA=cost_obs \
-uvicorn server.app:app --host 0.0.0.0 --port 8000 --reload
-
-# Frontend (port 5173, separate terminal)
-cd client && bun run dev
-```
-
-Open http://localhost:5173
-
----
-
 ## Cloud Cost Integration
 
 The Cloud Costs tab displays estimated infrastructure costs out of the box. It can also show **actual** AWS or Azure billing data when configured. Full step-by-step setup instructions for both clouds are built into the app — open the Cloud Costs tab and click **Set Up Actual Costs** to launch the in-app wizard.
@@ -458,20 +416,6 @@ The app reads from `billing.aws.actuals_gold`. Setup steps are available in the 
 ### Azure (Cost Management Export)
 
 The app reads from `billing.azure.actuals_gold`. Setup steps are available in the in-app wizard, and the table location can be overridden via `AZURE_COST_CATALOG` / `AZURE_COST_SCHEMA`.
-
----
-
-## App Observability
-
-Databricks Apps has built-in [OpenTelemetry-based observability](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/observability) that automatically captures traces, logs, and metrics into Unity Catalog tables:
-
-| UC Table | Contents |
-|---|---|
-| `otel_metrics` | Request counts, latency histograms, error rates |
-| `otel_spans` | Distributed traces for API requests end-to-end |
-| `otel_logs` | App log output with trace correlation |
-
-All telemetry is queryable via SQL in your workspace.
 
 ---
 
@@ -509,7 +453,6 @@ cost-obs-databricks/
 │       ├── alerts.py            # Threshold alerts and notifications
 │       ├── use_cases.py         # Business use case tracking
 │       ├── users_groups.py      # User spend analytics
-│       ├── genie.py             # Genie AI integration
 │       ├── settings.py          # App config, cloud connections, user permissions
 │       └── setup.py             # First-run setup wizard
 │
@@ -564,15 +507,3 @@ Full interactive API docs at `http://localhost:8000/docs` (FastAPI Swagger UI).
 | Persistence | Delta materialized views (app-managed), TTL in-memory cache |
 | Deployment | Databricks Apps (service principal auth, serverless compute), multi-cloud (AWS + Azure) |
 | Caching | TTLCache (4h query cache, 1h SDK cache), React Query (30min stale time) |
-
----
-
-## Docs
-
-| Doc | Description |
-|---|---|
-| [Pre-Deployment Checklist](docs/PRE_DEPLOYMENT_CHECKLIST.md) | Required permissions and environment prerequisites |
-| [Genie Setup](docs/GENIE_SETUP.md) | Configure Databricks Genie for AI cost queries |
-| [Alerting System](docs/alerting_system.md) | Alert types, thresholds, and email/webhook setup |
-| [DBSQL Cost Architecture](docs/dbsql_cost_architecture.md) | How SQL warehouse costs are attributed |
-| [Performance](docs/PERFORMANCE_AUDIT.md) | Query optimization and materialized view strategy |

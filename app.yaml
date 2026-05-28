@@ -42,12 +42,6 @@ env:
   # - name: AZURE_SUBSCRIPTION_ID
   #   value: <subscription-id>
 
-  # Lakebase — optional, app falls back to Delta tables if not set
-  # - name: ENDPOINT_NAME
-  #   value: projects/<project>/branches/<branch>/endpoints/<endpoint>
-  # - name: PGHOST
-  #   value: <lakebase-hostname>
-
   # Workspace filter — restrict the dashboard to specific workspace(s).
   # Value: comma-separated workspace IDs (from the setup wizard or Databricks account console).
   # Single ID → workspace dropdown is hidden (data is implicitly scoped).

@@ -67,6 +67,8 @@ These are not required for the initial deployment, but they unlock additional pa
 
 ### Step 1 — Create the app from Git
 
+> **Workspace preview required:** If you do not see a **Git repository** option when creating an app, enable it first: go to **Settings → Workspace Previews**, find **"Deploy Databricks apps from Git repositories (Beta)"**, and toggle it **ON**. This is a per-workspace setting and requires workspace admin access.
+
 1. In your Databricks workspace, open **Apps**
 2. Click **Create app**
 3. Select **Git repository** as the source
@@ -74,8 +76,6 @@ These are not required for the initial deployment, but they unlock additional pa
 5. Use the `main` branch
 6. Give the app a name such as `cost-observability`
 7. Click **Create**
-
-If you do not see the **Git repository** option, enable the **Deploy Databricks apps from Git repositories** preview in your workspace first (Settings → Workspace Previews).
 
 ---
 
@@ -191,28 +191,6 @@ Use **Settings → Permissions** to manage who can administer or view the app.
 | Rebuild required or schema mismatch | App-managed tables are missing or out of sync | Rebuild from **Settings → Config** |
 | Deploy from Git option not visible | Workspace preview not enabled | Enable the Git deployment preview in **Settings → Workspace Previews** |
 | Data looks stale | App-managed tables have not been refreshed recently | Refresh from **Settings → Config → Rebuild** |
-
----
-
-## Databricks Preview Features
-
-The following workspace previews unlock additional functionality. Enable any that are available in your workspace — the app gracefully falls back when a preview is not enabled. All are enabled per workspace by a workspace admin via **Settings → Workspace Previews**.
-
-### Deploy from Git (Beta)
-
-Enables deploying this app directly from GitHub — no file uploads or local tooling required. This is the recommended deployment path.
-
-1. Sign in as a workspace admin
-2. Go to **Settings → Workspace Previews**
-3. Find **"Deploy Databricks apps from Git repositories (Beta)"** and toggle it **ON**
-
-Once enabled, go to **Apps → Create App** and choose **Git repository** as the source. Enter `https://github.com/smathews13/cost-obs-databricks` and deploy from the `main` branch.
-
-### Account Tables (Private Preview)
-
-Enables the **Account Prices** toggle in the DBU Overview tab. When toggled on, the app reads from `system.billing.account_prices` to show your negotiated/discounted prices instead of standard list prices.
-
-This system table is a private preview. Contact your Databricks account team to request access. When available, the app automatically grants the required permissions on startup.
 
 ---
 
@@ -407,7 +385,7 @@ Tables can be dropped and recreated at any time with no data loss — all source
 
 ## Cloud Cost Integration
 
-The Cloud Costs tab displays estimated infrastructure costs out of the box. It can also show **actual** AWS or Azure billing data when configured. Full step-by-step setup instructions for both clouds are built into the app — open the Cloud Costs tab and click **Set Up Actual Costs** to launch the in-app wizard.
+The Cloud Costs tab displays estimated infrastructure costs out of the box. It can also show **actual** AWS, Azure, or GCP billing data when configured. Full step-by-step setup instructions are built into the app — open the Cloud Costs tab and click **Set Up Actual Costs** to launch the in-app wizard.
 
 ### AWS (CUR 2.0)
 
@@ -416,6 +394,18 @@ The app reads from `billing.aws.actuals_gold`. Setup steps are available in the 
 ### Azure (Cost Management Export)
 
 The app reads from `billing.azure.actuals_gold`. Setup steps are available in the in-app wizard, and the table location can be overridden via `AZURE_COST_CATALOG` / `AZURE_COST_SCHEMA`.
+
+### GCP (BigQuery Billing Export)
+
+The app reads directly from your GCP billing export synced into a Databricks catalog via [BigQuery data sharing](https://docs.databricks.com/aws/en/delta-sharing/share-data-databricks). The default table is `billing.gcp.gcp_billing_export_v1` — override via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `GCP_COST_CATALOG` | `billing` (or `COST_OBS_CATALOG`) | Catalog containing the GCP billing table |
+| `GCP_COST_SCHEMA` | `gcp` | Schema containing the GCP billing table |
+| `GCP_COST_TABLE` | `gcp_billing_export_v1` | Table name — use `gcp_billing_export_resource_v1` for resource-level detail, or `actuals_gold` if you have a pre-aggregated gold table |
+
+Setup steps are available in the in-app wizard under Cloud Costs → Set Up Actual Costs → GCP.
 
 ---
 

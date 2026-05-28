@@ -122,7 +122,7 @@ Keep the first deployment minimal. Add optional cloud-cost or advanced integrati
 | `SMTP_HOST` / `SMTP_*` | — | Email alert configuration |
 | `AWS_COST_CATALOG` / `AWS_COST_SCHEMA` | `billing` / `aws` | AWS CUR actual cost tables |
 | `AZURE_COST_CATALOG` / `AZURE_COST_SCHEMA` | `billing` / `azure` | Azure cost export tables |
-| `DATABRICKS_TOKEN` | — | Only needed for **local development** |
+| `DATABRICKS_TOKEN` | — | Service principal token override; not needed when deployed as a Databricks App |
 
 </details>
 
@@ -480,7 +480,6 @@ The backend exposes a REST API at `/api/`. Key endpoints:
 | `GET /api/tagging/dashboard-bundle` | Tagging hub data |
 | `GET /api/billing/platform-kpis-bundle` | Platform KPIs and anomalies |
 | `GET /api/users-groups/bundle` | User spend analytics |
-| `POST /api/genie/message` | Natural language cost query via Genie |
 | `GET /api/health` | Health check |
 
 Full interactive API docs at `http://localhost:8000/docs` (FastAPI Swagger UI).

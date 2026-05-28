@@ -150,7 +150,7 @@ async def get_cur_status() -> dict[str, Any]:
     else:
         try:
             query = CHECK_CUR_TABLES.format(catalog=catalog, schema=schema, table="actuals_gold")
-            results = execute_query(query)
+            results = await asyncio.to_thread(execute_query, query)
             available = len(results) > 0
         except Exception as e:
             logger.warning(f"CUR tables not available: {e}")
@@ -191,7 +191,7 @@ async def get_aws_actual_summary(
         }
 
     query = AWS_ACTUAL_SUMMARY.format(catalog=catalog, schema=schema)
-    results = execute_query(query, {"start_date": start_date, "end_date": end_date})
+    results = await asyncio.to_thread(execute_query, query, {"start_date": start_date, "end_date": end_date})
 
     if not results:
         return {
@@ -245,7 +245,7 @@ async def get_aws_costs_by_cluster(
         }
 
     query = AWS_COSTS_BY_CLUSTER.format(catalog=catalog, schema=schema)
-    results = execute_query(query, {"start_date": start_date, "end_date": end_date})
+    results = await asyncio.to_thread(execute_query, query, {"start_date": start_date, "end_date": end_date})
 
     clusters = []
     total_cost = 0
@@ -297,7 +297,7 @@ async def get_aws_costs_by_charge_type(
         }
 
     query = AWS_COSTS_BY_CHARGE_TYPE.format(catalog=catalog, schema=schema)
-    results = execute_query(query, {"start_date": start_date, "end_date": end_date})
+    results = await asyncio.to_thread(execute_query, query, {"start_date": start_date, "end_date": end_date})
 
     charge_types = []
     total = 0
@@ -348,7 +348,7 @@ async def get_aws_costs_timeseries(
         }
 
     query = AWS_COSTS_TIMESERIES.format(catalog=catalog, schema=schema)
-    results = execute_query(query, {"start_date": start_date, "end_date": end_date})
+    results = await asyncio.to_thread(execute_query, query, {"start_date": start_date, "end_date": end_date})
 
     # Pivot data by date
     data_by_date: dict[str, dict[str, float]] = {}

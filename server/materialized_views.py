@@ -1527,8 +1527,17 @@ def refresh_materialized_views(catalog: str | None = None, schema: str | None = 
     return create_materialized_views(catalog, schema, lookback_days=lookback_days, on_table_event=on_table_event, force_full_rebuild=force_full_rebuild)
 
 
+_APP_CONFIG_TABLES = [
+    "app_mv_refresh_state",
+    "app_schedule_settings",
+    "app_user_permissions",
+    "app_workspace_filter",
+    "app_response_cache",
+]
+
+
 def drop_materialized_views(catalog: str | None = None, schema: str | None = None) -> dict:
-    """Drop all app-managed materialized view tables.
+    """Drop all app-managed tables — both MV data tables and config tables.
 
     Returns a dict mapping each table name to 'dropped' or an error string.
     """
@@ -1538,7 +1547,7 @@ def drop_materialized_views(catalog: str | None = None, schema: str | None = Non
         schema = schema or sch
 
     results: dict[str, str] = {}
-    for name in _MV_TABLES:
+    for name in _MV_TABLES + _APP_CONFIG_TABLES:
         try:
             execute_query(f"DROP TABLE IF EXISTS `{catalog}`.`{schema}`.`{name}`", no_cache=True)
             results[name] = "dropped"

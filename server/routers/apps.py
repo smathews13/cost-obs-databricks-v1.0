@@ -533,7 +533,7 @@ async def get_apps_summary(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = execute_query(APPS_SUMMARY, params)
+    results = await asyncio.to_thread(execute_query, APPS_SUMMARY, params)
 
     if not results:
         return {
@@ -880,7 +880,7 @@ async def get_apps_kpi_trend(
         return {"error": f"Unknown KPI: {kpi}"}
 
     try:
-        results = execute_query(query, params)
+        results = await asyncio.to_thread(execute_query, query, params)
     except Exception as e:
         logger.error("Apps KPI trend query failed for %s: %s", kpi, e)
         return {

@@ -1,5 +1,6 @@
 """AI/ML 360 API endpoints."""
 
+import asyncio
 import logging
 from datetime import date, timedelta
 from typing import Any
@@ -523,7 +524,7 @@ async def debug_ml_clusters() -> dict[str, Any]:
 
     # Step 1: Can we access system.compute.clusters at all?
     try:
-        cluster_table_check = execute_query("""
+        cluster_table_check = await asyncio.to_thread(execute_query, """
             SELECT COUNT(*) as total_rows, COUNT(DISTINCT cluster_id) as unique_clusters
             FROM system.compute.clusters
         """)
@@ -535,7 +536,7 @@ async def debug_ml_clusters() -> dict[str, Any]:
         return diagnostics
 
     # Step 2: What spark_versions exist? Any with -ml- or -gpu-?
-    spark_versions = execute_query("""
+    spark_versions = await asyncio.to_thread(execute_query, """
         SELECT
           spark_version,
           COUNT(*) as cluster_count,
@@ -557,7 +558,7 @@ async def debug_ml_clusters() -> dict[str, Any]:
 
     # Step 3: If ML clusters exist, do they appear in billing?
     if ml_versions:
-        ml_cluster_billing = execute_query("""
+        ml_cluster_billing = await asyncio.to_thread(execute_query, """
             WITH ml_clusters AS (
               SELECT DISTINCT cluster_id
               FROM system.compute.clusters
@@ -579,7 +580,7 @@ async def debug_ml_clusters() -> dict[str, Any]:
         diagnostics["ml_clusters_in_billing"] = "No ML/GPU spark versions found — nothing to match"
 
     # Step 4: What SKUs have GPU/ML in the name? (for reference)
-    gpu_skus = execute_query("""
+    gpu_skus = await asyncio.to_thread(execute_query, """
         SELECT DISTINCT sku_name
         FROM system.billing.usage
         WHERE usage_date >= CURRENT_DATE - 30
@@ -589,14 +590,14 @@ async def debug_ml_clusters() -> dict[str, Any]:
     diagnostics["gpu_ml_sku_names"] = [dict(r) for r in (gpu_skus or [])]
 
     # Step 5: Sample billing cluster_ids to verify format matches
-    billing_cluster_sample = execute_query("""
+    billing_cluster_sample = await asyncio.to_thread(execute_query, """
         SELECT DISTINCT usage_metadata.cluster_id as cluster_id
         FROM system.billing.usage
         WHERE usage_date >= CURRENT_DATE - 7
           AND usage_metadata.cluster_id IS NOT NULL
         LIMIT 5
     """)
-    compute_cluster_sample = execute_query("""
+    compute_cluster_sample = await asyncio.to_thread(execute_query, """
         SELECT DISTINCT cluster_id
         FROM system.compute.clusters
         LIMIT 5
@@ -618,7 +619,7 @@ async def get_aiml_summary(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = execute_query(AIML_SUMMARY, params)
+    results = await asyncio.to_thread(execute_query, AIML_SUMMARY, params)
 
     if not results:
         return {
@@ -661,7 +662,7 @@ async def get_fmapi_providers(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = execute_query(FMAPI_PROVIDER_COSTS, params)
+    results = await asyncio.to_thread(execute_query, FMAPI_PROVIDER_COSTS, params)
 
     providers = []
     total_spend = 0
@@ -704,7 +705,7 @@ async def get_serverless_endpoints(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = execute_query(SERVERLESS_INFERENCE_BY_ENDPOINT, params)
+    results = await asyncio.to_thread(execute_query, SERVERLESS_INFERENCE_BY_ENDPOINT, params)
 
     endpoints = []
     total_spend = 0
@@ -749,7 +750,7 @@ async def get_aiml_by_category(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = execute_query(AIML_BY_CATEGORY, params)
+    results = await asyncio.to_thread(execute_query, AIML_BY_CATEGORY, params)
 
     categories = []
     total_spend = 0
@@ -791,7 +792,7 @@ async def get_aiml_timeseries(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = execute_query(AIML_TIMESERIES, params)
+    results = await asyncio.to_thread(execute_query, AIML_TIMESERIES, params)
 
     # Transform to chart-friendly format
     date_data: dict[str, dict[str, float]] = {}
@@ -829,7 +830,7 @@ async def get_aiml_sku_catalog(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = execute_query(AIML_SKU_CATALOG, params)
+    results = await asyncio.to_thread(execute_query, AIML_SKU_CATALOG, params)
 
     skus = []
     total_spend = 0
@@ -889,7 +890,7 @@ async def get_aiml_dashboard_bundle(
         ("agent_bricks", lambda: query_with_fallback(_ws(AIML_AGENT_BRICKS_ENRICHED), _ws(AIML_AGENT_BRICKS_FALLBACK), params, label="agent_bricks")),
     ]
 
-    results = execute_queries_parallel(queries)
+    results = await asyncio.to_thread(execute_queries_parallel, queries)
 
     # Format summary
     summary_data = results.get("summary", [])

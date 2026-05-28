@@ -131,7 +131,7 @@ async def get_azure_status() -> dict[str, Any]:
     else:
         try:
             query = CHECK_AZURE_TABLES.format(catalog=catalog, schema=schema, table="actuals_gold")
-            results = execute_query(query)
+            results = await asyncio.to_thread(execute_query, query)
             available = len(results) > 0
         except Exception as e:
             logger.warning(f"Azure cost tables not available: {e}")
@@ -162,7 +162,7 @@ async def get_azure_actual_summary(
     if not status["azure_available"]:
         return {"available": False, "message": "Azure cost data not configured.", "start_date": start_date, "end_date": end_date}
 
-    results = execute_query(
+    results = await asyncio.to_thread(execute_query, 
         AZURE_ACTUAL_SUMMARY.format(catalog=catalog, schema=schema),
         {"start_date": start_date, "end_date": end_date},
     )
@@ -197,7 +197,7 @@ async def get_azure_costs_by_cluster(
     if not status["azure_available"]:
         return {"available": False, "clusters": [], "start_date": start_date, "end_date": end_date}
 
-    results = execute_query(
+    results = await asyncio.to_thread(execute_query, 
         AZURE_COSTS_BY_CLUSTER.format(catalog=catalog, schema=schema),
         {"start_date": start_date, "end_date": end_date},
     )
@@ -236,7 +236,7 @@ async def get_azure_costs_by_charge_type(
     if not status["azure_available"]:
         return {"available": False, "charge_types": [], "start_date": start_date, "end_date": end_date}
 
-    results = execute_query(
+    results = await asyncio.to_thread(execute_query, 
         AZURE_COSTS_BY_CHARGE_TYPE.format(catalog=catalog, schema=schema),
         {"start_date": start_date, "end_date": end_date},
     )
@@ -268,7 +268,7 @@ async def get_azure_costs_timeseries(
     if not status["azure_available"]:
         return {"available": False, "timeseries": [], "charge_types": [], "start_date": start_date, "end_date": end_date}
 
-    results = execute_query(
+    results = await asyncio.to_thread(execute_query, 
         AZURE_COSTS_TIMESERIES.format(catalog=catalog, schema=schema),
         {"start_date": start_date, "end_date": end_date},
     )

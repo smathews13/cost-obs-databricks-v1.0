@@ -542,6 +542,15 @@ async def get_tables_status(request: Request, no_cache: bool = False):
     if not no_cache and _tables_cache is not None and (time.time() - _tables_cache_ts) < _TABLES_CACHE_TTL:
         return _tables_cache
 
+    try:
+        return await _get_tables_status_inner(request)
+    except Exception as e:
+        logger.exception("get_tables_status: unhandled exception")
+        return {"catalog": None, "schema": None, "tables": [], "error": str(e), "auth_error": None, "refresh_status": None}
+
+
+async def _get_tables_status_inner(request: Request):
+    global _tables_cache, _tables_cache_ts
     from server.db import get_catalog_schema, execute_query, _user_token
 
     # Read the raw forwarded token directly — _auth_mode may be locked to "sp"
@@ -575,7 +584,6 @@ async def get_tables_status(request: Request, no_cache: bool = False):
     except Exception as e:
         return {"catalog": None, "schema": None, "tables": [], "error": str(e)}
 
-    from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
     from datetime import date
 
     # Tables that don't have a usage_date column — use an alternate date expression or skip date
@@ -663,36 +671,52 @@ async def get_tables_status(request: Request, no_cache: bool = False):
 
     results = []
     _TABLE_CHECK_TIMEOUT = 12  # seconds — was 25; fail-fast on cold warehouse for better UX
-    # Submit SQL checks AND owner lookups into the same pool so they run concurrently.
-    # Owner lookups hit the module-level cache (1h TTL) so are instant on re-checks.
-    with ThreadPoolExecutor(max_workers=14) as ex:
-        sql_futures = {ex.submit(check_table, name, fqn, ttype): (name, fqn, ttype) for name, fqn, ttype in tasks}
-        owner_futures = {name: ex.submit(_get_table_owner_cached, fqn) for name, fqn, _ in tasks}
+    import asyncio as _asyncio
+    loop = _asyncio.get_running_loop()
+
+    # Use run_in_executor so the event loop is freed while SQL queries run.
+    # A blocking ThreadPoolExecutor context manager would hold the event loop
+    # for up to an hour on a cold warehouse (executor.__exit__ waits for all threads).
+    sql_futures_map: dict = {
+        loop.run_in_executor(None, check_table, name, fqn, ttype): (name, fqn, ttype)
+        for name, fqn, ttype in tasks
+    }
+    owner_futures_map: dict = {
+        loop.run_in_executor(None, _get_table_owner_cached, fqn): name
+        for name, fqn, _ in tasks
+    }
+
+    # Wait for SQL checks without blocking the event loop
+    sql_done, sql_pending = await _asyncio.wait(
+        set(sql_futures_map.keys()), timeout=_TABLE_CHECK_TIMEOUT
+    )
+    for fut in sql_done:
         try:
-            for fut in as_completed(sql_futures, timeout=_TABLE_CHECK_TIMEOUT):
-                results.append(fut.result())
-        except FuturesTimeoutError:
-            # Some queries didn't finish (cold warehouse). Return partial results:
-            # completed futures + placeholder rows for anything still pending.
-            completed_names = {r["name"] for r in results}
-            for fut, (name, _fqn, ttype) in sql_futures.items():
-                if name not in completed_names:
-                    results.append({
-                        "name": name, "table_type": ttype, "exists": None,
-                        "row_count": None, "min_date": None, "max_date": None, "days_behind": None,
-                        "owner": None, "error": "timed out — warehouse may be starting up",
-                    })
-            logger.warning("Table status check timed out — warehouse likely cold")
-        # Merge owner results — all have been running in parallel with SQL checks.
-        # Cached owners resolve in microseconds; uncached REST calls get 1.5 s shared.
-        import time as _t
-        _owner_deadline = _t.monotonic() + 1.5
-        for r in results:
-            try:
-                _remaining = max(0.0, _owner_deadline - _t.monotonic())
-                r["owner"] = owner_futures[r["name"]].result(timeout=_remaining)
-            except Exception:
-                r["owner"] = None
+            results.append(fut.result())
+        except Exception:
+            pass  # check_table catches all exceptions internally
+
+    if sql_pending:
+        for fut, (name, _fqn, ttype) in sql_futures_map.items():
+            if fut in sql_pending:
+                results.append({
+                    "name": name, "table_type": ttype, "exists": None,
+                    "row_count": None, "min_date": None, "max_date": None, "days_behind": None,
+                    "owner": None, "error": "timed out — warehouse may be starting up",
+                })
+        logger.warning("Table status check timed out — warehouse likely cold")
+
+    # Merge owner results — cached owners resolve in microseconds, uncached get 1.5 s
+    owner_done, _ = await _asyncio.wait(set(owner_futures_map.keys()), timeout=1.5)
+    owner_map: dict = {}
+    for fut in owner_done:
+        name = owner_futures_map[fut]
+        try:
+            owner_map[name] = fut.result()
+        except Exception:
+            owner_map[name] = None
+    for r in results:
+        r["owner"] = owner_map.get(r["name"])
 
     # Preserve original order and tag optional config tables
     order = {name: i for i, (name, _, _) in enumerate(tasks)}

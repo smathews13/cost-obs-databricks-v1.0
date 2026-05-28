@@ -231,11 +231,14 @@ function Dashboard() {
   };
 
   // On every load, verify setup status with the server.
-  // 45s timeout — matches App cold-start window.
+  // 60s timeout — allows for cold App pod start.
   useEffect(() => {
     const controller = new AbortController();
     setupStatusAbortRef.current = controller;
-    const timeout = setTimeout(() => controller.abort(), 45_000);
+    const timeout = setTimeout(() => controller.abort(), 60_000);
+    const prevCompleted = () =>
+      localStorage.getItem("coc-setup-complete") === "true" ||
+      sessionStorage.getItem("coc-setup-complete") === "true";
 
     fetch("/api/setup/status", { signal: controller.signal })
       .then((r) => r.json())
@@ -243,17 +246,29 @@ function Dashboard() {
         clearTimeout(timeout);
         if (status?.status === "ready") {
           localStorage.setItem("coc-setup-complete", "true");
+          sessionStorage.setItem("coc-setup-complete", "true");
           setShowSetupWizard(false);
-        } else {
-          localStorage.removeItem("coc-setup-complete");
-          setShowSetupWizard(true);
+        } else if (status?.status === "setup_required") {
+          // Only show wizard on a definitive "setup_required" — not on transient states
+          // like "initializing". Avoids wizard flash during cold start or mid-build polling.
+          // Only clear local cache on explicit setup_required so Safari Private Mode
+          // users don't lose their fallback if they briefly lose connectivity.
+          if (!prevCompleted()) {
+            localStorage.removeItem("coc-setup-complete");
+            sessionStorage.removeItem("coc-setup-complete");
+            setShowSetupWizard(true);
+          }
+          // If they have a local completion record, trust it — they're a returning user
+          // and the server may be in a transient state (redeploy, DBFS slow).
         }
+        // "initializing" and other transient states: no wizard change
       })
       .catch(() => {
         clearTimeout(timeout);
-        // If setup was previously completed, trust localStorage on timeout/error.
-        // Only force the wizard if there's no prior completion record.
-        if (localStorage.getItem("coc-setup-complete") !== "true") {
+        // Network error, timeout, or non-JSON — trust local cache rather than flashing wizard.
+        // This is the primary Safari fix: first-party cookies may not be sent on the
+        // initial fetch in Safari's strict mode, causing a redirect instead of JSON.
+        if (!prevCompleted()) {
           setShowSetupWizard(true);
         }
       });
@@ -263,6 +278,7 @@ function Dashboard() {
 
   const handleSetupComplete = () => {
     localStorage.setItem("coc-setup-complete", "true");
+    sessionStorage.setItem("coc-setup-complete", "true");
     // Mark setup complete server-side (survives page refresh, cleared on redeploy)
     fetch("/api/setup/complete", { method: "POST" }).catch(() => {});
     // Save the deploying user as admin (fire-and-forget)

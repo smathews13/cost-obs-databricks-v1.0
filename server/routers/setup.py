@@ -106,6 +106,11 @@ _CORE_REQUIRED_TABLES = frozenset({
 # Auto-fail bootstrap after this many seconds to prevent infinite spinner
 _BOOTSTRAP_TIMEOUT_SECONDS = 25 * 60  # 25 minutes
 
+# Once confirmed True in this process, skip all DBFS/UC checks on subsequent requests.
+# Saves ~500ms per status call for every user after the first successful check.
+# Reset to False only on explicit cache-bust (never happens at runtime).
+_setup_confirmed_ready: bool = False
+
 
 SYSTEM_TABLE_GRANTS = [
     ("USE CATALOG", "CATALOG", "system"),
@@ -260,7 +265,19 @@ async def get_setup_status() -> dict[str, Any]:
     is on the create-tables step and polling), return 'initializing' so it keeps
     polling instead of resetting back to the wizard start.
     """
+    global _setup_confirmed_ready
     import asyncio as _asyncio
+
+    # In-memory fast-path: once we've confirmed ready in this process, skip all I/O.
+    # Cuts response time from ~500ms (DBFS + UC round-trips) to <1ms for every user
+    # after the first successful check. Prevents Safari/cold-start wizard flashes.
+    if _setup_confirmed_ready and _create_task_state["status"] != "running":
+        catalog, schema = get_catalog_schema()
+        return {
+            "catalog": catalog, "schema": schema,
+            "tables": {}, "all_tables_exist": True, "missing_tables": [],
+            "status": "ready", "task": _create_task_state.copy(), "next_poll_ms": 30000,
+        }
 
     # While table creation is running (wizard polling mid-flow), keep returning
     # initializing regardless of setup_done state so the wizard doesn't reset.
@@ -310,7 +327,9 @@ async def get_setup_status() -> dict[str, Any]:
     # and return "ready" without hitting the SQL warehouse (which may be cold).
     if not os.path.exists(SETUP_DONE_FILE):
         from server.db import read_dbfs_setup_complete
-        if read_dbfs_setup_complete():
+        loop = _asyncio.get_running_loop()
+        dbfs_complete = await loop.run_in_executor(None, read_dbfs_setup_complete)
+        if dbfs_complete:
             try:
                 import datetime as _dt
                 os.makedirs(SETTINGS_DIR, exist_ok=True)
@@ -320,6 +339,7 @@ async def get_setup_status() -> dict[str, Any]:
                 logger.info("setup_done.json restored from DBFS flag (container restart)")
             except Exception as _e:
                 logger.warning(f"Could not restore setup_done.json: {_e}")
+            _setup_confirmed_ready = True
             return {
                 "catalog": catalog, "schema": schema,
                 "tables": {}, "all_tables_exist": False, "missing_tables": [],
@@ -376,6 +396,7 @@ async def get_setup_status() -> dict[str, Any]:
         # in progress or tables were dropped after a completed setup. Return "ready"
         # so the dashboard shows (falls back to direct system-table queries). Don't
         # force the wizard again: the user already completed setup.
+        _setup_confirmed_ready = True
         return {
             "catalog": catalog,
             "schema": schema,
@@ -413,6 +434,7 @@ async def get_setup_status() -> dict[str, Any]:
     # pre-existing or just auto-healed). Non-core tables being absent just means
     # some SQL/job views are still building — the dashboard falls back gracefully.
     # Never return "setup_required" here: it would re-show the wizard incorrectly.
+    _setup_confirmed_ready = True
     return {
         "catalog": catalog,
         "schema": schema,
@@ -434,6 +456,7 @@ async def mark_setup_complete(background_tasks: BackgroundTasks) -> dict[str, An
     The background rebuild creates all materialized views so the dashboard has
     data immediately after setup — no manual Rebuild click required.
     """
+    global _setup_confirmed_ready
     try:
         os.makedirs(SETTINGS_DIR, exist_ok=True)
         with open(SETUP_DONE_FILE, "w") as f:
@@ -443,6 +466,8 @@ async def mark_setup_complete(background_tasks: BackgroundTasks) -> dict[str, An
     except Exception as e:
         logger.error(f"Failed to write setup_done.json: {e}")
         return {"ok": False, "error": str(e)}
+
+    _setup_confirmed_ready = True
 
     # Persist to DBFS so the flag survives container restarts (Databricks Apps
     # recreates the container from scratch on every stop/start, wiping .settings/).
@@ -2260,11 +2285,15 @@ async def save_workspace_filter(request: Request) -> dict:
 @router.delete("/drop-materialized-views")
 async def drop_mvs() -> dict:
     """Drop all app-managed materialized view tables. Irreversible — use with caution."""
-    from server.db import get_catalog_schema
-    catalog, schema = get_catalog_schema()
-    results = drop_materialized_views(catalog, schema)
-    all_dropped = all(v == "dropped" for v in results.values())
-    return {"ok": all_dropped, "results": results, "catalog": catalog, "schema": schema}
+    try:
+        from server.db import get_catalog_schema
+        catalog, schema = get_catalog_schema()
+        results = drop_materialized_views(catalog, schema)
+        all_dropped = all(v == "dropped" for v in results.values())
+        return {"ok": all_dropped, "results": results, "catalog": catalog, "schema": schema}
+    except Exception as e:
+        logger.exception("drop_mvs: unhandled exception")
+        return {"ok": False, "results": {}, "error": str(e)}
 
 
 @router.get("/mv-overrides")

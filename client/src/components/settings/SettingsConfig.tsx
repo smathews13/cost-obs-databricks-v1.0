@@ -83,6 +83,7 @@ export function SettingsConfig({
   const { data: tablesStatus = null, isLoading: tablesLoading, isFetching: tablesFetching, refetch: refetchTables } = useQuery<{
     catalog: string | null;
     schema: string | null;
+    error?: string | null;
     auth_error?: string | null;
     refresh_status?: {
       last_refresh_utc: string;
@@ -175,7 +176,7 @@ export function SettingsConfig({
   // MV wipe state
   const [wipePending, setWipePending] = useState(false);
   const [wiping, setWiping] = useState(false);
-  const [wipeResult, setWipeResult] = useState<{ ok: boolean; results: Record<string, string> } | null>(null);
+  const [wipeResult, setWipeResult] = useState<{ ok: boolean; results?: Record<string, string>; error?: string } | null>(null);
   const [wipeConfirmText, setWipeConfirmText] = useState("");
 
   const handleWipeMVs = async () => {
@@ -184,9 +185,13 @@ export function SettingsConfig({
     try {
       const res = await fetch("/api/setup/drop-materialized-views", { method: "DELETE" });
       const data = await res.json();
-      setWipeResult(data);
+      if (!res.ok || !data.results) {
+        setWipeResult({ ok: false, error: data.error ?? data.detail ?? `HTTP ${res.status}` });
+      } else {
+        setWipeResult(data);
+      }
     } catch (e) {
-      setWipeResult({ ok: false, results: { error: String(e) } });
+      setWipeResult({ ok: false, error: String(e) });
     } finally {
       setWiping(false);
       setWipePending(false);
@@ -634,7 +639,11 @@ export function SettingsConfig({
                 </table>
               </div>
             ) : (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">Could not retrieve table status</div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
+                {tablesStatus?.error
+                  ? `Table status error: ${tablesStatus.error}`
+                  : "Could not retrieve table status"}
+              </div>
             )}
 
             {/* Refresh history — always shown once tables are loaded */}
@@ -774,7 +783,9 @@ export function SettingsConfig({
                     <div className={`mt-2 rounded px-2 py-1.5 text-[11px] ${wipeResult.ok ? "bg-green-50 text-green-700" : "bg-red-100 text-red-700"}`}>
                       {wipeResult.ok
                         ? "All tables dropped. Use Rebuild to recreate them."
-                        : `Some tables failed to drop: ${Object.entries(wipeResult.results).filter(([,v]) => v !== "dropped").map(([k]) => k).join(", ")}`}
+                        : wipeResult.error
+                          ? `Drop failed: ${wipeResult.error}`
+                          : `Some tables failed to drop: ${Object.entries(wipeResult.results ?? {}).filter(([,v]) => v !== "dropped").map(([k]) => k).join(", ")}`}
                     </div>
                   )}
                 </div>

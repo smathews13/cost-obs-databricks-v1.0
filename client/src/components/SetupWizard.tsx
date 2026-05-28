@@ -162,6 +162,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
   const [verifyingGrants, setVerifyingGrants] = useState(false);
   const [grantVerifyElapsed, setGrantVerifyElapsed] = useState(0);
   const grantVerifyRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const autoGrantAttempted = useRef(false);
 
   // Storage location step state
   const [catalogInput, setCatalogInput] = useState("");
@@ -214,7 +215,11 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
   useEffect(() => {
     setStoragePhase('idle');
     setStorageChecks({ config: null, catalog: null, schema: null });
+    // Reset auto-grant guard when leaving permissions step so a manual recheck
+    // can re-trigger if the user navigates away and back.
+    if (step !== "permissions") autoGrantAttempted.current = false;
   }, [step]);
+
 
   const loadReadiness = useCallback(async (forceRefresh = false) => {
     setLoading(true);
@@ -298,6 +303,22 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
     setGrantRunning(false);
   }
   }, [loadReadiness]);
+
+  // Auto-fire grants when permissions step loads with failures so the user never
+  // has to manually click "Apply SP Grants" on a fresh deploy.
+  useEffect(() => {
+    if (step !== "permissions") return;
+    if (!readiness) return;
+    if (autoGrantAttempted.current) return;
+    if (grantRunning || grantResult) return;
+    const hasFailing =
+      !readiness.warehouse.granted ||
+      readiness.core.some(c => !c.granted) ||
+      readiness.enhanced.some(c => !c.granted);
+    if (!hasFailing) return;
+    autoGrantAttempted.current = true;
+    handleAutoGrant();
+  }, [step, readiness, grantRunning, grantResult, handleAutoGrant]);
 
   const pollSetupStatus = useCallback(async () => {
     try {

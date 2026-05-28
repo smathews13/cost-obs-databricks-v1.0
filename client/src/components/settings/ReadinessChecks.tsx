@@ -124,7 +124,7 @@ function CheckRow({ check, showTable = true }: { check: ReadinessCheck | Readine
           </div>
           <p className="mt-0.5 text-[11px] text-gray-500">{check.description}</p>
           {!check.granted && check.error && (
-            <p className="mt-0.5 text-[11px] text-red-500 break-all line-clamp-2">{check.error}</p>
+            <p className="mt-0.5 text-[11px] text-red-500">{check.error}</p>
           )}
           {expanded && hasFix && (
             <div className="mt-2 space-y-1">

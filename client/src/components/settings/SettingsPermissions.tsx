@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReadinessChecks, normalizeReadinessResult } from "./ReadinessChecks";
 import type { ReadinessResult } from "./ReadinessChecks";
@@ -35,6 +35,7 @@ export function SettingsPermissions() {
   const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[]; grants_sql?: string; obo_scope_missing?: boolean } | null>(null);
   const [grantSqlCopied, setGrantSqlCopied] = useState(false);
   const [readinessOpen, setReadinessOpen] = useState(false);
+  const autoGrantAttempted = useRef(false);
 
   const { data: permissions, isLoading } = useQuery<UserPermissions>({
     queryKey: ["user-permissions"],
@@ -127,6 +128,22 @@ export function SettingsPermissions() {
       setGrantRunning(false);
     }
   };
+
+  // Auto-fire grants on first load if there are SP access failures — avoids
+  // requiring a manual "Apply SP Grants" click on fresh deploys.
+  useEffect(() => {
+    if (!readiness) return;
+    if (autoGrantAttempted.current) return;
+    if (grantRunning || grantResult) return;
+    const hasFailing =
+      !readiness.warehouse.granted ||
+      readiness.core.some(c => !c.granted) ||
+      readiness.enhanced.some(c => !c.granted);
+    if (!hasFailing) return;
+    autoGrantAttempted.current = true;
+    runSpGrants();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readiness]);
 
   const addAdmin = () => {
     const email = newAdmin.trim();

@@ -106,7 +106,7 @@ function CalendarView({
                   return (
                     <div
                       key={dateStr}
-                      className="group relative flex aspect-square items-center justify-center rounded text-[11px] font-medium"
+                      className="group relative flex aspect-square flex-col items-center justify-center rounded text-[11px] font-medium"
                       style={
                         inRange
                           ? styles
@@ -115,7 +115,16 @@ function CalendarView({
                           : { opacity: 0.2, background: "rgba(128,128,128,0.05)" }
                       }
                     >
-                      {format(day, "d")}
+                      <span>{format(day, "d")}</span>
+                      {anomaly && (
+                        <svg className="h-2.5 w-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+                          {anomaly.change_amount > 0 ? (
+                            <polygon points="5,1 9,8 1,8" />
+                          ) : (
+                            <polygon points="5,9 9,2 1,2" />
+                          )}
+                        </svg>
+                      )}
                       {anomaly && (
                         <div className="pointer-events-none absolute bottom-full left-1/2 z-[9999] mb-1 w-44 -translate-x-1/2 rounded-lg bg-gray-900 px-3 py-2 text-[11px] text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
                           <div className="font-semibold">{format(day, "MMM d, yyyy")}</div>

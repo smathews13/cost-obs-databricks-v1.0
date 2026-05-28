@@ -1804,6 +1804,13 @@ def _build_fix_sql(table: str, sp_client_id: str) -> str:
     parts = table.split(".")
     if len(parts) == 3:
         q0, q1, q2 = _uc_identifier(parts[0]), _uc_identifier(parts[1]), _uc_identifier(parts[2])
+        if parts[0] == "system":
+            # System tables are read-only — CREATE TABLE and MODIFY grants fail.
+            return (
+                f"GRANT USE CATALOG ON CATALOG {q0} TO `{sp_client_id}`;\n"
+                f"GRANT USE SCHEMA ON SCHEMA {q0}.{q1} TO `{sp_client_id}`;\n"
+                f"GRANT SELECT ON TABLE {q0}.{q1}.{q2} TO `{sp_client_id}`;"
+            )
         return (
             f"GRANT USE CATALOG ON CATALOG {q0} TO `{sp_client_id}`;\n"
             f"GRANT USE SCHEMA ON SCHEMA {q0}.{q1} TO `{sp_client_id}`;\n"
@@ -1838,6 +1845,18 @@ def _safe_table_check_result(table_name: str, future: _Future) -> tuple[bool, st
         lower = msg.lower()
         if any(kw in lower for kw in ("permission", "denied", "privilege", "unauthorized", "forbidden")):
             return False, msg, CheckStatus.PERMISSION_DENIED
+        # Unity Catalog returns "table/view not found" or "does not exist" instead of a
+        # permission error when the SP lacks SELECT on a system table — it hides the table
+        # from the SP's metadata view entirely. Treat this as a missing grant, not an
+        # internal error, so the Fix button is shown and the cache TTL is appropriate.
+        if table_name.startswith("system.") and any(
+            kw in lower for kw in ("does not exist", "not found", "table or view not found", "no such")
+        ):
+            clear_msg = (
+                f"Missing SELECT grant — Unity Catalog hides `{table_name}` from the SP "
+                f"until a metastore admin runs the GRANT below"
+            )
+            return False, clear_msg, CheckStatus.PERMISSION_DENIED
         return False, msg, CheckStatus.INTERNAL_ERROR
     except Exception as exc:
         logger.error("Table check future for %s raised: %s", table_name, exc, exc_info=True)

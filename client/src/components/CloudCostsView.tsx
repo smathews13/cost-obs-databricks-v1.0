@@ -1039,15 +1039,15 @@ export function CloudCostsView({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+        <div>
+          <table className="w-full table-fixed divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="cursor-pointer px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => handleSort("cluster_name")}>
                   Cluster <SortIcon field="cluster_name" />
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Instance Types</th>
-                <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="w-44 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Instance Types</th>
+                <th className="w-28 px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
                   <div className="flex items-center justify-end gap-1">
                     <span className="cursor-pointer hover:text-gray-700" onClick={() => handleSort("estimated_aws_cost")}>
                       Est. Cost <SortIcon field="estimated_aws_cost" />
@@ -1068,13 +1068,13 @@ export function CloudCostsView({
                     </div>
                   </div>
                 </th>
-                <th className="cursor-pointer px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => handleSort("total_dbu_hours")}>
+                <th className="w-28 cursor-pointer px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => handleSort("total_dbu_hours")}>
                   DBU Hours <SortIcon field="total_dbu_hours" />
                 </th>
-                <th className="cursor-pointer px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => handleSort("days_active")}>
+                <th className="w-16 cursor-pointer px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700" onClick={() => handleSort("days_active")}>
                   Days <SortIcon field="days_active" />
                 </th>
-                <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">%</th>
+                <th className="w-14 px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">%</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
@@ -1120,7 +1120,7 @@ export function CloudCostsView({
                       <div className="flex flex-col gap-1">
                         {cluster.driver_instance_type && (
                           <div className="group relative inline-flex items-center gap-1">
-                            <span className="inline-flex rounded bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">D: {cluster.driver_instance_type}</span>
+                            <span className="inline-flex max-w-full truncate rounded bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700" title={`D: ${cluster.driver_instance_type}`}>D: {cluster.driver_instance_type}</span>
                             <a href={getInstancePricingUrl(cluster.driver_instance_type, isAzure)} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title={`View ${isAzure ? "Azure" : "AWS"} pricing for this instance type`}>
                               <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1130,7 +1130,7 @@ export function CloudCostsView({
                         )}
                         {cluster.worker_instance_type && (
                           <div className="group relative inline-flex items-center gap-1">
-                            <span className="inline-flex rounded bg-green-50 px-2 py-0.5 text-xs font-mono text-green-700">W: {cluster.worker_instance_type}</span>
+                            <span className="inline-flex max-w-full truncate rounded bg-green-50 px-2 py-0.5 text-xs font-mono text-green-700" title={`W: ${cluster.worker_instance_type}`}>W: {cluster.worker_instance_type}</span>
                             <a href={getInstancePricingUrl(cluster.worker_instance_type, isAzure)} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-700" title={`View ${isAzure ? "Azure" : "AWS"} pricing for this instance type`}>
                               <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

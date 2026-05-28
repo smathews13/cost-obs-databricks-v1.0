@@ -8,6 +8,7 @@ difference between the two is the table name.
 
 import asyncio
 import logging
+import time as _time
 from datetime import date, timedelta
 from typing import Any
 
@@ -18,6 +19,11 @@ from server import workspace_filter as wf
 from server import cache_ttls
 
 logger = logging.getLogger(__name__)
+
+# Per-table MV status cache (keyed by table_name).
+# Uses UC REST API so it never blocks the event loop on cold warehouses.
+_mv_status_cache: dict[str, tuple[float, dict]] = {}
+_MV_STATUS_CACHE_TTL = 300.0  # 5 minutes
 
 
 def _resolve_url(url: str | None, host: str) -> str | None:
@@ -179,21 +185,30 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         return wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
 
     async def check_mv_status() -> dict[str, Any]:
+        # Serve from cache if fresh — avoids a warehouse round-trip on every request.
+        now = _time.monotonic()
+        cached = _mv_status_cache.get(table_name)
+        if cached and (now - cached[0]) < _MV_STATUS_CACHE_TTL:
+            return cached[1]
+
         catalog, schema = get_catalog_schema()
 
+        # Use UC REST API (no SQL warehouse needed — fast even when the warehouse is cold).
+        # The old execute_query(information_schema) approach blocked the event loop for
+        # 15-60 s on a cold warehouse, queuing all concurrent requests to every other tab.
         try:
-            query = sql["check_mv"].format(catalog=catalog, schema=schema)
-            results = execute_query(query)
-            available = len(results) > 0
+            from server.materialized_views import check_materialized_views_exist
+            tables = await asyncio.to_thread(check_materialized_views_exist, catalog, schema)
+            available = tables.get(table_name, False)
         except Exception as e:
-            logger.warning(f"DBSQL cost MV ({table_name}) not available: {e}")
+            logger.warning(f"DBSQL cost MV ({table_name}) UC check failed: {e}")
             available = False
 
         data_range = {}
         if available:
             try:
                 range_query = sql["data_range"].format(catalog=catalog, schema=schema)
-                range_results = execute_query(range_query)
+                range_results = await asyncio.to_thread(execute_query, range_query)
                 if range_results:
                     row = range_results[0]
                     data_range = {
@@ -204,13 +219,19 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             except Exception as e:
                 logger.warning(f"Could not get data range for {table_name}: {e}")
 
-        return {
+        result = {
             "mv_available": available,
             "catalog": catalog,
             "schema": schema,
             "table": table_name if available else None,
             "data_range": data_range,
         }
+        _mv_status_cache[table_name] = (now, result)
+        return result
+
+    async def _exec_async(query_key: str, params: dict, catalog: str, schema: str, ws_clause: str = "") -> list[dict]:
+        """Run _exec in a thread pool so the event loop is free during the warehouse query."""
+        return await asyncio.to_thread(_exec, query_key, params, catalog, schema, ws_clause)
 
     @router.get("/status")
     async def get_status() -> dict[str, Any]:
@@ -234,7 +255,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
                 "end_date": end_date,
             }
 
-        results = _exec("summary", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
+        results = await _exec_async("summary", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         data_range = status.get("data_range", {})
 
@@ -276,7 +297,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "sources": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("by_source", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
+        results = await _exec_async("by_source", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         sources = []
         total_spend = 0
@@ -309,7 +330,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "users": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("by_user", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
+        results = await _exec_async("by_user", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         users = []
         for row in results:
@@ -336,12 +357,12 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "warehouses": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("by_warehouse", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
+        results = await _exec_async("by_warehouse", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         # Look up warehouse names and types from system.compute.warehouses
         warehouse_meta: dict[str, dict[str, str]] = {}
         try:
-            meta_results = execute_query("""
+            meta_results = await asyncio.to_thread(execute_query, """
                 SELECT w.warehouse_id, MAX(w.warehouse_name) as warehouse_name,
                        MAX(w.warehouse_type) as warehouse_type, MAX(w.warehouse_size) as warehouse_size,
                        MAX(w.workspace_id) as workspace_id,
@@ -402,7 +423,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "queries": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("top_queries", {"start_date": start_date, "end_date": end_date, "limit": limit}, catalog, schema, _ws_clause(workspace_ids))
+        results = await _exec_async("top_queries", {"start_date": start_date, "end_date": end_date, "limit": limit}, catalog, schema, _ws_clause(workspace_ids))
 
         host = get_host_url()
         queries = []
@@ -465,7 +486,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             LIMIT {safe_limit}
         """
         params = {"start_date": start_date, "end_date": end_date, "source_type": source_type}
-        results = execute_query(query, params)
+        results = await asyncio.to_thread(execute_query, query, params)
 
         host = get_host_url()
         queries = []
@@ -498,7 +519,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if not status["mv_available"]:
             return {"available": False, "timeseries": [], "source_types": [], "start_date": start_date, "end_date": end_date}
 
-        results = _exec("timeseries", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
+        results = await _exec_async("timeseries", {"start_date": start_date, "end_date": end_date}, catalog, schema, _ws_clause(workspace_ids))
 
         data_by_date: dict[str, dict[str, Any]] = {}
         source_types_set: set[str] = set()
@@ -532,8 +553,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         start_date, end_date = _default_dates(start_date, end_date)
 
         try:
-            # Get warehouse type metadata
-            meta_results = execute_query("""
+            meta_results = await asyncio.to_thread(execute_query, """
                 SELECT warehouse_id, MAX(warehouse_type) as warehouse_type
                 FROM system.compute.warehouses
                 GROUP BY warehouse_id
@@ -543,7 +563,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             wh_types = {}
 
         try:
-            results = execute_query("""
+            results = await asyncio.to_thread(execute_query, """
                 SELECT
                   u.usage_date as date,
                   u.usage_metadata.warehouse_id as warehouse_id,

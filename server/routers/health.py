@@ -250,11 +250,16 @@ async def clear_cache(tab: str | None = None) -> dict[str, Any]:
     else:
         cleared = clear_query_cache()
         delta_cache_invalidate()
-        # Reset MV availability cache so the next request re-detects table state.
+        # Reset MV availability caches so the next request re-detects table state.
         try:
             from server.routers.billing import _mv_cache
             _mv_cache["available"] = None
             _mv_cache["checked_at"] = 0
+        except Exception:
+            pass
+        try:
+            from server.routers.dbsql_base import _mv_status_cache
+            _mv_status_cache.clear()
         except Exception:
             pass
         return {"status": "ok", "tab": "all", "cleared": cleared}

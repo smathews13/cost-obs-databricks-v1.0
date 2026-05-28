@@ -478,6 +478,16 @@ async def mark_setup_complete(background_tasks: BackgroundTasks) -> dict[str, An
     from server.routers import settings as _settings_router
     _settings_router._tables_cache = None
 
+    # Reset the billing MV availability cache so the first post-setup request
+    # re-detects the newly created tables instead of serving a stale "unavailable"
+    # result for up to 30 minutes.
+    try:
+        from server.routers.billing import _mv_cache
+        _mv_cache["available"] = None
+        _mv_cache["checked_at"] = 0
+    except Exception:
+        pass
+
     # Kick off the initial MV build in the background — the catalog/schema were
     # just created so no data exists yet.  Failures are non-fatal: the dashboard
     # falls back to direct system-table queries until the build completes.

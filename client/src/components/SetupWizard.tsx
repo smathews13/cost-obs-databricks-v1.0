@@ -683,48 +683,78 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
                       setStorageChecks(c => ({ ...c, config: true }));
                     }
 
-                    // Step 2: Create catalog
+                    // Step 2: Create catalog (auto-retry — warehouse may be cold on first use)
                     setStoragePhase("creating-catalog");
-                    try {
-                      const res = await fetch("/api/setup/ensure-catalog", {
-                        method: "POST",
-                        signal: AbortSignal.timeout(45000),
-                      });
-                      const body = await res.json().catch(() => ({}));
-                      if (!res.ok || body.ok === false) {
-                        setError(body.message || body.detail || `Could not create catalog \`${cat}\``);
-                        setStorageChecks(c => ({ ...c, catalog: false }));
-                        setStoragePhase("error");
-                        return;
+                    {
+                      let done = false;
+                      for (let attempt = 1; attempt <= 3 && !done; attempt++) {
+                        if (attempt > 1) await new Promise(r => setTimeout(r, 4000));
+                        try {
+                          const res = await fetch("/api/setup/ensure-catalog", {
+                            method: "POST",
+                            signal: AbortSignal.timeout(90000),
+                          });
+                          const body = await res.json().catch(() => ({}));
+                          if (!res.ok || body.ok === false) {
+                            if (attempt === 3) {
+                              setError(body.message || body.detail || `Could not create catalog \`${cat}\``);
+                              setStorageChecks(c => ({ ...c, catalog: false }));
+                              setStoragePhase("error");
+                              return;
+                            }
+                          } else {
+                            setStorageChecks(c => ({ ...c, catalog: true }));
+                            done = true;
+                          }
+                        } catch (e: unknown) {
+                          if (attempt === 3) {
+                            const isTimeout = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+                            setError(isTimeout
+                              ? "Warehouse is starting up — click Retry to try again (usually succeeds within 60s)."
+                              : `Could not create catalog: ${e}`);
+                            setStorageChecks(c => ({ ...c, catalog: false }));
+                            setStoragePhase("error");
+                            return;
+                          }
+                        }
                       }
-                      setStorageChecks(c => ({ ...c, catalog: true }));
-                    } catch (e: unknown) {
-                      setError(`Could not create catalog: ${e}`);
-                      setStorageChecks(c => ({ ...c, catalog: false }));
-                      setStoragePhase("error");
-                      return;
                     }
 
-                    // Step 3: Create schema
+                    // Step 3: Create schema (auto-retry — warehouse may be cold on first use)
                     setStoragePhase("creating-schema");
-                    try {
-                      const res = await fetch("/api/setup/ensure-schema", {
-                        method: "POST",
-                        signal: AbortSignal.timeout(45000),
-                      });
-                      const body = await res.json().catch(() => ({}));
-                      if (!res.ok || body.ok === false) {
-                        setError(body.message || body.detail || `Could not create schema \`${cat}.${sch}\``);
-                        setStorageChecks(c => ({ ...c, schema: false }));
-                        setStoragePhase("error");
-                        return;
+                    {
+                      let done = false;
+                      for (let attempt = 1; attempt <= 3 && !done; attempt++) {
+                        if (attempt > 1) await new Promise(r => setTimeout(r, 4000));
+                        try {
+                          const res = await fetch("/api/setup/ensure-schema", {
+                            method: "POST",
+                            signal: AbortSignal.timeout(90000),
+                          });
+                          const body = await res.json().catch(() => ({}));
+                          if (!res.ok || body.ok === false) {
+                            if (attempt === 3) {
+                              setError(body.message || body.detail || `Could not create schema \`${cat}.${sch}\``);
+                              setStorageChecks(c => ({ ...c, schema: false }));
+                              setStoragePhase("error");
+                              return;
+                            }
+                          } else {
+                            setStorageChecks(c => ({ ...c, schema: true }));
+                            done = true;
+                          }
+                        } catch (e: unknown) {
+                          if (attempt === 3) {
+                            const isTimeout = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+                            setError(isTimeout
+                              ? "Warehouse is starting up — click Retry to try again (usually succeeds within 60s)."
+                              : `Could not create schema: ${e}`);
+                            setStorageChecks(c => ({ ...c, schema: false }));
+                            setStoragePhase("error");
+                            return;
+                          }
+                        }
                       }
-                      setStorageChecks(c => ({ ...c, schema: true }));
-                    } catch (e: unknown) {
-                      setError(`Could not create schema: ${e}`);
-                      setStorageChecks(c => ({ ...c, schema: false }));
-                      setStoragePhase("error");
-                      return;
                     }
 
                     setStoragePhase("done");
@@ -754,7 +784,8 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
             ) : (
               <button
                 onClick={goNext}
-                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors"
+                disabled={loading}
+                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
               </button>

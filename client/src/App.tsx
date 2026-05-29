@@ -637,8 +637,9 @@ function Dashboard() {
 
   if (setupCheckPending) {
     return (
-      <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#F9F7F4' }}>
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-[#FF3621]" />
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4" style={{ backgroundColor: '#F9F7F4' }}>
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
+        <p className="text-sm font-medium" style={{ color: '#1B3139' }}>Checking setup status…</p>
       </div>
     );
   }

@@ -887,6 +887,7 @@ async def get_catalog_settings():
 @router.post("/catalog")
 async def save_catalog_settings(body: dict):
     """Save catalog/schema override from the Setup Wizard."""
+    import asyncio as _asyncio
     from fastapi import HTTPException
     from server.db import save_catalog_schema, StorageConfigurationError
     catalog = (body.get("catalog") or "").strip()
@@ -894,7 +895,11 @@ async def save_catalog_settings(body: dict):
     if not catalog or not schema:
         raise HTTPException(status_code=400, detail="catalog and schema are required")
     try:
-        save_catalog_schema(catalog, schema)
+        # Run in executor — save_catalog_schema makes a DBFS network call that would
+        # block the async event loop if called directly, potentially causing 502s when
+        # the DBFS write is slow or the workspace is momentarily unresponsive.
+        loop = _asyncio.get_running_loop()
+        await loop.run_in_executor(None, save_catalog_schema, catalog, schema)
     except StorageConfigurationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"catalog": catalog, "schema": schema, "source": "override"}

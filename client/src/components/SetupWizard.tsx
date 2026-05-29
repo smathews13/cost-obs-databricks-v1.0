@@ -1080,7 +1080,6 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
                   <div className="h-4 w-4 rounded-full border-2 border-gray-200" />
                 )}
                 <span className="font-mono text-xs text-gray-700">{table}</span>
-                {state === "running" && <span className="text-xs text-gray-500">building…</span>}
               </div>
             ))}
           </div>
@@ -1090,6 +1089,13 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
   }
 
   if (tablesJustCreated || setupStatus?.all_tables_exist) {
+    // Prefer task.table_progress (all 11 tables) over setupStatus.tables (6 MVs only)
+    const doneEntries: [string, string][] = setupStatus?.task?.table_progress
+      ? Object.entries(setupStatus.task.table_progress)
+      : setupStatus
+      ? Object.entries(setupStatus.tables).map(([t, exists]) => [t, exists ? "done" : "error"] as [string, string])
+      : [];
+
     return (
       <div className="space-y-4">
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
@@ -1098,12 +1104,12 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
           </svg>
           <p className="text-sm font-medium text-green-800">Tables created successfully. Click <strong>Next</strong> to continue.</p>
         </div>
-        {setupStatus && Object.keys(setupStatus.tables).length > 0 && (
+        {doneEntries.length > 0 && (
           <div className="space-y-1">
-            {Object.entries(setupStatus.tables).map(([table, exists]) => (
+            {doneEntries.map(([table, state]) => (
               <div key={table} className="flex items-center gap-2 px-3 py-1 text-sm">
-                <svg className={`h-4 w-4 ${exists ? "text-green-500" : "text-amber-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={exists ? "M5 13l4 4L19 7" : "M6 18L18 6M6 6l12 12"} />
+                <svg className={`h-4 w-4 ${state === "done" ? "text-green-500" : "text-amber-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={state === "done" ? "M5 13l4 4L19 7" : "M6 18L18 6M6 6l12 12"} />
                 </svg>
                 <span className="font-mono text-xs">{table}</span>
               </div>

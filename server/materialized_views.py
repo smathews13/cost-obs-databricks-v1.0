@@ -1581,14 +1581,7 @@ def check_materialized_views_exist(catalog: str | None = None, schema: str | Non
         catalog = catalog or cat
         schema = schema or sch
 
-    table_names = [
-        "daily_usage_summary",
-        "daily_product_breakdown",
-        "daily_workspace_breakdown",
-        "sql_tool_attribution",
-        "daily_query_stats",
-        "dbsql_cost_per_query",
-    ]
+    table_names = _MV_TABLES
 
     # Use the Unity Catalog REST API (no SQL warehouse needed — fast even when cold).
     # Databricks Apps creates a new SP on every redeploy, so the SP may have no grants

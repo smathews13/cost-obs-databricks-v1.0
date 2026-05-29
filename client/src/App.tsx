@@ -370,7 +370,7 @@ function Dashboard() {
   const { data: warehouseStatus } = useQuery<{ status: "warm" | "warming_up" | "unavailable"; state?: string }>({
     queryKey: ["health", "sql-warehouse"],
     queryFn: () => fetch("/api/health/sql-warehouse").then(r => r.ok ? r.json() : { status: "warm" }),
-    refetchInterval: (query) => (!query.state.data || query.state.data.status === "warming_up") ? 5000 : 60000,
+    refetchInterval: (query) => (query.state.data?.status === "warming_up") ? 5000 : 60000,
     staleTime: 0,
   });
   const warehouseWarming = warehouseStatus?.status === "warming_up";

@@ -2053,7 +2053,7 @@ async def get_kpis_bundle(
     catalog, schema = get_catalog_schema()
     USER_COUNT_QUERY = f"""
     SELECT COUNT(DISTINCT executed_by) as unique_query_users
-    FROM {catalog}.{schema}.dbsql_cost_per_query
+    FROM `{catalog}`.`{schema}`.`dbsql_cost_per_query`
     WHERE start_time >= :start_date AND start_time < DATE_ADD(CAST(:end_date AS DATE), 1)
     """
 
@@ -2216,7 +2216,7 @@ async def get_kpi_trend(
     if kpi == "total_spend" or kpi == "avg_daily_spend":
         if use_mv:
             catalog, schema = get_catalog_schema()
-            query = f"SELECT usage_date as date, SUM(total_spend) as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
+            query = f"SELECT usage_date as date, SUM(total_spend) as value FROM `{catalog}`.`{schema}`.`daily_usage_summary` WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
             mv_fallback_query = """
         WITH usage_with_price AS (
           SELECT
@@ -2263,7 +2263,7 @@ async def get_kpi_trend(
     elif kpi == "total_dbus":
         if use_mv:
             catalog, schema = get_catalog_schema()
-            query = f"SELECT usage_date as date, SUM(total_dbus) as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
+            query = f"SELECT usage_date as date, SUM(total_dbus) as value FROM `{catalog}`.`{schema}`.`daily_usage_summary` WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
             mv_fallback_query = """
         SELECT
           usage_date as date,
@@ -2288,7 +2288,7 @@ async def get_kpi_trend(
     elif kpi == "workspace_count":
         if use_mv:
             catalog, schema = get_catalog_schema()
-            query = f"SELECT usage_date as date, COUNT(DISTINCT workspace_id) as value FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
+            query = f"SELECT usage_date as date, COUNT(DISTINCT workspace_id) as value FROM `{catalog}`.`{schema}`.`daily_usage_summary` WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
             mv_fallback_query = """
         SELECT
           usage_date as date,

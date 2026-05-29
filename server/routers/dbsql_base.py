@@ -478,7 +478,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
               url_helper as source_url,
               start_time,
               end_time
-            FROM {catalog}.{schema}.{table_name}
+            FROM `{catalog}`.`{schema}`.`{table_name}`
             WHERE start_time >= :start_date
               AND start_time < :end_date
               AND query_source_type = :source_type

@@ -250,7 +250,7 @@ export function ReadinessChecks({
                 {autoGrantResult.grants_sql && (
                   <div className="mt-2 space-y-1">
                     <p className="text-[10px] font-medium text-amber-900">
-                      Run as metastore admin — Copy and run the SQL below, then click Re-check.
+                      Run as metastore admin (audit logs require account admin) — Copy and run the SQL below, then click Re-check.
                     </p>
                     <div className="relative">
                       <CopyButton text={autoGrantResult.grants_sql} />

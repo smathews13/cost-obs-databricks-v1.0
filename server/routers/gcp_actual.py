@@ -84,7 +84,7 @@ SELECT
   COUNT(DISTINCT project.id)             AS project_count,
   COUNT(DISTINCT service.description)    AS service_count,
   COUNT(DISTINCT DATE(usage_start_time)) AS days_in_range
-FROM {catalog}.{schema}.{table}
+FROM `{catalog}`.`{schema}`.`{table}`
 WHERE DATE(usage_start_time) >= :start_date
   AND DATE(usage_start_time) <  :end_date
   AND cost > 0
@@ -98,7 +98,7 @@ SELECT
   service.description                     AS service,
   SUM(cost)                               AS total_cost,
   COUNT(DISTINCT DATE(usage_start_time))  AS days_active
-FROM {catalog}.{schema}.{table}
+FROM `{catalog}`.`{schema}`.`{table}`
 WHERE DATE(usage_start_time) >= :start_date
   AND DATE(usage_start_time) <  :end_date
   AND cost > 0
@@ -113,7 +113,7 @@ SELECT
   project.name                            AS project_name,
   SUM(cost)                               AS total_cost,
   COUNT(DISTINCT service.description)     AS service_count
-FROM {catalog}.{schema}.{table}
+FROM `{catalog}`.`{schema}`.`{table}`
 WHERE DATE(usage_start_time) >= :start_date
   AND DATE(usage_start_time) <  :end_date
   AND cost > 0
@@ -127,7 +127,7 @@ SELECT
   service.description  AS service,
   sku.description      AS sku,
   SUM(cost)            AS total_cost
-FROM {catalog}.{schema}.{table}
+FROM `{catalog}`.`{schema}`.`{table}`
 WHERE DATE(usage_start_time) >= :start_date
   AND DATE(usage_start_time) <  :end_date
   AND cost > 0
@@ -141,7 +141,7 @@ SELECT
   DATE(usage_start_time) AS date,
   service.description    AS service,
   SUM(cost)              AS daily_cost
-FROM {catalog}.{schema}.{table}
+FROM `{catalog}`.`{schema}`.`{table}`
 WHERE DATE(usage_start_time) >= :start_date
   AND DATE(usage_start_time) <  :end_date
   AND cost > 0

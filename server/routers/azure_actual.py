@@ -49,7 +49,7 @@ SELECT
   COUNT(DISTINCT usage_metadata.cluster_id)   AS cluster_count,
   COUNT(DISTINCT usage_metadata.warehouse_id) AS warehouse_count,
   COUNT(DISTINCT DATE(usage_date))            AS days_in_range
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
 """
@@ -62,7 +62,7 @@ SELECT
   SUM(CASE WHEN charge_type = 'Networking' THEN cost_in_billing_currency ELSE 0 END) AS network_cost,
   SUM(cost_in_billing_currency)                                                       AS total_cost,
   COUNT(DISTINCT DATE(usage_date))                                                    AS days_active
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
   AND usage_metadata.cluster_id IS NOT NULL
@@ -76,7 +76,7 @@ SELECT
   usage_metadata.warehouse_id  AS warehouse_id,
   SUM(cost_in_billing_currency) AS total_cost,
   COUNT(DISTINCT DATE(usage_date)) AS days_active
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
   AND usage_metadata.warehouse_id IS NOT NULL
@@ -90,7 +90,7 @@ SELECT
   charge_type,
   SUM(cost_in_billing_currency) AS total_cost,
   SUM(cost_in_usd)              AS total_cost_usd
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
 GROUP BY charge_type
@@ -101,7 +101,7 @@ AZURE_COSTS_BY_PRICING_MODEL = """
 SELECT
   pricing_model,
   SUM(cost_in_billing_currency) AS total_cost
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
 GROUP BY pricing_model
@@ -113,7 +113,7 @@ SELECT
   DATE(usage_date)              AS date,
   charge_type,
   SUM(cost_in_billing_currency) AS daily_cost
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
 GROUP BY DATE(usage_date), charge_type

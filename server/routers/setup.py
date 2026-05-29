@@ -1,5 +1,6 @@
 """Setup API endpoints for initializing materialized views."""
 
+import asyncio
 import json
 import logging
 import os
@@ -562,10 +563,14 @@ async def get_bootstrap_state() -> dict[str, Any]:
     return _create_task_state.copy()
 
 
+_ACCOUNT_ADMIN_TABLES = {"system.access.audit"}
+
 def _build_system_grants_sql(sp_id: str) -> str:
     """Return the full set of system table GRANT statements as a copyable SQL block."""
     lines = []
     for privilege, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
+        if obj_type == "TABLE" and obj_name in _ACCOUNT_ADMIN_TABLES:
+            lines.append(f"-- NOTE: {obj_name} requires account-admin (not just metastore admin)")
         parts = obj_name.split(".")
         q = ".".join(f"`{p}`" for p in parts)
         if obj_type == "CATALOG":
@@ -706,9 +711,9 @@ async def grant_sp_system_access(request: Request) -> dict[str, Any]:
     total_failed = app_result["failed"] + sys_result["failed"]
     all_errors = app_result.get("errors", []) + sys_result.get("errors", [])
 
-    # Build copyable SQL for any failed system grants so the UI can surface it
-    # with a "Run as metastore admin" label.
-    grants_sql = _build_system_grants_sql(sp_id) if sys_result["failed"] > 0 else None
+    # Always show copyable SQL when grants couldn't be applied (failed OR no token).
+    # system.access.audit requires account-admin; other tables need metastore admin.
+    grants_sql = _build_system_grants_sql(sp_id) if (sys_result["failed"] > 0 or sys_result.get("obo_scope_missing")) else None
 
     return {
         "ok": total_failed == 0,

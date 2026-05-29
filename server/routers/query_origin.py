@@ -4,6 +4,7 @@ Classifies SQL warehouse queries by origin using query_tags, client_application,
 executed_by identity, and query_source metadata from system.query.history.
 """
 
+import asyncio
 import logging
 from datetime import date, timedelta
 from typing import Any

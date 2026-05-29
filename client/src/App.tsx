@@ -211,9 +211,12 @@ function Dashboard() {
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>([]);
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
   // true = show wizard, false = show dashboard.
-  // Default to false — the status check flips it to true only if setup is genuinely
-  // needed. Starting false prevents the wizard from flashing on container restart
-  // (where .settings/ is wiped but the DBFS flag returns "ready" within ~2 s).
+  // True until /api/setup/status resolves — blocks the dashboard from rendering.
+  // Skip for returning users (local cache says done) so they never see a loading gate.
+  const [setupCheckPending, setSetupCheckPending] = useState<boolean>(
+    () => localStorage.getItem("coc-setup-complete") !== "true" &&
+          sessionStorage.getItem("coc-setup-complete") !== "true"
+  );
   const [showSetupWizard, setShowSetupWizard] = useState<boolean>(false);
   // Set when user closes wizard without completing — shows the incomplete banner on dashboard.
   const [setupIncomplete, setSetupIncomplete] = useState(false);
@@ -244,6 +247,7 @@ function Dashboard() {
       .then((r) => r.json())
       .then((status) => {
         clearTimeout(timeout);
+        setSetupCheckPending(false);
         if (status?.status === "ready") {
           localStorage.setItem("coc-setup-complete", "true");
           sessionStorage.setItem("coc-setup-complete", "true");
@@ -251,23 +255,18 @@ function Dashboard() {
         } else if (status?.status === "setup_required") {
           // Only show wizard on a definitive "setup_required" — not on transient states
           // like "initializing". Avoids wizard flash during cold start or mid-build polling.
-          // Only clear local cache on explicit setup_required so Safari Private Mode
-          // users don't lose their fallback if they briefly lose connectivity.
           if (!prevCompleted()) {
             localStorage.removeItem("coc-setup-complete");
             sessionStorage.removeItem("coc-setup-complete");
             setShowSetupWizard(true);
           }
-          // If they have a local completion record, trust it — they're a returning user
-          // and the server may be in a transient state (redeploy, DBFS slow).
         }
-        // "initializing" and other transient states: no wizard change
+        // "initializing" and other transient states: no wizard change, but unblock dashboard
       })
       .catch(() => {
         clearTimeout(timeout);
+        setSetupCheckPending(false);
         // Network error, timeout, or non-JSON — trust local cache rather than flashing wizard.
-        // This is the primary Safari fix: first-party cookies may not be sent on the
-        // initial fetch in Safari's strict mode, causing a redirect instead of JSON.
         if (!prevCompleted()) {
           setShowSetupWizard(true);
         }
@@ -632,6 +631,14 @@ function Dashboard() {
           onComplete={handleSetupComplete}
           onClose={() => { setShowSetupWizard(false); setSetupIncomplete(true); }}
         />
+      </div>
+    );
+  }
+
+  if (setupCheckPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#F9F7F4' }}>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-[#FF3621]" />
       </div>
     );
   }

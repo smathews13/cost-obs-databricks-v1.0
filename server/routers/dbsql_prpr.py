@@ -13,6 +13,7 @@ Key differences from original implementation:
 - Structured query source classification from query_source fields
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -147,7 +148,7 @@ async def get_methodology_comparison(
       SUM(query_attributed_dollars_estimation) as total_spend,
       SUM(query_attributed_dbus_estimation) as total_dbus,
       AVG(query_attributed_dollars_estimation) as avg_cost_per_query
-    FROM {catalog}.{schema}.dbsql_cost_per_query
+    FROM `{catalog}`.`{schema}`.`dbsql_cost_per_query`
     WHERE start_time >= :start_date
       AND start_time < :end_date
     """
@@ -158,7 +159,7 @@ async def get_methodology_comparison(
       SUM(query_attributed_dollars_estimation) as total_spend,
       SUM(query_attributed_dbus_estimation) as total_dbus,
       AVG(query_attributed_dollars_estimation) as avg_cost_per_query
-    FROM {catalog}.{schema}.dbsql_cost_per_query_prpr
+    FROM `{catalog}`.`{schema}`.`dbsql_cost_per_query_prpr`
     WHERE start_time >= :start_date
       AND start_time < :end_date
     """
@@ -239,7 +240,7 @@ async def get_warehouse_efficiency(
         COUNT(*) as total_queries,
         SUM(query_attributed_dollars_estimation) as total_cost,
         SUM(query_attributed_dbus_estimation) as total_dbus
-      FROM {catalog}.{schema}.dbsql_cost_per_query
+      FROM `{catalog}`.`{schema}`.`dbsql_cost_per_query`
       WHERE start_time >= :start_date
         AND start_time < :end_date
       GROUP BY warehouse_id
@@ -250,7 +251,7 @@ async def get_warehouse_efficiency(
         COUNT(*) as query_count,
         SUM(query_attributed_dollars_estimation) as utilized_cost,
         SUM(query_attributed_dbus_estimation) as utilized_dbus
-      FROM {catalog}.{schema}.dbsql_cost_per_query_prpr
+      FROM `{catalog}`.`{schema}`.`dbsql_cost_per_query_prpr`
       WHERE start_time >= :start_date
         AND start_time < :end_date
       GROUP BY warehouse_id

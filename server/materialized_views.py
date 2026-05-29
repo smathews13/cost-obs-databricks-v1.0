@@ -29,7 +29,7 @@ COMMENT 'Pre-aggregated cost observability tables for fast dashboard queries'
 
 # Daily usage summary table - replaces BILLING_SUMMARY
 CREATE_DAILY_USAGE_SUMMARY = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.daily_usage_summary CLUSTER BY (usage_date, workspace_id) AS
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`daily_usage_summary` CLUSTER BY (usage_date, workspace_id) AS
 WITH usage_with_price AS (
   SELECT
     u.usage_date,
@@ -60,7 +60,7 @@ ORDER BY usage_date, workspace_id
 
 # Daily product breakdown table - replaces BILLING_BY_PRODUCT_FAST
 CREATE_DAILY_PRODUCT_BREAKDOWN = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.daily_product_breakdown CLUSTER BY (usage_date, workspace_id) AS
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`daily_product_breakdown` CLUSTER BY (usage_date, workspace_id) AS
 WITH usage_with_price AS (
   SELECT
     u.usage_date,
@@ -108,7 +108,7 @@ ORDER BY usage_date, workspace_id, product_category
 
 # Daily workspace breakdown table - replaces BILLING_BY_WORKSPACE
 CREATE_DAILY_WORKSPACE_BREAKDOWN = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.daily_workspace_breakdown CLUSTER BY (usage_date, workspace_id) AS
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`daily_workspace_breakdown` CLUSTER BY (usage_date, workspace_id) AS
 WITH usage_with_price AS (
   SELECT
     u.usage_date,
@@ -140,7 +140,7 @@ ORDER BY uwp.usage_date, uwp.workspace_id
 
 # SQL tool attribution (Genie vs DBSQL) - expensive query, pre-computed daily
 CREATE_SQL_TOOL_ATTRIBUTION = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.sql_tool_attribution CLUSTER BY (usage_date, workspace_id) AS
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`sql_tool_attribution` CLUSTER BY (usage_date, workspace_id) AS
 WITH sql_query_work AS (
   SELECT
     CASE
@@ -207,7 +207,7 @@ LEFT JOIN sql_usage s ON q.usage_date = s.usage_date AND q.workspace_id = s.work
 """
 
 CREATE_QUERY_STATS = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.daily_query_stats CLUSTER BY (usage_date, workspace_id) AS
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`daily_query_stats` CLUSTER BY (usage_date, workspace_id) AS
 SELECT
   DATE(start_time) as usage_date,
   workspace_id,
@@ -226,7 +226,7 @@ ORDER BY usage_date, workspace_id
 # DBSQL Cost Per Query Materialized View (Simplified Current Implementation)
 # Based on: https://github.com/databrickslabs/sandbox/tree/main/dbsql/cost_per_query/PrPr
 CREATE_DBSQL_COST_PER_QUERY = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.dbsql_cost_per_query CLUSTER BY (query_date, workspace_id) AS
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`dbsql_cost_per_query` CLUSTER BY (query_date, workspace_id) AS
 WITH
 -- Get hourly DBU usage per warehouse from billing
 warehouse_hourly_usage AS (
@@ -382,7 +382,7 @@ ORDER BY start_time DESC
 # Source: https://github.com/databrickslabs/sandbox/blob/main/dbsql/cost_per_query/PrPr/DBSQL%20Cost%20Per%20Query%20MV%20(PrPr).sql
 # This is the complete Private Preview implementation with warehouse utilization tracking and multi-hour query splitting
 CREATE_DBSQL_COST_PER_QUERY_PRPR = """
-CREATE OR REPLACE TABLE {catalog}.{schema}.dbsql_cost_per_query_prpr AS
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`dbsql_cost_per_query_prpr` AS
 WITH
 table_boundaries AS (
   SELECT
@@ -1623,7 +1623,7 @@ SELECT
   COUNT(DISTINCT usage_date) as days_in_range,
   MIN(usage_date) as first_date,
   MAX(usage_date) as last_date
-FROM {catalog}.{schema}.daily_usage_summary
+FROM `{catalog}`.`{schema}`.`daily_usage_summary`
 WHERE usage_date BETWEEN :start_date AND :end_date
   {ws_filter}
 """
@@ -1634,7 +1634,7 @@ SELECT
   SUM(total_dbus) as total_dbus,
   SUM(total_spend) as total_spend,
   COUNT(DISTINCT workspace_id) as workspace_count
-FROM {catalog}.{schema}.daily_product_breakdown
+FROM `{catalog}`.`{schema}`.`daily_product_breakdown`
 WHERE usage_date BETWEEN :start_date AND :end_date
   {ws_filter}
 GROUP BY product_category
@@ -1647,7 +1647,7 @@ SELECT
   product_category,
   SUM(total_dbus) as total_dbus,
   SUM(total_spend) as total_spend
-FROM {catalog}.{schema}.daily_product_breakdown
+FROM `{catalog}`.`{schema}`.`daily_product_breakdown`
 WHERE usage_date BETWEEN :start_date AND :end_date
   {ws_filter}
 GROUP BY usage_date, product_category
@@ -1660,7 +1660,7 @@ SELECT
   MAX(workspace_name) as workspace_name,
   SUM(total_dbus) as total_dbus,
   SUM(total_spend) as total_spend
-FROM {catalog}.{schema}.daily_workspace_breakdown
+FROM `{catalog}`.`{schema}`.`daily_workspace_breakdown`
 WHERE usage_date BETWEEN :start_date AND :end_date
   {ws_filter}
 GROUP BY workspace_id
@@ -1672,7 +1672,7 @@ SELECT
   sql_product,
   SUM(attributed_dbus) as total_dbus,
   SUM(attributed_spend) as total_spend
-FROM {catalog}.{schema}.sql_tool_attribution
+FROM `{catalog}`.`{schema}`.`sql_tool_attribution`
 WHERE usage_date BETWEEN :start_date AND :end_date
   {ws_filter}
 GROUP BY sql_product
@@ -1687,7 +1687,7 @@ SELECT
   END as etl_type,
   SUM(total_dbus) as total_dbus,
   SUM(total_spend) as total_spend
-FROM {catalog}.{schema}.daily_product_breakdown
+FROM `{catalog}`.`{schema}`.`daily_product_breakdown`
 WHERE usage_date BETWEEN :start_date AND :end_date
   {ws_filter}
   AND product_category IN ('ETL - Streaming', 'ETL - Batch')
@@ -1702,7 +1702,7 @@ SELECT
   SUM(total_rows_read) as total_rows_read,
   SUM(total_bytes_read) as total_bytes_read,
   SUM(total_compute_seconds) as total_compute_seconds
-FROM {catalog}.{schema}.daily_query_stats
+FROM `{catalog}`.`{schema}`.`daily_query_stats`
 WHERE usage_date BETWEEN :start_date AND :end_date
   {ws_filter}
 """

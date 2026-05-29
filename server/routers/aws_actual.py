@@ -45,7 +45,7 @@ SELECT
   COUNT(DISTINCT usage_metadata.cluster_id) as cluster_count,
   COUNT(DISTINCT usage_metadata.warehouse_id) as warehouse_count,
   COUNT(DISTINCT DATE(usage_date)) as days_in_range
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
 """
@@ -59,7 +59,7 @@ SELECT
   SUM(CASE WHEN charge_type = 'Networking' THEN net_unblended_cost ELSE 0 END) as network_cost,
   SUM(net_unblended_cost) as total_cost,
   COUNT(DISTINCT DATE(usage_date)) as days_active
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
   AND usage_metadata.cluster_id IS NOT NULL
@@ -74,7 +74,7 @@ SELECT
   usage_metadata.warehouse_id as warehouse_id,
   SUM(net_unblended_cost) as total_cost,
   COUNT(DISTINCT DATE(usage_date)) as days_active
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
   AND usage_metadata.warehouse_id IS NOT NULL
@@ -91,7 +91,7 @@ SELECT
   SUM(net_unblended_cost) as net_unblended_cost,
   SUM(amortized_cost) as amortized_cost,
   SUM(net_amortized_cost) as net_amortized_cost
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
 GROUP BY charge_type
@@ -104,7 +104,7 @@ SELECT
   DATE(usage_date) as date,
   charge_type,
   SUM(net_unblended_cost) as daily_cost
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
 GROUP BY DATE(usage_date), charge_type
@@ -119,7 +119,7 @@ SELECT
   SUM(net_unblended_cost) as net_unblended,
   SUM(amortized_cost) as amortized,
   SUM(net_amortized_cost) as net_amortized
-FROM {catalog}.{schema}.actuals_gold
+FROM `{catalog}`.`{schema}`.`actuals_gold`
 WHERE usage_date >= :start_date
   AND usage_date < :end_date
 GROUP BY DATE(usage_date)

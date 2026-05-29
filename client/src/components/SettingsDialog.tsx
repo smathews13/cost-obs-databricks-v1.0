@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SettingsConfig, SettingsGeneral, SettingsTabs, SettingsAccuracyChecks, SettingsPermissions, SettingsDebugger } from "./settings";
+import { READINESS_QUERY_KEY } from "@/hooks/useFeatureAvailability";
 import type { ScheduleSettings } from "./settings/SettingsGeneral";
 import { SetupWizard } from "./SetupWizard";
 
@@ -137,7 +138,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
   const { data: permissions } = useQuery<{ admins: string[]; current_user?: string | null }>({
     queryKey: ["user-permissions"],
     queryFn: async () => {
-      const res = await fetch("/api/settings/permissions");
+      const res = await fetch("/api/settings/user-permissions");
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -261,7 +262,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
   return createPortal(
     <div className="animate-backdrop fixed inset-0 z-50 overflow-y-auto bg-black/30" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="flex min-h-full items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div className="animate-dialog relative flex h-[44rem] w-full max-w-6xl flex-col rounded-lg bg-white shadow-xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
+        <div className="animate-dialog relative flex h-[90vh] w-full max-w-6xl flex-col rounded-lg bg-white shadow-xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div className="shrink-0 border-b border-gray-200 px-6 py-4">
             <div className="flex items-center justify-between">
@@ -365,7 +366,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
           </div>
 
           {/* Content */}
-          <div ref={contentScrollRef} className="flex-1 overflow-y-auto px-6 py-4">
+          <div ref={contentScrollRef} className={`flex-1 min-h-0 overflow-y-auto ${activeSection === "setup" ? "p-0" : "px-6 py-4"}`}>
             {activeSection === "config" && (
               <SettingsConfig
                 configLoading={configLoading}
@@ -411,7 +412,12 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
             )}
             {activeSection === "setup" && (
               isAdmin
-                ? <SetupWizard embedded onComplete={onClose} />
+                ? <SetupWizard embedded onComplete={() => {
+                    rqClient.invalidateQueries({ queryKey: ["app-config"] });
+                    rqClient.invalidateQueries({ queryKey: ["settings-tables-status"] });
+                    rqClient.invalidateQueries({ queryKey: READINESS_QUERY_KEY });
+                    onClose();
+                  }} />
                 : (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <svg className="mb-3 h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -448,7 +454,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 Save Settings
               </button>
             )}
-            {(activeSection === "accuracy-checks" || activeSection === "permissions" || activeSection === "debugger" || activeSection === "setup") && (
+            {(activeSection === "accuracy-checks" || activeSection === "permissions" || activeSection === "debugger") && (
               <button
                 onClick={onClose}
                 className="btn-brand inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors"

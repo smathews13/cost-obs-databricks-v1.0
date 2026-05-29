@@ -729,8 +729,6 @@ export function SettingsConfig({
             {(() => {
               const missingTables = tablesStatus?.tables?.filter(t => t.exists === false && !t.optional) ?? [];
               const isDegraded = missingTables.length > 0;
-              // Hard block: degraded state prevents drop entirely, no break-glass path.
-              const dropBlocked = isDegraded;
               return (
                 <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -741,16 +739,14 @@ export function SettingsConfig({
                       </p>
                       {isDegraded && (
                         <p className="mt-1 text-[11px] text-red-700 font-medium">
-                          ⚠ {missingTables.length} table{missingTables.length !== 1 ? "s are" : " is"} already missing — dropping in this state will deepen the outage. Fix readiness issues first, or proceed with caution.
+                          ⚠ {missingTables.length} table{missingTables.length !== 1 ? "s are" : " is"} already missing — drop and rebuild to fully reset.
                         </p>
                       )}
                     </div>
                     {!wipePending ? (
                       <button
                         onClick={() => { setWipePending(true); setWipeResult(null); setWipeConfirmText(""); }}
-                        disabled={dropBlocked}
-                        title={dropBlocked ? "System is degraded — fix missing tables before dropping" : undefined}
-                        className="shrink-0 rounded border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="shrink-0 rounded border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
                       >
                         Drop Tables
                       </button>

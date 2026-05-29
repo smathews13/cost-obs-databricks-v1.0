@@ -472,7 +472,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
         )}
 
         {/* Step indicator */}
-        <div className="flex items-start border-b px-6 py-3" style={{ borderColor: '#E5E5E5' }}>
+        <div className="shrink-0 flex items-start border-b px-6 py-3" style={{ borderColor: '#E5E5E5' }}>
           {STEPS.map((s, i) => (
             <Fragment key={s}>
               {i > 0 && <div className="mt-3 h-px flex-1 self-start bg-gray-200" />}
@@ -494,7 +494,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
         </div>
 
         {/* Body */}
-        <div className="min-h-[320px] px-8 py-6">
+        <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
           {error && (() => {
             // Detect permission errors that include GRANT SQL
             const isPermissionError = /needs.*CREATE SCHEMA|needs.*USE CATALOG|GRANT USE CATALOG|GRANT CREATE SCHEMA/i.test(error);
@@ -571,7 +571,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between rounded-b-xl border-t px-8 py-4" style={{ borderColor: '#E5E5E5' }}>
+        <div className="shrink-0 flex items-center justify-between rounded-b-xl border-t px-8 py-4" style={{ borderColor: '#E5E5E5' }}>
           <div>
             {currentIdx > 0 && (
               <button
@@ -796,7 +796,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
   );
 
   if (embedded) {
-    return <div className="flex flex-col overflow-y-auto">{wizardInner}</div>;
+    return <div className="flex flex-col h-full">{wizardInner}</div>;
   }
 
   return createPortal(

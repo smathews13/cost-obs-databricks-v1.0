@@ -249,7 +249,7 @@ export function SettingsPermissions() {
       {/* ── App-level user/role permissions ── */}
       {saveMutation.isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
-          <strong>Save failed:</strong> {saveMutation.error instanceof Error ? saveMutation.error.message : "Unknown error"}. Check that the app service principal has INSERT/DELETE access to the permissions table.
+          <strong>Save failed:</strong> {saveMutation.error instanceof Error ? saveMutation.error.message : "Unknown error"}
         </div>
       )}
 
@@ -285,7 +285,7 @@ export function SettingsPermissions() {
               </div>
             )}
             <p className="text-xs text-gray-500 italic">
-              No users explicitly configured. All users are treated as Admins by default. Add specific users below to enforce access control.
+              No users explicitly configured. All users are treated as Consumers by default. Add specific users below to restrict or elevate access.
             </p>
           </div>
         )}

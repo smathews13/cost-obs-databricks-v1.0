@@ -374,38 +374,24 @@ async def get_setup_status() -> dict[str, Any]:
     missing = [name for name, exists in tables.items() if not exists]
 
     if not os.path.exists(SETUP_DONE_FILE):
-        if core_exist:
-            # Auto-heal: catalog+schema configured AND core tables exist → a previous
-            # setup run completed successfully. Recreate setup_done.json so the wizard
-            # does not re-appear after a git redeploy that wiped .settings/.
-            try:
-                import datetime as _dt, json as _json
-                os.makedirs(SETTINGS_DIR, exist_ok=True)
-                with open(SETUP_DONE_FILE, "w") as f:
-                    _json.dump({"completed_at": _dt.datetime.utcnow().isoformat(), "auto_healed": True}, f)
-                logger.info("setup_done.json auto-healed on redeploy")
-            except Exception as e:
-                logger.warning(f"Could not auto-heal setup_done.json: {e}")
-            # Also restore the DBFS flag so future redeployments use the fast
-            # short-circuit instead of hitting UC API again.
-            try:
-                from server.db import write_dbfs_setup_complete as _write_dbfs_flag
-                _write_dbfs_flag()
-            except Exception as _dbfs_e:
-                logger.warning(f"Could not restore DBFS setup_complete during auto-heal: {_dbfs_e}")
-        else:
-            # No setup_done.json and no core tables — fresh deploy (env vars may be set
-            # but wizard has never run) or tables were dropped. Wizard must run.
-            return {
-                "catalog": catalog,
-                "schema": schema,
-                "tables": tables,
-                "all_tables_exist": False,
-                "missing_tables": missing,
-                "status": "setup_required",
-                "task": _create_task_state.copy(),
-                "next_poll_ms": 30000,
-            }
+        # No setup_done.json — wizard must run. Tables may already exist from a
+        # previous app or a dropped-and-rebuilt scenario; the wizard handles both
+        # (it detects existing tables and skips re-creation). Do NOT auto-heal here:
+        # auto-heal cannot distinguish a brand-new app deployment from a git
+        # redeploy of the same app, so it would silently skip the wizard for new
+        # apps that share a catalog/schema with an older deployment.
+        # Container-restart recovery (same app, same SP, wiped .settings/) is
+        # handled by the DBFS check above — that path is SP-scoped so it is safe.
+        return {
+            "catalog": catalog,
+            "schema": schema,
+            "tables": tables,
+            "all_tables_exist": core_exist,
+            "missing_tables": missing,
+            "status": "setup_required",
+            "task": _create_task_state.copy(),
+            "next_poll_ms": 30000,
+        }
 
     if not core_exist:
         # setup_done.json exists but core tables aren't built yet — background build
@@ -563,14 +549,10 @@ async def get_bootstrap_state() -> dict[str, Any]:
     return _create_task_state.copy()
 
 
-_ACCOUNT_ADMIN_TABLES = {"system.access.audit"}
-
 def _build_system_grants_sql(sp_id: str) -> str:
     """Return the full set of system table GRANT statements as a copyable SQL block."""
     lines = []
     for privilege, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
-        if obj_type == "TABLE" and obj_name in _ACCOUNT_ADMIN_TABLES:
-            lines.append(f"-- NOTE: {obj_name} requires account-admin (not just metastore admin)")
         parts = obj_name.split(".")
         q = ".".join(f"`{p}`" for p in parts)
         if obj_type == "CATALOG":
@@ -832,7 +814,7 @@ async def create_tables(
         _create_task_state["error"] = None
         _create_task_state["started_at"] = _time.monotonic()
         _create_task_state["elapsed_seconds"] = 0
-        _create_task_state["table_progress"] = {t: "pending" for t in _MV_TABLES}
+        _create_task_state["table_progress"] = {t: "pending" for t in _MV_TABLES + ["app_user_permissions"]}
         _persist_task_state()
         # Read the raw header token directly — _auth_mode may have been locked to "sp"
         # (e.g. after a scope error on a previous request), which forces _db_user_token
@@ -951,6 +933,18 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
             logger.info("app_response_cache table ensured during setup")
         except Exception as _rce:
             logger.warning("Could not bootstrap app_response_cache during setup: %s", _rce)
+
+        # Create app_user_permissions table so admins can manage access immediately
+        # after wizard completion without hitting a lazy-creation failure.
+        try:
+            _create_task_state["table_progress"]["app_user_permissions"] = "running"
+            from server.routers.settings import _ensure_permissions_table
+            _ensure_permissions_table()
+            _create_task_state["table_progress"]["app_user_permissions"] = "done"
+            logger.info("app_user_permissions table ensured during setup")
+        except Exception as _upe:
+            _create_task_state["table_progress"]["app_user_permissions"] = "error"
+            logger.warning("Could not bootstrap app_user_permissions during setup: %s", _upe)
 
         all_errors = {
             k: v for k, v in results.items()
@@ -1861,7 +1855,7 @@ def _build_fix_sql(table: str, sp_client_id: str) -> str:
         q0, q1, q2 = _uc_identifier(parts[0]), _uc_identifier(parts[1]), _uc_identifier(parts[2])
         if parts[0] == "system":
             # System tables are read-only — CREATE TABLE and MODIFY grants fail.
-            prefix = "-- NOTE: system.access.audit requires account-admin (not metastore admin)\n" if table == "system.access.audit" else ""
+            prefix = ""
             return (
                 f"{prefix}"
                 f"GRANT USE CATALOG ON CATALOG {q0} TO `{sp_client_id}`;\n"
@@ -1909,7 +1903,7 @@ def _safe_table_check_result(table_name: str, future: _Future) -> tuple[bool, st
         if table_name.startswith("system.") and any(
             kw in lower for kw in ("does not exist", "not found", "table or view not found", "no such")
         ):
-            admin_level = "account admin" if table_name == "system.access.audit" else "metastore admin"
+            admin_level = "metastore admin"
             clear_msg = (
                 f"Missing SELECT grant — Unity Catalog hides `{table_name}` from the SP "
                 f"until a {admin_level} runs the GRANT below"

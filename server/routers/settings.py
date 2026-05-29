@@ -1460,6 +1460,21 @@ async def save_user_permissions(request: Request, data: UserPermissionsModel) ->
     """Save permissions to Delta table."""
     _require_admin(request)
     try:
+        from server.db import get_catalog_schema
+        catalog, schema = get_catalog_schema()
+        if not catalog or not schema:
+            raise HTTPException(
+                status_code=400,
+                detail="App storage location not configured — complete the Setup Wizard before managing permissions.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="App storage location not configured — complete the Setup Wizard before managing permissions.",
+        )
+    try:
         _save_user_permissions_to_table(data.admins, data.consumers)
         logger.info(f"Permissions saved to Delta table ({len(data.admins)} admins, {len(data.consumers)} consumers)")
         return {"status": "ok"}

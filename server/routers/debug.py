@@ -149,7 +149,7 @@ def _check_mv_populated() -> dict:
         catalog, schema = get_catalog_schema()
         result = execute_query(
             f"SELECT COUNT(*) AS cnt, MAX(usage_date) AS latest "
-            f"FROM {catalog}.{schema}.daily_usage_summary LIMIT 1",
+            f"FROM `{catalog}`.`{schema}`.`daily_usage_summary` LIMIT 1",
             None, no_cache=True
         )
         row = (result or [{}])[0]
@@ -414,9 +414,9 @@ def _check_mv_consistency() -> dict:
     catalog, schema = get_catalog_schema()
 
     _TABLES = {
-        "daily_usage_summary":    f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM {catalog}.{schema}.daily_usage_summary WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
-        "daily_product_breakdown":f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM {catalog}.{schema}.daily_product_breakdown WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
-        "daily_workspace_breakdown":f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM {catalog}.{schema}.daily_workspace_breakdown WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
+        "daily_usage_summary":    f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM `{catalog}`.`{schema}`.`daily_usage_summary` WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
+        "daily_product_breakdown":f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM `{catalog}`.`{schema}`.`daily_product_breakdown` WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
+        "daily_workspace_breakdown":f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend),0) AS spend FROM `{catalog}`.`{schema}`.`daily_workspace_breakdown` WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30)",
     }
 
     stats: dict = {}
@@ -496,7 +496,7 @@ def _tab_dbu() -> dict:
     try:
         result = execute_query(
             f"SELECT COUNT(*) AS cnt, COALESCE(SUM(total_spend), 0) AS spend "
-            f"FROM {catalog}.{schema}.daily_usage_summary "
+            f"FROM `{catalog}`.`{schema}`.`daily_usage_summary` "
             f"WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
             None, no_cache=True
         )
@@ -516,7 +516,7 @@ def _tab_kpis() -> dict:
     catalog, schema = get_catalog_schema()
     try:
         result = execute_query(
-            f"SELECT COUNT(*) AS cnt FROM {catalog}.{schema}.daily_query_stats "
+            f"SELECT COUNT(*) AS cnt FROM `{catalog}`.`{schema}`.`daily_query_stats` "
             f"WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
             None, no_cache=True
         )
@@ -533,12 +533,12 @@ def _tab_sql() -> dict:
     catalog, schema = get_catalog_schema()
     try:
         r1 = execute_query(
-            f"SELECT COUNT(*) AS cnt FROM {catalog}.{schema}.sql_tool_attribution "
+            f"SELECT COUNT(*) AS cnt FROM `{catalog}`.`{schema}`.`sql_tool_attribution` "
             f"WHERE usage_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
             None, no_cache=True
         )
         r2 = execute_query(
-            f"SELECT COUNT(*) AS cnt FROM {catalog}.{schema}.dbsql_cost_per_query "
+            f"SELECT COUNT(*) AS cnt FROM `{catalog}`.`{schema}`.`dbsql_cost_per_query` "
             f"WHERE query_date >= DATE_SUB(CURRENT_DATE(), 30) LIMIT 1",
             None, no_cache=True
         )
@@ -670,7 +670,7 @@ async def run_diagnostics(no_cache: bool = False) -> dict:
 
     import asyncio
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     async def _run_one(check: dict) -> dict:
         try:

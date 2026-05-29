@@ -277,7 +277,7 @@ async def check_permissions(request: Request, refresh: bool = False) -> dict[str
     ctx_tok = _user_token.set(user_token)
     try:
         bypass = refresh or using_user_auth
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             _permissions_executor,
             lambda: _check_permissions_sync(bypass_cache=bypass),

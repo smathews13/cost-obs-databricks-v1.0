@@ -190,9 +190,8 @@ async def get_account_info() -> dict[str, Any]:
 async def get_account_details() -> dict[str, Any]:
     """Get account_id from billing data — may be slow, called separately."""
     try:
-        import asyncio
         results = await asyncio.wait_for(
-            asyncio.get_event_loop().run_in_executor(None, lambda: execute_query(ACCOUNT_INFO)),
+            asyncio.get_running_loop().run_in_executor(None, lambda: execute_query(ACCOUNT_INFO)),
             timeout=10.0
         )
         if results:

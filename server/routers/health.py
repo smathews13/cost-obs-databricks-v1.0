@@ -659,7 +659,7 @@ async def setup_diagnostics() -> dict[str, Any]:
                 _socket_timeout=30,
             )
             with conn.cursor() as cur:
-                cur.execute(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+                cur.execute(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
             conn.close()
             return {"ok": True, "note": f"user can create/access schema {catalog}.{schema}"}
         except Exception as e:

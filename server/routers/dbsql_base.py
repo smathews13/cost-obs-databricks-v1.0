@@ -196,13 +196,21 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         # Use UC REST API (no SQL warehouse needed — fast even when the warehouse is cold).
         # The old execute_query(information_schema) approach blocked the event loop for
         # 15-60 s on a cold warehouse, queuing all concurrent requests to every other tab.
+        transient_failure = False
         try:
             from server.materialized_views import check_materialized_views_exist
             tables = await asyncio.to_thread(check_materialized_views_exist, catalog, schema)
             available = tables.get(table_name, False)
+            # All-False with no exception means check_materialized_views_exist couldn't reach
+            # UC at all (both clients failed) — likely a cold-start SDK init race. Use a
+            # short retry TTL (30s) so the tab recovers quickly instead of staying broken
+            # for the full 5-minute cache window.
+            if not available and not any(tables.values()):
+                transient_failure = True
         except Exception as e:
             logger.warning(f"DBSQL cost MV ({table_name}) UC check failed: {e}")
             available = False
+            transient_failure = True
 
         data_range = {}
         if available:
@@ -226,7 +234,8 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             "table": table_name if available else None,
             "data_range": data_range,
         }
-        _mv_status_cache[table_name] = (now, result)
+        effective_ttl = 30 if transient_failure else _MV_STATUS_CACHE_TTL
+        _mv_status_cache[table_name] = (now - (_MV_STATUS_CACHE_TTL - effective_ttl), result)
         return result
 
     async def _exec_async(query_key: str, params: dict, catalog: str, schema: str, ws_clause: str = "") -> list[dict]:

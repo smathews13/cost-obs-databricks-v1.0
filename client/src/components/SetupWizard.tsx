@@ -466,7 +466,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
               </svg>
             </button>
           )}
-          <h2 className="text-xl font-bold text-white">Cost Observability & Control Setup</h2>
+          <h2 className="text-xl font-bold text-white">cost-obs setup</h2>
           <p className="mt-1 text-sm text-white/70">Configure your environment to get started</p>
         </div>
         )}

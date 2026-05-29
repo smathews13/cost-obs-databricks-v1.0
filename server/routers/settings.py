@@ -1573,6 +1573,11 @@ def _load_alert_thresholds() -> dict:
         if os.path.exists(ALERT_THRESHOLDS_FILE):
             with open(ALERT_THRESHOLDS_FILE) as f:
                 data = json.load(f)
+            try:
+                _save_alert_thresholds(data)
+                logger.info("Migrated alert thresholds from file to Delta")
+            except Exception:
+                pass
             return {**_ALERT_THRESHOLD_DEFAULTS, **data}
     except Exception:
         pass

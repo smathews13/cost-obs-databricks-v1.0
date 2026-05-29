@@ -468,7 +468,7 @@ async def get_users_groups_bundle(
         ("spend_growth", lambda: execute_query(_ws(USERS_SPEND_GROWTH), growth_params)),
         ("user_growth", lambda: execute_query(_ws(USERS_GROWTH), growth_date_params)),
     ]
-    results = execute_queries_parallel(queries)
+    results = await asyncio.to_thread(execute_queries_parallel, queries)
 
     # Summary
     summary_rows = results.get("summary") or []
@@ -582,7 +582,7 @@ async def get_user_growth() -> dict[str, Any]:
     start_date = (date.today() - timedelta(days=182)).isoformat()
 
     params = {"start_date": start_date, "end_date": end_date}
-    rows = execute_query(USERS_GROWTH, params)
+    rows = await asyncio.to_thread(execute_query, USERS_GROWTH, params)
     return {
         "data": [
             {
@@ -897,7 +897,7 @@ async def send_test_report(
     params = {"start_date": start_date, "end_date": end_date}
 
     try:
-        top_users = execute_query(USERS_TOP_SPEND, params)
+        top_users = await asyncio.to_thread(execute_query, USERS_TOP_SPEND, params)
     except Exception as e:
         return {"success": False, "error": str(e)}
 

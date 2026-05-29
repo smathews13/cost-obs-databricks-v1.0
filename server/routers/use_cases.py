@@ -138,7 +138,7 @@ async def setup_use_cases_tables() -> dict[str, Any]:
 
         for statement in statements:
             if statement:
-                execute_query(statement, {})
+                await asyncio.to_thread(execute_query, statement, {})
 
         logger.info("Use cases tables created successfully")
         return {
@@ -233,7 +233,7 @@ async def create_use_case(request: CreateUseCaseRequest) -> dict[str, Any]:
 async def get_use_case_tags() -> dict[str, Any]:
     """Get all unique tag keys and values from existing use cases."""
     try:
-        results = execute_query(
+        results = await asyncio.to_thread(execute_query, 
             "SELECT tags FROM cost_observability.use_cases WHERE status = 'active' AND tags IS NOT NULL",
             {},
             cache_tag="use_case"
@@ -380,7 +380,7 @@ async def get_use_case(use_case_id: str) -> dict[str, Any]:
         WHERE use_case_id = :use_case_id
         """
 
-        results = execute_query(query, {"use_case_id": use_case_id}, cache_tag="use_case")
+        results = await asyncio.to_thread(execute_query, query, {"use_case_id": use_case_id}, cache_tag="use_case")
 
         if not results:
             raise HTTPException(status_code=404, detail="Use case not found")
@@ -405,7 +405,7 @@ async def get_use_case(use_case_id: str) -> dict[str, Any]:
         ORDER BY assigned_at DESC
         """
 
-        objects_results = execute_query(objects_query, {"use_case_id": use_case_id}, cache_tag="use_case")
+        objects_results = await asyncio.to_thread(execute_query, objects_query, {"use_case_id": use_case_id}, cache_tag="use_case")
 
         objects = []
         for row in objects_results:
@@ -692,7 +692,7 @@ async def get_use_case_analytics(
         WHERE use_case_id = :use_case_id
         """
 
-        objects = execute_query(objects_query, {"use_case_id": use_case_id}, cache_tag="use_case")
+        objects = await asyncio.to_thread(execute_query, objects_query, {"use_case_id": use_case_id}, cache_tag="use_case")
 
         if not objects:
             return {
@@ -759,7 +759,7 @@ async def get_use_case_analytics(
             "endpoint_ids": endpoint_ids or ["__NONE__"]
         })
 
-        results = execute_query(spend_query, params)
+        results = await asyncio.to_thread(execute_query, spend_query, params)
 
         # Process results into analytics
         total_spend = 0
@@ -954,7 +954,7 @@ async def get_monthly_consumption(
         query_params = {"start_date": start_date, "end_date": end_date}
 
         # Execute both queries in parallel for better performance
-        query_results = execute_queries_parallel([
+        query_results = await asyncio.to_thread(execute_queries_parallel, [
             ("spend", lambda: execute_query(spend_query, query_params)),
             ("live", lambda: execute_query(live_query, query_params)),
         ])
@@ -1117,7 +1117,7 @@ async def get_available_objects(
                 detail=f"Invalid object_type: {object_type}. Must be one of: cluster, pipeline, warehouse, endpoint, job, query, dashboard"
             )
 
-        results = execute_query(query, {})
+        results = await asyncio.to_thread(execute_query, query, {})
 
         objects = []
         for row in results:

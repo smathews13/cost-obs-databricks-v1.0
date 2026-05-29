@@ -233,7 +233,7 @@ async def get_billing_summary(
     use_mv = _check_mv_available()
 
     if use_mv:
-        results = _exec_mv(MV_BILLING_SUMMARY, params, _mv_ws_clause(id_list))
+        results = await asyncio.to_thread(_exec_mv, MV_BILLING_SUMMARY, params, _mv_ws_clause(id_list))
         if not results:
             results = await asyncio.to_thread(execute_query, _inject_ws_filter(BILLING_SUMMARY, ws_clause), params)
     else:
@@ -397,7 +397,7 @@ async def get_sql_breakdown(
         ws_clause = wf.build_ws_filter_clause(id_list=id_list)
         use_mv = _check_mv_available()
         if use_mv:
-            results = _exec_mv(MV_SQL_TOOL_ATTRIBUTION, params, _mv_ws_clause(id_list))
+            results = await asyncio.to_thread(_exec_mv, MV_SQL_TOOL_ATTRIBUTION, params, _mv_ws_clause(id_list))
         else:
             results = await asyncio.to_thread(execute_query, _inject_ws_filter(SQL_TOOL_ATTRIBUTION, ws_clause), params)
 
@@ -1985,7 +1985,7 @@ async def get_platform_kpis(
     if use_mv:
         # Try to get query stats from materialized view (fast!)
         try:
-            mv_results = _exec_mv(MV_PLATFORM_KPIS, params)
+            mv_results = await asyncio.to_thread(_exec_mv, MV_PLATFORM_KPIS, params)
             if mv_results and len(mv_results) > 0:
                 mv_row = mv_results[0]
                 response["total_queries"] = int(mv_row.get("total_queries") or 0)

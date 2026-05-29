@@ -164,8 +164,8 @@ async def get_methodology_comparison(
     """
 
     try:
-        original_results = execute_query(original_query, {"start_date": start_date, "end_date": end_date})
-        prpr_results = execute_query(prpr_query, {"start_date": start_date, "end_date": end_date})
+        original_results = await asyncio.to_thread(execute_query, original_query, {"start_date": start_date, "end_date": end_date})
+        prpr_results = await asyncio.to_thread(execute_query, prpr_query, {"start_date": start_date, "end_date": end_date})
 
         original_data = original_results[0] if original_results else {}
         prpr_data = prpr_results[0] if prpr_results else {}
@@ -271,7 +271,7 @@ async def get_warehouse_efficiency(
     """
 
     try:
-        results = execute_query(
+        results = await asyncio.to_thread(execute_query, 
             warehouse_comparison_query,
             {"start_date": start_date, "end_date": end_date, "min_cost": min_cost},
         )

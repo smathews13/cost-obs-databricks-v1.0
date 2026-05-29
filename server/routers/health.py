@@ -127,7 +127,7 @@ async def _check_database() -> dict[str, Any]:
 
         start_time = time.time()
         # Simple query to test connectivity
-        result = execute_query("SELECT 1 as test", no_cache=True)
+        result = await asyncio.to_thread(execute_query, "SELECT 1 as test", no_cache=True)
         latency_ms = (time.time() - start_time) * 1000
 
         return {

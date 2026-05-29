@@ -957,7 +957,7 @@ async def check_billing_access():
     from server.db import _user_token, execute_query
     tok = _user_token.set("")
     try:
-        execute_query("SELECT 1 FROM system.billing.usage LIMIT 1", no_cache=True)
+        await asyncio.to_thread(execute_query, "SELECT 1 FROM system.billing.usage LIMIT 1", no_cache=True)
         return {"ok": True}
     except Exception as e:
         err = str(e)

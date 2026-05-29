@@ -2084,7 +2084,7 @@ async def list_workspaces() -> dict:
     from server.db import execute_query, get_catalog_schema
     try:
         catalog, schema = get_catalog_schema()
-        rows = execute_query(f"""
+        rows = await asyncio.to_thread(execute_query, f"""
             SELECT
                 CAST(workspace_id AS STRING) AS workspace_id,
                 MAX(COALESCE(workspace_name, CAST(workspace_id AS STRING))) AS workspace_name
@@ -2169,7 +2169,7 @@ async def get_workspace_filter() -> dict:
     try:
         from server.db import execute_query, get_catalog_schema
         catalog, schema = get_catalog_schema()
-        rows = execute_query(
+        rows = await asyncio.to_thread(execute_query, 
             f"SELECT workspace_ids FROM `{catalog}`.`{schema}`.app_workspace_filter LIMIT 1",
             no_cache=True,
         )
@@ -2241,7 +2241,7 @@ async def save_workspace_filter(request: Request) -> dict:
     try:
         from server.db import execute_query, get_catalog_schema
         _catalog, _schema = get_catalog_schema()
-        _rows = execute_query(
+        _rows = await asyncio.to_thread(execute_query, 
             f"SELECT COUNT(*) as cnt FROM `{_catalog}`.`{_schema}`.app_workspace_filter",
             no_cache=True,
         )
@@ -2273,12 +2273,14 @@ async def save_workspace_filter(request: Request) -> dict:
         from server.db import execute_query, get_catalog_schema
         catalog, schema = get_catalog_schema()
         ids_csv = ",".join(valid_ids)
-        execute_query(
+        await asyncio.to_thread(
+            execute_query,
             f"CREATE TABLE IF NOT EXISTS `{catalog}`.`{schema}`.app_workspace_filter "
             f"(workspace_ids STRING) USING DELTA",
             no_cache=True,
         )
-        execute_query(
+        await asyncio.to_thread(
+            execute_query,
             f"MERGE INTO `{catalog}`.`{schema}`.app_workspace_filter AS t "
             f"USING (SELECT '{ids_csv}' AS workspace_ids) AS s ON TRUE "
             f"WHEN MATCHED THEN UPDATE SET t.workspace_ids = s.workspace_ids "

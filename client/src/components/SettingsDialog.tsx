@@ -234,6 +234,16 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
       `/api/alerts/setup-databricks-alerts?spike_threshold_percent=${localSettings.alertSpikePercent}&daily_threshold_amount=${localSettings.alertDailyBudget}&workspace_threshold_amount=${localSettings.alertWorkspaceBudget}`,
       { method: "POST", signal: AbortSignal.timeout(10000) }
     ).catch(() => {});
+    fetch("/api/settings/alert-thresholds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        spike_threshold_percent: localSettings.alertSpikePercent,
+        daily_budget: localSettings.alertDailyBudget,
+        workspace_budget: localSettings.alertWorkspaceBudget,
+      }),
+      signal: AbortSignal.timeout(10000),
+    }).catch(() => {});
     if (localSettings.slackWebhookUrl !== appSettings.slackWebhookUrl) {
       fetch("/api/settings/webhook", {
         method: "POST",

@@ -96,6 +96,7 @@ WAREHOUSE_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "warehouse_settings.json")
 PRICING_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "pricing_settings.json")
 USER_PERMISSIONS_FILE = os.path.join(SETTINGS_DIR, "user_permissions.json")
 SCHEDULE_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "schedule_settings.json")
+ALERT_THRESHOLDS_FILE = os.path.join(SETTINGS_DIR, "alert_thresholds.json")
 # Legacy file path for backward compatibility
 AZURE_CONNECTIONS_FILE = os.path.join(SETTINGS_DIR, "azure_connections.json")
 
@@ -141,6 +142,13 @@ def _ensure_webhook_table() -> None:
     _ensure_config_table(
         f"CREATE TABLE IF NOT EXISTS {_config_table('app_webhook_settings')} "
         f"(slack_webhook_url STRING, updated_at TIMESTAMP) USING DELTA"
+    )
+
+
+def _ensure_alert_thresholds_table() -> None:
+    _ensure_config_table(
+        f"CREATE TABLE IF NOT EXISTS {_config_table('app_alert_thresholds')} "
+        f"(settings_json STRING, updated_at TIMESTAMP) USING DELTA"
     )
 
 
@@ -1539,6 +1547,73 @@ async def save_schedule_endpoint(request: Request, data: dict) -> dict:
         json.dump(settings, f, indent=2)
     logger.info("Schedule settings saved: %s", settings)
     return settings
+
+
+# ── Alert Thresholds ──────────────────────────────────────────────────────────
+
+_ALERT_THRESHOLD_DEFAULTS: dict = {
+    "spike_threshold_percent": 20,
+    "daily_budget": 50000,
+    "workspace_budget": 10000,
+}
+
+
+def _load_alert_thresholds() -> dict:
+    """Load alert thresholds — Delta first, file fallback, then hardcoded defaults."""
+    try:
+        from server.db import execute_query
+        table = _config_table("app_alert_thresholds")
+        rows = execute_query(f"SELECT settings_json FROM {table} LIMIT 1", None, no_cache=True)
+        if rows and rows[0].get("settings_json"):
+            return {**_ALERT_THRESHOLD_DEFAULTS, **json.loads(rows[0]["settings_json"])}
+    except Exception as e:
+        logger.warning("Could not load alert thresholds from Delta: %s", e)
+
+    try:
+        if os.path.exists(ALERT_THRESHOLDS_FILE):
+            with open(ALERT_THRESHOLDS_FILE) as f:
+                data = json.load(f)
+            return {**_ALERT_THRESHOLD_DEFAULTS, **data}
+    except Exception:
+        pass
+
+    return dict(_ALERT_THRESHOLD_DEFAULTS)
+
+
+def _save_alert_thresholds(settings: dict) -> None:
+    try:
+        from server.db import execute_write
+        _ensure_alert_thresholds_table()
+        table = _config_table("app_alert_thresholds")
+        execute_write(f"DELETE FROM {table}", None)
+        execute_write(
+            f"INSERT INTO {table} (settings_json, updated_at) VALUES (:s, current_timestamp())",
+            {"s": json.dumps(settings)},
+        )
+    except Exception as e:
+        logger.warning("Could not save alert thresholds to Delta: %s", e)
+    os.makedirs(SETTINGS_DIR, exist_ok=True)
+    with open(ALERT_THRESHOLDS_FILE, "w") as f:
+        json.dump(settings, f, indent=2)
+
+
+@router.get("/alert-thresholds")
+async def get_alert_thresholds() -> dict:
+    return _load_alert_thresholds()
+
+
+@router.post("/alert-thresholds")
+async def save_alert_thresholds_endpoint(request: Request) -> dict:
+    _require_admin(request)
+    data = await request.json()
+    settings = {
+        "spike_threshold_percent": max(5.0, min(100.0, float(data.get("spike_threshold_percent", 20)))),
+        "daily_budget": max(0.0, float(data.get("daily_budget", 50000))),
+        "workspace_budget": max(0.0, float(data.get("workspace_budget", 10000))),
+    }
+    _save_alert_thresholds(settings)
+    logger.info("Alert thresholds saved: %s", settings)
+    return {"status": "saved"}
 
 
 # ── Customer Discounts ────────────────────────────────────────────────────────

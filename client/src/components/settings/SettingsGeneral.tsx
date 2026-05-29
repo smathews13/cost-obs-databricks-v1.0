@@ -28,6 +28,28 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: savedThresholds } = useQuery<{ spike_threshold_percent: number; daily_budget: number; workspace_budget: number } | null>({
+    queryKey: ["settings-alert-thresholds"],
+    queryFn: () => fetch("/api/settings/alert-thresholds").then(r => r.ok ? r.json() : null).catch(() => null),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: webhookStatus } = useQuery<{ configured: boolean } | null>({
+    queryKey: ["settings-webhook-status"],
+    queryFn: () => fetch("/api/settings/webhook").then(r => r.ok ? r.json() : null).catch(() => null),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Sync backend threshold values into localSettings once on load (if localStorage was cleared).
+  const thresholdsSynced = useRef(false);
+  useEffect(() => {
+    if (!savedThresholds || thresholdsSynced.current) return;
+    thresholdsSynced.current = true;
+    updateSetting("alertSpikePercent", savedThresholds.spike_threshold_percent);
+    updateSetting("alertDailyBudget", savedThresholds.daily_budget);
+    updateSetting("alertWorkspaceBudget", savedThresholds.workspace_budget);
+  }, [savedThresholds]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Initialize from cache (warm) or defaults (cold); useEffect syncs once when data loads.
   const [localSchedule, setLocalSchedule] = useState<ScheduleSettings>(() => scheduleData ?? SCHEDULE_DEFAULTS);
   const scheduleSynced = useRef(!!scheduleData);
@@ -311,16 +333,23 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
           <h4 className="text-sm font-semibold text-gray-900">Notifications</h4>
         </div>
         <div className="rounded-lg border border-gray-200 px-4 py-3">
-          <div className="mb-2">
-            <div className="text-sm font-medium text-gray-900">Slack Webhook URL</div>
-            <div className="text-xs text-gray-500">Receive alert notifications in Slack</div>
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Slack Webhook URL</div>
+              <div className="text-xs text-gray-500">Receive alert notifications in Slack</div>
+            </div>
+            {webhookStatus?.configured && !localSettings.slackWebhookUrl && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-[11px] font-medium text-green-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured on server
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
             <input
               type="url"
               value={localSettings.slackWebhookUrl}
               onChange={(e) => updateSetting("slackWebhookUrl", e.target.value)}
-              placeholder="https://hooks.slack.com/services/..."
+              placeholder={webhookStatus?.configured && !localSettings.slackWebhookUrl ? "Leave blank to keep existing webhook" : "https://hooks.slack.com/services/..."}
               className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
             />
             <button
@@ -331,13 +360,13 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ slack_webhook_url: localSettings.slackWebhookUrl }),
                   });
-                  const res = await fetch("/api/settings/webhook/test", { method: "POST" });
-                  const data = await res.json();
-                  setSaveStatus(data.success ? "Test message sent to Slack!" : `Webhook test failed: ${data.error}`);
-                  setTimeout(() => setSaveStatus(null), 4000);
                 }
+                const res = await fetch("/api/settings/webhook/test", { method: "POST" });
+                const data = await res.json();
+                setSaveStatus(data.success ? "Test message sent to Slack!" : `Webhook test failed: ${data.error}`);
+                setTimeout(() => setSaveStatus(null), 4000);
               }}
-              disabled={!localSettings.slackWebhookUrl}
+              disabled={!localSettings.slackWebhookUrl && !webhookStatus?.configured}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Test

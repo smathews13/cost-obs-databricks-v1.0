@@ -323,13 +323,28 @@ async def get_setup_status() -> dict[str, Any]:
         }
 
     # Short-circuit: if the local flag is absent (e.g. container restart wiped
-    # .settings/) but DBFS records a previous completion, restore the local file
-    # and return "ready" without hitting the SQL warehouse (which may be cold).
+    # .settings/) but DBFS records a previous completion, check UC metadata to
+    # verify core tables still exist. check_materialized_views_exist uses the UC
+    # REST API (no SQL warehouse needed) so this is fast even on a cold start.
     if not os.path.exists(SETUP_DONE_FILE):
         from server.db import read_dbfs_setup_complete
         loop = _asyncio.get_running_loop()
         dbfs_complete = await loop.run_in_executor(None, read_dbfs_setup_complete)
         if dbfs_complete:
+            # Verify tables still exist — they may have been dropped between deploys.
+            tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
+            core_exist = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
+            if not core_exist:
+                # DBFS flag is stale — tables are gone. Wizard must run again.
+                missing = [name for name, exists in tables.items() if not exists]
+                logger.info("DBFS flag set but core tables missing (%s) — returning setup_required", missing)
+                return {
+                    "catalog": catalog, "schema": schema,
+                    "tables": tables, "all_tables_exist": False, "missing_tables": missing,
+                    "status": "setup_required",
+                    "task": _create_task_state.copy(), "next_poll_ms": 30000,
+                }
+            # Tables exist — restore setup_done.json for future fast-paths.
             try:
                 import datetime as _dt
                 os.makedirs(SETTINGS_DIR, exist_ok=True)
@@ -342,8 +357,8 @@ async def get_setup_status() -> dict[str, Any]:
             _setup_confirmed_ready = True
             return {
                 "catalog": catalog, "schema": schema,
-                "tables": {}, "all_tables_exist": False, "missing_tables": [],
-                "status": "ready", "tables_building": True,
+                "tables": tables, "all_tables_exist": True, "missing_tables": [],
+                "status": "ready",
                 "task": _create_task_state.copy(),
                 "next_poll_ms": 30000,
             }

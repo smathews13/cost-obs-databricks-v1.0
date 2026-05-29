@@ -636,6 +636,22 @@ function Dashboard() {
     );
   }
 
+  if (warehouseWarming) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6" style={{ backgroundColor: '#F9F7F4' }}>
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex items-center gap-2">
+            <div className="h-3 w-3 animate-pulse rounded-full bg-blue-400" style={{ animationDelay: '0ms' }} />
+            <div className="h-3 w-3 animate-pulse rounded-full bg-blue-400" style={{ animationDelay: '200ms' }} />
+            <div className="h-3 w-3 animate-pulse rounded-full bg-blue-400" style={{ animationDelay: '400ms' }} />
+          </div>
+          <h2 className="text-xl font-semibold" style={{ color: '#1B3139' }}>SQL Warehouse is starting up</h2>
+          <p className="text-sm" style={{ color: '#6B7280' }}>Dashboard data will load automatically once the warehouse is ready.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: appSettings.darkMode ? '#1B1F23' : '#F9F7F4' }}>
       {/* Setup incomplete banner — non-dismissable, shown when wizard was closed without finishing */}
@@ -660,16 +676,6 @@ function Dashboard() {
           >
             Resume Setup
           </button>
-        </div>
-      )}
-
-      {/* Warehouse warming banner */}
-      {warehouseWarming && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b bg-blue-50 border-blue-200">
-          <div className="h-3 w-3 animate-pulse rounded-full bg-blue-400" />
-          <span className="text-xs font-medium text-blue-800">
-            SQL Warehouse is starting up — dashboard data will load shortly.
-          </span>
         </div>
       )}
 

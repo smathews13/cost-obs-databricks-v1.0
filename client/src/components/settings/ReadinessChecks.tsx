@@ -106,7 +106,12 @@ function CheckIcon({ granted }: { granted: boolean }) {
   );
 }
 
-function CheckRow({ check, showTable = true }: { check: ReadinessCheck | ReadinessWarehouse; showTable?: boolean }) {
+function CheckRow({ check, showTable = true, onApplyFix, applyFixRunning }: {
+  check: ReadinessCheck | ReadinessWarehouse;
+  showTable?: boolean;
+  onApplyFix?: () => void;
+  applyFixRunning?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const hasFix = !check.granted && check.fix_sql;
   const tableLabel = "table" in check && check.table ? check.table : null;
@@ -129,7 +134,7 @@ function CheckRow({ check, showTable = true }: { check: ReadinessCheck | Readine
           {expanded && hasFix && (
             <div className="mt-2 space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">{tableLabel === "system.access.audit" ? "Run as account admin" : "Run as metastore admin"}</span>
+                <span className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">If auto-apply fails — run as metastore admin</span>
                 <CopyButton text={check.fix_sql!} />
               </div>
               <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-gray-900 px-3 py-2 text-[11px] leading-relaxed text-green-400">
@@ -139,12 +144,23 @@ function CheckRow({ check, showTable = true }: { check: ReadinessCheck | Readine
           )}
         </div>
         {hasFix && (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            className="shrink-0 rounded px-2.5 py-1 text-[11px] font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
-          >
-            {expanded ? "Hide" : "Fix"}
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {onApplyFix && (
+              <button
+                onClick={() => { onApplyFix(); setExpanded(true); }}
+                disabled={applyFixRunning}
+                className="rounded px-2.5 py-1 text-[11px] font-medium text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-50"
+              >
+                {applyFixRunning ? "Applying…" : "Fix"}
+              </button>
+            )}
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="rounded px-2 py-1 text-[11px] font-medium text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors"
+            >
+              {expanded ? "Hide" : "SQL"}
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -289,7 +305,7 @@ export function ReadinessChecks({
           )}
         </div>
         <div className="space-y-1.5">
-          {result.core.map((c, i) => <CheckRow key={c.table ?? i} check={c} />)}
+          {result.core.map((c, i) => <CheckRow key={c.table ?? i} check={c} onApplyFix={onAutoGrant} applyFixRunning={autoGrantRunning} />)}
         </div>
       </div>
 
@@ -306,7 +322,7 @@ export function ReadinessChecks({
             )}
           </div>
           <div className="space-y-1.5">
-            {result.enhanced.map((c, i) => <CheckRow key={c.table ?? i} check={c} />)}
+            {result.enhanced.map((c, i) => <CheckRow key={c.table ?? i} check={c} onApplyFix={onAutoGrant} applyFixRunning={autoGrantRunning} />)}
           </div>
         </div>
       )}

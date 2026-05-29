@@ -551,10 +551,22 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 180, for
     # Capture trigger BEFORE force_full may be promoted by window-change detection.
     # A scheduled run that promotes to full due to a window change is still "scheduled".
     trigger = "manual" if force_full else "scheduled"
+    # Guard: if catalog/schema not configured, skip entirely — don't write a log
+    # entry that the UI would surface as "Last rebuild failed". The previous
+    # successful log is preserved so the UI doesn't show a spurious error on a
+    # fresh deploy before the wizard has been run.
+    catalog, schema = get_catalog_schema()
+    if not catalog or not schema:
+        logger.info(
+            "MV refresh SKIPPED — catalog/schema not configured yet. "
+            "Complete the setup wizard to enable scheduled rebuilds."
+        )
+        _db_user_token.reset(ctx_tok)
+        return {}
+
     results: dict = {}
     log_data: dict = {"last_refresh_utc": start_utc, "duration_seconds": 0, "mv_timings": {}, "status": "error", "error": "unknown"}
     try:
-        catalog, schema = get_catalog_schema()
         # If lookback_days differs from the last run, force a full rebuild so the
         # incremental MERGE path doesn't silently ignore the extended window.
         # force_full=True when the caller explicitly requests it (e.g. UI Rebuild button).
@@ -579,9 +591,8 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 180, for
         mv_timings = results.pop("__mv_timings__", {})
         duration = round(time.monotonic() - refresh_start, 1)
         failed = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
-        # "schema" in failed means CREATE SCHEMA itself failed — every table would also fail,
-        # so this is a total failure, not a partial one.
-        total_failure = "schema" in failed or (failed and len(failed) == len(results))
+        # "schema" or "error" in failed means a top-level failure (not per-table).
+        total_failure = "schema" in failed or "error" in failed or (failed and len(failed) == len(results))
         log_data = {
             "last_refresh_utc": start_utc,
             "duration_seconds": duration,

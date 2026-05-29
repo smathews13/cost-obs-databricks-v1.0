@@ -814,7 +814,11 @@ async def create_tables(
         _create_task_state["error"] = None
         _create_task_state["started_at"] = _time.monotonic()
         _create_task_state["elapsed_seconds"] = 0
-        _create_task_state["table_progress"] = {t: "pending" for t in _MV_TABLES + ["app_user_permissions"]}
+        _ALL_SETUP_TABLES = _MV_TABLES + [
+            "app_response_cache", "app_user_permissions",
+            "app_mv_refresh_state", "app_schedule_settings", "app_workspace_filter",
+        ]
+        _create_task_state["table_progress"] = {t: "pending" for t in _ALL_SETUP_TABLES}
         _persist_task_state()
         # Read the raw header token directly — _auth_mode may have been locked to "sp"
         # (e.g. after a scope error on a previous request), which forces _db_user_token
@@ -924,27 +928,31 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
         results = create_materialized_views(catalog, schema, on_table_event=_on_table_event)
         logger.info(f"Table creation completed: {results}")
 
-        # Explicitly bootstrap the Delta response cache table now that the SP has
-        # schema-level permissions. Lazy creation would fail silently until post-setup
-        # grants propagate; doing it here makes it part of the authoritative setup path.
-        try:
-            from server.db import _ensure_response_cache_table
-            _ensure_response_cache_table()
-            logger.info("app_response_cache table ensured during setup")
-        except Exception as _rce:
-            logger.warning("Could not bootstrap app_response_cache during setup: %s", _rce)
-
-        # Create app_user_permissions table so admins can manage access immediately
-        # after wizard completion without hitting a lazy-creation failure.
-        try:
-            _create_task_state["table_progress"]["app_user_permissions"] = "running"
-            from server.routers.settings import _ensure_permissions_table
-            _ensure_permissions_table()
-            _create_task_state["table_progress"]["app_user_permissions"] = "done"
-            logger.info("app_user_permissions table ensured during setup")
-        except Exception as _upe:
-            _create_task_state["table_progress"]["app_user_permissions"] = "error"
-            logger.warning("Could not bootstrap app_user_permissions during setup: %s", _upe)
+        # Bootstrap all config tables now that the SP has schema-level permissions.
+        # Each has its own _ensure_* function that runs CREATE TABLE IF NOT EXISTS.
+        from server.db import _ensure_response_cache_table
+        from server.routers.settings import (
+            _ensure_permissions_table,
+            _ensure_refresh_log_table,
+            _ensure_schedule_table,
+            _ensure_workspace_filter_table,
+        )
+        _config_table_fns = [
+            ("app_response_cache",    _ensure_response_cache_table),
+            ("app_user_permissions",  _ensure_permissions_table),
+            ("app_mv_refresh_state",  _ensure_refresh_log_table),
+            ("app_schedule_settings", _ensure_schedule_table),
+            ("app_workspace_filter",  _ensure_workspace_filter_table),
+        ]
+        for _tname, _fn in _config_table_fns:
+            try:
+                _create_task_state["table_progress"][_tname] = "running"
+                _fn()
+                _create_task_state["table_progress"][_tname] = "done"
+                logger.info("%s table ensured during setup", _tname)
+            except Exception as _te:
+                _create_task_state["table_progress"][_tname] = "error"
+                logger.warning("Could not bootstrap %s during setup: %s", _tname, _te)
 
         all_errors = {
             k: v for k, v in results.items()

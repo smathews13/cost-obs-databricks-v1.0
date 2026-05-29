@@ -159,7 +159,7 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
           {workspaceSelector}
         </div>
         <div className="flex h-48 flex-col items-center justify-center gap-3">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
           <p className="text-sm text-gray-500">Loading product breakdown...</p>
         </div>
       </div>

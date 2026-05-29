@@ -305,7 +305,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
   if (isLoading) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
         <p className="text-sm text-gray-500">Loading tagging data...</p>
       </div>
     );
@@ -861,7 +861,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
 
             {tagObjectsLoading ? (
               <div className="flex h-40 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
               </div>
             ) : tagObjects.length > 0 ? (
               <div className="overflow-x-auto">

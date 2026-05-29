@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReadinessChecks, normalizeReadinessResult } from "./ReadinessChecks";
 import type { ReadinessResult } from "./ReadinessChecks";
 import { READINESS_QUERY_KEY } from "@/hooks/useFeatureAvailability";
+import { Spinner } from "@/components/Spinner";
 
 interface UserPermissions {
   admins: string[];
@@ -103,7 +104,6 @@ export function SettingsPermissions() {
           ? `${body.applied} grant(s) applied for ${body.sp_client_id}.`
           : `Grants applied for ${body.sp_client_id}.`;
         setGrantResult({ ok: true, message: detail });
-        queryClient.refetchQueries({ queryKey: READINESS_QUERY_KEY });
         await refetchAuth();
       } else {
         const allErrors: string[] = body.errors ?? [];
@@ -120,6 +120,9 @@ export function SettingsPermissions() {
           obo_scope_missing: body.obo_scope_missing ?? false,
         });
       }
+      // Always re-check after grant attempt (success or partial) so the UI reflects
+      // which permissions were actually applied. Small delay for UC propagation.
+      setTimeout(() => queryClient.refetchQueries({ queryKey: READINESS_QUERY_KEY }), 2000);
     } catch {
       setGrantResult({ ok: false, message: "Network error running grants." });
     } finally {
@@ -354,12 +357,18 @@ export function SettingsPermissions() {
             <button
               onClick={addUser}
               disabled={!newUserEmail.trim() || saveMutation.isPending}
-              className="shrink-0 rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:opacity-50"
+              className="shrink-0 rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors"
               style={{ backgroundColor: !newUserEmail.trim() || saveMutation.isPending ? "#FFA390" : "#FF3621" }}
             >
-              Add User
+              {saveMutation.isPending ? "Saving…" : "Add User"}
             </button>
           </div>
+          {saveMutation.isPending && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 pt-1 pl-1">
+              <Spinner size="xs" />
+              <span>Saving — user will appear in the list shortly</span>
+            </div>
+          )}
         </div>
       </div>
 

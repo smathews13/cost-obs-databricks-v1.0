@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
+import { Spinner } from "./Spinner";
 import { ReadinessChecks, normalizeReadinessResult } from "./settings/ReadinessChecks";
 import type { ReadinessResult } from "./settings/ReadinessChecks";
 
@@ -122,12 +123,7 @@ function PermissionErrorBlock({ error, onGranted }: { error: string; onGranted: 
           className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60 transition-colors"
           style={{ backgroundColor: grantStatus === "ok" ? "#16a34a" : "#FF3621" }}
         >
-          {grantStatus === "running" && (
-            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-            </svg>
-          )}
+          {grantStatus === "running" && <Spinner size="xs" />}
           {grantStatus === "ok" ? "Granted!" : grantStatus === "running" ? "Granting…" : "Try to grant access"}
         </button>
         <p className="text-[11px] text-red-600">
@@ -296,6 +292,10 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
           }
         } catch { /* ignore transient polling errors */ }
       }, 5000);
+    } else {
+      // Partial failure — re-check after 2s so any successfully-applied grants
+      // are reflected (e.g. all but system.access.audit succeeded).
+      setTimeout(() => loadReadiness(true), 2000);
     }
   } catch {
     setGrantResult({ ok: false, message: "Network error running grants." });
@@ -764,10 +764,7 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
                 >
                   {storagePhase !== "idle" && storagePhase !== "error" ? (
                     <span className="flex items-center gap-2">
-                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                      </svg>
+                      <Spinner size="sm" />
                       Working…
                     </span>
                   ) : storagePhase === "error" ? "Retry" : "Save & Continue"}
@@ -864,10 +861,7 @@ function StorageCheckRow({ label, state }: { label: string; state: "pending" | "
   return (
     <div className="flex items-center gap-2.5 text-sm">
       {state === "running" ? (
-        <svg className="h-4 w-4 shrink-0 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-        </svg>
+        <Spinner size="sm" />
       ) : state === "done" ? (
         <svg className="h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
@@ -1014,7 +1008,7 @@ function WizardPermissionsStep({
       </p>
       {verifyingGrants && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 flex items-center gap-2">
-          <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
+          <Spinner size="sm" />
           <span className="text-sm text-blue-700">Verifying SP access… ({grantVerifyElapsed}s)</span>
         </div>
       )}
@@ -1079,7 +1073,7 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
                 {state === "done" ? (
                   <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                 ) : state === "running" ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-[#FF3621]" />
+                  <Spinner size="sm" />
                 ) : state === "error" ? (
                   <svg className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 ) : (
@@ -1318,7 +1312,7 @@ function CompleteStep() {
 function LoadingSpinner({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-12">
-      <div className="h-8 w-8 animate-spin rounded-full" style={{ border: '3px solid #e5e7eb', borderTopColor: '#FF3621' }} />
+      <Spinner size="md" />
       <p className="mt-3 text-sm text-gray-500">{text}</p>
     </div>
   );
@@ -1330,10 +1324,7 @@ function InfoRow({ label, value, status, loading }: { label: string; value: stri
       <span className="shrink-0 text-sm font-medium text-gray-500">{label}</span>
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
         {loading ? (
-          <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-          </svg>
+          <Spinner size="sm" />
         ) : (
           <span className="truncate text-right text-sm font-medium text-gray-900" title={value}>{value}</span>
         )}

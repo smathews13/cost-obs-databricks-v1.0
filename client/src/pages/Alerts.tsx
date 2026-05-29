@@ -918,7 +918,7 @@ export default function Alerts() {
   if (isLoading || databricksLoading) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
         <p className="text-sm text-gray-500">Loading alerts...</p>
       </div>
     );
@@ -1045,7 +1045,7 @@ export default function Alerts() {
 
         {databricksLoading ? (
           <div className="mt-4 flex h-32 items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
           </div>
         ) : databricksAlerts && databricksAlerts.alerts.length > 0 ? (
           <div className="mt-4 space-y-2">
@@ -1157,7 +1157,7 @@ export default function Alerts() {
         </div>
         {isLoading ? (
           <div className="flex h-64 items-center justify-center">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
           </div>
         ) : data && data.spikes.length > 0 ? (
           <div className="space-y-3">

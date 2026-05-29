@@ -331,7 +331,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   if (isLoading) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
         <p className="text-sm text-gray-500">Loading query analytics...</p>
       </div>
     );
@@ -944,7 +944,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
             </div>
             {topQueriesLoading && sortedQueries.length === 0 ? (
               <div className="flex h-32 items-center justify-center gap-3">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
                 <span className="text-sm text-gray-500">Loading top queries...</span>
               </div>
             ) : sortedQueries.length > 0 ? (
@@ -1077,7 +1077,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
         {healthLoading ? (
           <div className="flex h-24 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300" style={{ borderTopColor: "#FF3621" }} />
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200" style={{ borderTopColor: "#FF3621" }} />
           </div>
         ) : !warehouseHealth?.available || !warehouseHealth.recommendations.length ? (
           <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-500">
@@ -1193,7 +1193,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
             {sourceQueriesLoading ? (
               <div className="flex h-40 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
               </div>
             ) : sourceQueries.length > 0 ? (
               <div className="overflow-x-auto">

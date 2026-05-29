@@ -47,7 +47,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
     return (
       <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
         <div className="flex h-48 flex-col items-center justify-center gap-3">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300" style={{ borderTopColor: '#FF3621' }} />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
           <p className="text-sm text-gray-500">Loading workspaces...</p>
         </div>
       </div>

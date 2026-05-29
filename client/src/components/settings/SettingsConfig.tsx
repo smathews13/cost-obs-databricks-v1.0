@@ -167,8 +167,10 @@ export function SettingsConfig({
     } catch {
       // fire-and-forget — server runs refresh in background
     }
-    // Clear any old interval, start fresh
+    // Clear any old interval, start fresh.
+    // Fire a quick 3s check to catch fast failures before the 30s cadence kicks in.
     if (_mvPollInterval) clearInterval(_mvPollInterval);
+    setTimeout(() => _mvPollCallback?.(), 3_000);
     _mvPollInterval = setInterval(() => _mvPollCallback?.(), 30_000);
   }
   const [spCopied, setSpCopied] = useState(false);
@@ -653,6 +655,7 @@ export function SettingsConfig({
             {tablesStatus && (() => {
               const history = tablesStatus?.refresh_status?.refresh_history ?? [];
               const fmtWindow = (d: number) => {
+                if (!d) return "—";
                 if (d === 180) return "6 months";
                 if (d === 365) return "1 year";
                 if (d === 730) return "2 years";
@@ -671,11 +674,11 @@ export function SettingsConfig({
               return (
                 <div className="mt-4">
                   <div className="mb-2 flex items-baseline justify-between">
-                    <p className="text-xs font-medium text-gray-600">Rebuild History</p>
-                    <p className="text-[10px] text-gray-400">Last 5 rebuilds tracked</p>
+                    <p className="text-xs font-medium text-gray-600">Table History</p>
+                    <p className="text-[10px] text-gray-400">Last 10 operations tracked</p>
                   </div>
                   {history.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic px-1">No rebuild runs recorded yet. History will appear here after the first manual or nightly rebuild.</p>
+                    <p className="text-xs text-gray-400 italic px-1">No operations recorded yet. History will appear here after the first manual or nightly rebuild.</p>
                   ) : (
                     <div className="rounded-lg border border-gray-200 overflow-hidden">
                       <table className="min-w-full divide-y divide-gray-100 text-xs">
@@ -687,16 +690,20 @@ export function SettingsConfig({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white">
-                          {[...history].reverse().slice(0, 5).map((entry, i) => (
-                            <tr key={i} className={entry.status === "error" ? "bg-red-50" : entry.status === "partial_error" ? "bg-amber-50" : ""}>
+                          {[...history].reverse().slice(0, 10).map((entry, i) => (
+                            <tr key={i} className={entry.status === "error" ? "bg-red-50" : entry.status === "partial_error" ? "bg-amber-50" : entry.status === "dropped" ? "bg-gray-50" : ""}>
                               <td className="px-3 py-1.5 text-gray-600 font-mono text-[11px]">{fmtTs(entry.timestamp)}</td>
                               <td className="px-3 py-1.5 text-gray-500 capitalize">{entry.trigger}</td>
                               <td className="px-3 py-1.5 text-right text-gray-500">{fmtWindow(entry.lookback_days)}</td>
-                              <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">{fmtDuration(entry.duration_seconds)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">{entry.status === "dropped" ? "—" : fmtDuration(entry.duration_seconds)}</td>
                               <td className="px-3 py-1.5 text-right">
                                 {entry.status === "success" ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-[10px] font-medium text-green-700">
                                     <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Success
+                                  </span>
+                                ) : entry.status === "dropped" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 border border-gray-300 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />Dropped
                                   </span>
                                 ) : entry.status === "partial_error" ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700" title={entry.error}>

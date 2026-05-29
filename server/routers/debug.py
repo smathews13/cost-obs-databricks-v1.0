@@ -508,7 +508,9 @@ def _tab_dbu() -> dict:
             return {"status": "warn", "detail": f"{cnt:,} rows but $0 spend — list_prices may be missing", "root_cause": "Rows present but no cost data (list_prices empty at build time)", "fix": "Verify system.billing.list_prices has data (see Permissions section)"}
         return {"status": "pass", "detail": f"${spend:,.0f} spend across {cnt:,} day-workspace rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "MV table not accessible or missing", "fix": "Verify the app identity has SELECT on the daily_usage_summary materialized view. If the table is missing or schema is stale, rebuild materialized views from the Configuration tab."}
+        err = str(e)
+        is_missing = "TABLE_OR_VIEW_NOT_FOUND" in err or "table or view" in err.lower()
+        return {"status": "warn", "detail": f"Query failed: {err[:200]}", "root_cause": "MV table not found — tables were dropped or never built" if is_missing else "MV table not accessible or missing", "fix": "Rebuild materialized views from the Configuration tab.", "failure_class": "missing_mv" if is_missing else None}
 
 
 def _tab_kpis() -> dict:
@@ -525,7 +527,9 @@ def _tab_kpis() -> dict:
             return {"status": "warn", "detail": "No query stats rows in last 30 days — KPI metrics relying on query history will show 0", "root_cause": "daily_query_stats MV is empty or has no recent data", "fix": "Verify system.query.history access and rebuild MVs"}
         return {"status": "pass", "detail": f"{cnt:,} query-stat rows in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "daily_query_stats MV not accessible or missing", "fix": "Verify the app identity has SELECT on daily_query_stats. If the column schema looks wrong, rebuild materialized views. Also check that system.query.history access is granted (see Permissions section)."}
+        err = str(e)
+        is_missing = "TABLE_OR_VIEW_NOT_FOUND" in err or "table or view" in err.lower()
+        return {"status": "warn", "detail": f"Query failed: {err[:200]}", "root_cause": "MV table not found — tables were dropped or never built" if is_missing else "daily_query_stats MV not accessible or missing", "fix": "Rebuild materialized views from the Configuration tab.", "failure_class": "missing_mv" if is_missing else None}
 
 
 def _tab_sql() -> dict:
@@ -551,7 +555,9 @@ def _tab_sql() -> dict:
         if cnt2 > 0: parts.append(f"{cnt2:,} per-query cost rows")
         return {"status": "pass", "detail": ", ".join(parts) + " in last 30 days"}
     except Exception as e:
-        return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "SQL MV tables not accessible or missing", "fix": "Verify the app identity has SELECT on the SQL MV tables (sql_tool_attribution, dbsql_cost_per_query). If the column schema is stale, rebuild materialized views from the Configuration tab."}
+        err = str(e)
+        is_missing = "TABLE_OR_VIEW_NOT_FOUND" in err or "table or view" in err.lower()
+        return {"status": "warn", "detail": f"Query failed: {err[:200]}", "root_cause": "MV tables not found — tables were dropped or never built" if is_missing else "SQL MV tables not accessible or missing", "fix": "Rebuild materialized views from the Configuration tab.", "failure_class": "missing_mv" if is_missing else None}
 
 
 def _tab_aiml() -> dict:

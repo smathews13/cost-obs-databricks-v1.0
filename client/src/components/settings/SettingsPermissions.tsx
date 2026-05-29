@@ -29,8 +29,6 @@ interface AuthStatus {
 
 export function SettingsPermissions() {
   const queryClient = useQueryClient();
-  const [newAdmin, setNewAdmin] = useState("");
-  const [newConsumer, setNewConsumer] = useState("");
   const [grantRunning, setGrantRunning] = useState(false);
   const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string; errors?: string[]; grants_sql?: string; obo_scope_missing?: boolean } | null>(null);
   const [grantSqlCopied, setGrantSqlCopied] = useState(false);
@@ -145,38 +143,44 @@ export function SettingsPermissions() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readiness]);
 
-  const addAdmin = () => {
-    const email = newAdmin.trim();
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserRole, setNewUserRole] = useState<"admin" | "consumer">("consumer");
+
+  const allUsers = [
+    ...(permissions?.admins ?? []).map(e => ({ email: e, role: "admin" as const })),
+    ...(permissions?.consumers ?? []).map(e => ({ email: e, role: "consumer" as const })),
+  ].sort((a, b) => a.email.localeCompare(b.email));
+
+  const addUser = () => {
+    const email = newUserEmail.trim();
     if (!email) return;
-    saveMutation.mutate({
-      admins: [...(permissions?.admins ?? []), email],
-      consumers: (permissions?.consumers ?? []).filter((e) => e !== email),
-    });
-    setNewAdmin("");
+    const admins = [
+      ...(permissions?.admins ?? []).filter(e => e !== email),
+      ...(newUserRole === "admin" ? [email] : []),
+    ];
+    const consumers = [
+      ...(permissions?.consumers ?? []).filter(e => e !== email),
+      ...(newUserRole === "consumer" ? [email] : []),
+    ];
+    saveMutation.mutate({ admins, consumers });
+    setNewUserEmail("");
   };
 
-  const removeAdmin = (email: string) => {
+  const removeUser = (email: string) => {
     saveMutation.mutate({
-      admins: (permissions?.admins ?? []).filter((e) => e !== email),
-      consumers: permissions?.consumers ?? [],
+      admins: (permissions?.admins ?? []).filter(e => e !== email),
+      consumers: (permissions?.consumers ?? []).filter(e => e !== email),
     });
   };
 
-  const addConsumer = () => {
-    const email = newConsumer.trim();
-    if (!email) return;
-    saveMutation.mutate({
-      admins: (permissions?.admins ?? []).filter((e) => e !== email),
-      consumers: [...(permissions?.consumers ?? []), email],
-    });
-    setNewConsumer("");
-  };
-
-  const removeConsumer = (email: string) => {
-    saveMutation.mutate({
-      admins: permissions?.admins ?? [],
-      consumers: (permissions?.consumers ?? []).filter((e) => e !== email),
-    });
+  const changeRole = (email: string, newRole: "admin" | "consumer") => {
+    const admins = newRole === "admin"
+      ? [...(permissions?.admins ?? []).filter(e => e !== email), email]
+      : (permissions?.admins ?? []).filter(e => e !== email);
+    const consumers = newRole === "consumer"
+      ? [...(permissions?.consumers ?? []).filter(e => e !== email), email]
+      : (permissions?.consumers ?? []).filter(e => e !== email);
+    saveMutation.mutate({ admins, consumers });
   };
 
   const isSP = authStatus?.identity === "service_principal";
@@ -244,108 +248,116 @@ export function SettingsPermissions() {
 
       {/* ── App-level user/role permissions ── */}
       {saveMutation.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
           <strong>Save failed:</strong> {saveMutation.error instanceof Error ? saveMutation.error.message : "Unknown error"}. Check that the app service principal has INSERT/DELETE access to the permissions table.
         </div>
       )}
+
       <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
-        <strong>Default access:</strong> Any user not explicitly listed is treated as a <strong>Consumer</strong>. Add users to <em>Admins</em> to grant settings access.
+        <strong>Default access:</strong> Any user not explicitly listed is treated as a <strong>Consumer</strong>. Add users to the table below and set their role to <strong>Admin</strong> to grant settings access.
       </div>
 
       {permissions?.table_location && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
-          <span className="font-medium">Permissions table: </span>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
+          <strong>Permissions table:</strong>{" "}
           <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-gray-800">{permissions.table_location}</code>
           <span className="ml-2 text-gray-500">— stored in Unity Catalog, persists across deploys</span>
         </div>
       )}
 
-      {/* Admins */}
+      {/* Unified Users table */}
       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
         <div className="border-b border-gray-100 px-4 py-3">
-          <h4 className="text-sm font-semibold text-gray-800">Admins</h4>
-          <p className="mt-0.5 text-xs text-gray-500">Admins can view all data and change app settings.</p>
+          <h4 className="text-sm font-semibold text-gray-800">Users</h4>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Admins can view all data and change app settings. Consumers can view dashboards only.
+          </p>
         </div>
-        <div className="px-4 py-3 space-y-2">
-          {(permissions?.admins ?? []).length === 0 ? (
-            <div className="space-y-2">
-              {permissions?.current_user && (
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 opacity-70">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">Admin</span>
-                    <span className="text-xs text-gray-800">{permissions.current_user}</span>
-                    <span className="text-xs text-gray-500 italic">(you — default admin)</span>
-                  </div>
-                </div>
-              )}
-              <p className="text-xs text-gray-500 italic">No admins explicitly configured. All users are admins by default. Add specific users below to restrict admin access to only those listed.</p>
-            </div>
-          ) : (
-            (permissions?.admins ?? []).map((email) => (
-              <div key={email} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">Admin</span>
-                  <span className="text-xs text-gray-800">{email}</span>
-                </div>
-                <button onClick={() => removeAdmin(email)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-              </div>
-            ))
-          )}
-          <div className="flex gap-2 pt-1">
-            <input
-              type="email"
-              placeholder="user@example.com"
-              value={newAdmin}
-              onChange={(e) => setNewAdmin(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addAdmin()}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:border-[#FF3621] focus:outline-none"
-            />
-            <button
-              onClick={addAdmin}
-              disabled={!newAdmin.trim() || saveMutation.isPending}
-              className="btn-brand rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-            >
-              Add Admin
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {/* Consumers */}
-      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-        <div className="border-b border-gray-100 px-4 py-3">
-          <h4 className="text-sm font-semibold text-gray-800">Consumers</h4>
-          <p className="mt-0.5 text-xs text-gray-500">Consumers can view dashboards but cannot change app settings.</p>
-        </div>
-        <div className="px-4 py-3 space-y-2">
-          {(permissions?.consumers ?? []).length === 0 ? (
-            <p className="text-xs text-gray-500 italic">No consumers listed.</p>
-          ) : (
-            (permissions?.consumers ?? []).map((email) => (
-              <div key={email} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">Consumer</span>
-                  <span className="text-xs text-gray-800">{email}</span>
-                </div>
-                <button onClick={() => removeConsumer(email)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+        {/* Empty state — no explicit users */}
+        {allUsers.length === 0 && (
+          <div className="px-4 py-3 space-y-2">
+            {permissions?.current_user && (
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 opacity-70">
+                <span className="rounded bg-[#1B3139]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#1B3139] uppercase tracking-wide">Admin</span>
+                <span className="text-xs text-gray-800">{permissions.current_user}</span>
+                <span className="text-xs text-gray-500 italic">(you — implicit default admin)</span>
               </div>
-            ))
-          )}
-          <div className="flex gap-2 pt-1">
+            )}
+            <p className="text-xs text-gray-500 italic">
+              No users explicitly configured. All users are treated as Admins by default. Add specific users below to enforce access control.
+            </p>
+          </div>
+        )}
+
+        {/* Users table */}
+        {allUsers.length > 0 && (
+          <div className="overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-100 text-xs">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-gray-500">User</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-500">Role</th>
+                  <th className="px-4 py-2 text-right font-medium text-gray-500" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {allUsers.map(({ email, role }) => (
+                  <tr key={email} className="group hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-2 text-gray-800">{email}</td>
+                    <td className="px-4 py-2">
+                      <select
+                        value={role}
+                        onChange={e => changeRole(email, e.target.value as "admin" | "consumer")}
+                        disabled={saveMutation.isPending}
+                        className="rounded border border-gray-200 bg-white px-2 py-0.5 text-xs font-medium text-gray-700 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] disabled:opacity-50"
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="consumer">Consumer</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        onClick={() => removeUser(email)}
+                        disabled={saveMutation.isPending}
+                        className="text-xs text-gray-400 hover:text-red-600 transition-colors disabled:opacity-40"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Add user row */}
+        <div className="border-t border-gray-100 px-4 py-3">
+          <div className="flex items-center gap-2">
             <input
               type="email"
               placeholder="user@example.com"
-              value={newConsumer}
-              onChange={(e) => setNewConsumer(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addConsumer()}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:border-[#FF3621] focus:outline-none"
+              value={newUserEmail}
+              onChange={e => setNewUserEmail(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addUser()}
+              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
             />
-            <button
-              onClick={addConsumer}
-              disabled={!newConsumer.trim() || saveMutation.isPending}
-              className="btn-brand rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            <select
+              value={newUserRole}
+              onChange={e => setNewUserRole(e.target.value as "admin" | "consumer")}
+              className="rounded-md border border-gray-300 px-2 py-1.5 text-xs text-gray-700 bg-white focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
             >
-              Add Consumer
+              <option value="consumer">Consumer</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button
+              onClick={addUser}
+              disabled={!newUserEmail.trim() || saveMutation.isPending}
+              className="shrink-0 rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:opacity-50"
+              style={{ backgroundColor: !newUserEmail.trim() || saveMutation.isPending ? "#FFA390" : "#FF3621" }}
+            >
+              Add User
             </button>
           </div>
         </div>

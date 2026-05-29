@@ -579,11 +579,14 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 180, for
         mv_timings = results.pop("__mv_timings__", {})
         duration = round(time.monotonic() - refresh_start, 1)
         failed = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
+        # "schema" in failed means CREATE SCHEMA itself failed — every table would also fail,
+        # so this is a total failure, not a partial one.
+        total_failure = "schema" in failed or (failed and len(failed) == len(results))
         log_data = {
             "last_refresh_utc": start_utc,
             "duration_seconds": duration,
             "mv_timings": mv_timings,
-            "status": "partial_error" if failed else "success",
+            "status": "error" if total_failure else ("partial_error" if failed else "success"),
             "lookback_days": lookback_days,
         }
         if failed:

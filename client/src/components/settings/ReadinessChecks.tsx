@@ -129,7 +129,7 @@ function CheckRow({ check, showTable = true }: { check: ReadinessCheck | Readine
           {expanded && hasFix && (
             <div className="mt-2 space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Run as metastore admin</span>
+                <span className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">{tableLabel === "system.access.audit" ? "Run as account admin" : "Run as metastore admin"}</span>
                 <CopyButton text={check.fix_sql!} />
               </div>
               <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-gray-900 px-3 py-2 text-[11px] leading-relaxed text-green-400">

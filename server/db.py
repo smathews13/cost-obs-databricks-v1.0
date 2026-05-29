@@ -102,7 +102,14 @@ _CATALOG_OVERRIDE_FILE = os.path.join(
 
 # DBFS path for catalog/schema — survives git redeploys unlike .settings/.
 # Written alongside the local file; read as fallback when local file is absent.
-_DBFS_OVERRIDE_PATH = "/databricks/cost-obs-app/catalog_override.json"
+# Keyed per service-principal so that multiple independent deployments in the same
+# workspace cannot read each other's stale catalog/schema from a shared path.
+_SP_ID = os.getenv("DATABRICKS_CLIENT_ID", "").replace("-", "_")
+_DBFS_OVERRIDE_PATH = (
+    f"/databricks/cost-obs-app/{_SP_ID}/catalog_override.json"
+    if _SP_ID else
+    "/databricks/cost-obs-app/catalog_override.json"
+)
 
 # Locations that are forbidden as app storage targets. main.cost_obs is the old
 # hardcoded default that shipped in app.yaml — it must never be auto-created.

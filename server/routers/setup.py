@@ -2317,6 +2317,50 @@ async def save_workspace_filter(request: Request) -> dict:
     return {"saved": valid_ids}
 
 
+def _record_drop_in_refresh_log() -> None:
+    """Append a 'dropped' entry to mv_refresh_log.json and the Delta refresh log table."""
+    import json as _json
+    from datetime import datetime as _dt
+    _log_path = os.path.join(os.path.dirname(__file__), "..", "..", ".settings", "mv_refresh_log.json")
+    drop_entry = {
+        "timestamp": _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "status": "dropped",
+        "duration_seconds": 0,
+        "lookback_days": 0,
+        "trigger": "manual",
+    }
+    try:
+        with open(_log_path) as f:
+            log = _json.load(f)
+    except (FileNotFoundError, OSError, _json.JSONDecodeError):
+        log = {}
+    history = log.get("refresh_history", [])
+    history.append(drop_entry)
+    log["refresh_history"] = history[-10:]
+    os.makedirs(os.path.dirname(_log_path), exist_ok=True)
+    with open(_log_path, "w") as f:
+        _json.dump(log, f)
+    try:
+        from server.routers.settings import save_refresh_log_to_delta
+        save_refresh_log_to_delta(log)
+    except Exception:
+        pass
+    # Invalidate the tables status cache so the next poll reflects empty tables
+    try:
+        import server.routers.settings as _settings_mod
+        _settings_mod._tables_cache = None
+        _settings_mod._tables_cache_ts = 0.0
+    except Exception:
+        pass
+    # Invalidate debug cache so next diagnostics run re-checks
+    try:
+        import server.routers.debug as _debug_mod
+        _debug_mod._debug_cache = None
+        _debug_mod._debug_cache_ts = 0.0
+    except Exception:
+        pass
+
+
 @router.delete("/drop-materialized-views")
 async def drop_mvs() -> dict:
     """Drop all app-managed materialized view tables. Irreversible — use with caution."""
@@ -2325,6 +2369,7 @@ async def drop_mvs() -> dict:
         catalog, schema = get_catalog_schema()
         results = drop_materialized_views(catalog, schema)
         all_dropped = all(v == "dropped" for v in results.values())
+        _record_drop_in_refresh_log()
         return {"ok": all_dropped, "results": results, "catalog": catalog, "schema": schema}
     except Exception as e:
         logger.exception("drop_mvs: unhandled exception")

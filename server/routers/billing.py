@@ -1469,7 +1469,7 @@ def _format_products(results: list[dict[str, Any]] | None, params: dict[str, str
     for row in results:
         spend = float(row.get("total_spend") or 0)
         products.append({
-            "category": row.get("category"),
+            "category": row.get("product_category"),
             "total_dbus": float(row.get("total_dbus") or 0),
             "total_spend": spend,
             "workspace_count": int(row.get("workspace_count") or 0),
@@ -1521,7 +1521,7 @@ def _format_timeseries(results: list[dict[str, Any]] | None, params: dict[str, s
 
     for row in results:
         date = str(row.get("usage_date"))
-        category = row.get("category") or "Other"
+        category = row.get("product_category") or "Other"
         spend = float(row.get("total_spend") or 0)
 
         categories.add(category)
@@ -1551,7 +1551,7 @@ def _format_sql_breakdown(results: list[dict[str, Any]] | None, params: dict[str
     for row in results:
         spend = float(row.get("total_spend") or 0)
         products.append({
-            "product": row.get("product"),
+            "product": row.get("sql_product"),
             "total_dbus": float(row.get("total_dbus") or 0),
             "total_spend": spend,
             "percentage": (spend / total_spend * 100) if total_spend > 0 else 0,
@@ -1567,7 +1567,26 @@ def _format_sql_breakdown(results: list[dict[str, Any]] | None, params: dict[str
 
 def _format_etl_breakdown(results: list[dict[str, Any]] | None, params: dict[str, str]) -> dict[str, Any]:
     """Format ETL breakdown query results."""
-    return _format_sql_breakdown(results, params)  # Same format
+    if not results:
+        return {"products": [], "total_spend": 0, "start_date": params["start_date"], "end_date": params["end_date"]}
+
+    total_spend = sum(float(row.get("total_spend") or 0) for row in results)
+    products = []
+    for row in results:
+        spend = float(row.get("total_spend") or 0)
+        products.append({
+            "product": row.get("etl_type"),
+            "total_dbus": float(row.get("total_dbus") or 0),
+            "total_spend": spend,
+            "percentage": (spend / total_spend * 100) if total_spend > 0 else 0,
+        })
+
+    return {
+        "products": products,
+        "total_spend": total_spend,
+        "start_date": params["start_date"],
+        "end_date": params["end_date"],
+    }
 
 
 def _format_pipeline_objects(results: list[dict[str, Any]] | None, params: dict[str, str]) -> dict[str, Any]:

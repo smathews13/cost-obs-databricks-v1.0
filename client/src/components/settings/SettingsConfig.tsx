@@ -532,6 +532,7 @@ export function SettingsConfig({
                       // Treat ≤4d behind as current for those tables so users aren't alarmed
                       // after a fresh rebuild that correctly reflects the source data.
                       const billingSource = RETENTION[t.name]?.includes("billing.usage") ?? false;
+                      const queryHistorySource = RETENTION[t.name]?.includes("query.history") ?? false;
                       const missing = t.exists === false && !t.optional;
                       const notConfigured = t.exists === false && t.optional;
                       const unknown = t.exists === null;
@@ -624,6 +625,8 @@ export function SettingsConfig({
                               <span className="text-green-600 font-medium">Today</span>
                             ) : billingSource && t.days_behind <= 4 ? (
                               <span className="text-green-600 font-medium" title={`Databricks billing data has a ${t.days_behind}-day ingestion delay — this table is current`}>Up to date</span>
+                            ) : queryHistorySource && t.days_behind <= 2 ? (
+                              <span className="text-green-600 font-medium" title={`system.query.history has a ~1-2 day ingestion delay — this table is current`}>Up to date</span>
                             ) : t.days_behind <= 4 ? (
                               <span className="text-gray-500">{t.days_behind}d behind</span>
                             ) : t.days_behind <= 7 ? (

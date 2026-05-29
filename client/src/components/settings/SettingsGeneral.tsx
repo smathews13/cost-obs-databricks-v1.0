@@ -45,11 +45,15 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
     onScheduleChange(next);
   };
 
-  const HOUR_OPTIONS = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
-  const formatHour = (h: number) => {
-    const period = h < 12 ? "AM" : "PM";
-    const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `${display}:00 ${period} UTC`;
+  // UI shows PST (UTC-8). hour_utc is what the backend stores and schedules on.
+  const PST_OFFSET = 8;
+  const utcToPst = (utc: number) => (utc - PST_OFFSET + 24) % 24;
+  const pstToUtc = (pst: number) => (pst + PST_OFFSET) % 24;
+  const PST_HOUR_OPTIONS = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+  const formatHourPst = (pst: number) => {
+    const period = pst < 12 ? "AM" : "PM";
+    const display = pst === 0 ? 12 : pst > 12 ? pst - 12 : pst;
+    return `${display}:00 ${period} PST`;
   };
   return (
     <div className="space-y-5">
@@ -130,6 +134,114 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
               <div className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${localSettings.darkMode ? "translate-x-5" : "translate-x-0"}`} />
             </label>
           </div>
+        </div>
+      </div>
+
+      {/* ── Rebuild Schedule ────────────────── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <h4 className="text-sm font-semibold text-gray-900">Rebuild Schedule</h4>
+        </div>
+        <p className="mb-2 text-xs text-gray-500">
+          Rebuild history is tracked in the <span className="font-medium text-gray-600">Storage Location &amp; Tables</span> section of the <span className="font-medium text-gray-600">Config</span> tab.
+        </p>
+        <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+          {/* Enable toggle */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Auto-Rebuild Tables</div>
+              <div className="text-xs text-gray-500">Automatically rebuild materialized views on a schedule</div>
+            </div>
+            <label className="relative cursor-pointer">
+              <input
+                type="checkbox"
+                checked={localSchedule.enabled}
+                onChange={e => updateSchedule({ ...localSchedule, enabled: e.target.checked })}
+                className="sr-only"
+              />
+              <div className={`h-6 w-11 rounded-full transition-colors ${localSchedule.enabled ? "" : "bg-gray-300"}`} style={localSchedule.enabled ? { backgroundColor: '#FF3621' } : {}} />
+              <div className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${localSchedule.enabled ? "translate-x-5" : "translate-x-0"}`} />
+            </label>
+          </div>
+          {/* Frequency */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Frequency</div>
+              <div className="text-xs text-gray-500">How often to rebuild tables</div>
+            </div>
+            <select
+              value={localSchedule.frequency}
+              onChange={e => updateSchedule({ ...localSchedule, frequency: e.target.value as ScheduleSettings["frequency"] })}
+              disabled={!localSchedule.enabled}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+            >
+              <option value="nightly">Nightly</option>
+              <option value="weekly">Weekly (Mondays)</option>
+              <option value="monthly">Monthly (1st of month)</option>
+            </select>
+          </div>
+          {/* Hour */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Time</div>
+              <div className="text-xs text-gray-500">Hour to run the rebuild (PST)</div>
+            </div>
+            <select
+              value={utcToPst(localSchedule.hour_utc)}
+              onChange={e => updateSchedule({ ...localSchedule, hour_utc: pstToUtc(Number(e.target.value)) })}
+              disabled={!localSchedule.enabled}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+            >
+              {PST_HOUR_OPTIONS.map(h => (
+                <option key={h} value={h}>{formatHourPst(h)}</option>
+              ))}
+            </select>
+          </div>
+          {/* Rebuild window */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Rebuild Window</div>
+              <div className="text-xs text-gray-500">How far back to pull data on each rebuild</div>
+            </div>
+            <select
+              value={localSchedule.lookback_days}
+              onChange={e => updateSchedule({ ...localSchedule, lookback_days: Number(e.target.value) })}
+              disabled={!localSchedule.enabled}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+            >
+              <option value={180}>6 months (default)</option>
+              <option value={365}>1 year</option>
+              <option value={730}>2 years</option>
+              <option value={1095}>3 years</option>
+            </select>
+          </div>
+
+        </div>
+      </div>
+
+      {/* ── Export & Branding ────────────────── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <h4 className="text-sm font-semibold text-gray-900">Export & Branding</h4>
+        </div>
+        <div className="rounded-lg border border-gray-200 px-4 py-3">
+          <div className="mb-2">
+            <div className="text-sm font-medium text-gray-900">Company Name</div>
+            <div className="text-xs text-gray-500">Appears in PDF report headers</div>
+          </div>
+          <input
+            type="text"
+            value={localSettings.companyName}
+            onChange={(e) => updateSetting("companyName", e.target.value)}
+            placeholder="e.g., Acme Corp"
+            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          />
         </div>
       </div>
 
@@ -231,114 +343,6 @@ export function SettingsGeneral({ localSettings, updateSetting, saveStatus, setS
               Test
             </button>
           </div>
-        </div>
-      </div>
-
-      {/* ── Rebuild Schedule ────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          <h4 className="text-sm font-semibold text-gray-900">Rebuild Schedule</h4>
-        </div>
-        <p className="mb-2 text-xs text-gray-500">
-          Rebuild history is tracked in the <span className="font-medium text-gray-600">Storage Location &amp; Tables</span> section of the <span className="font-medium text-gray-600">Config</span> tab.
-        </p>
-        <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
-          {/* Enable toggle */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <div className="text-sm font-medium text-gray-900">Auto-Rebuild Tables</div>
-              <div className="text-xs text-gray-500">Automatically rebuild materialized views on a schedule</div>
-            </div>
-            <label className="relative cursor-pointer">
-              <input
-                type="checkbox"
-                checked={localSchedule.enabled}
-                onChange={e => updateSchedule({ ...localSchedule, enabled: e.target.checked })}
-                className="sr-only"
-              />
-              <div className={`h-6 w-11 rounded-full transition-colors ${localSchedule.enabled ? "" : "bg-gray-300"}`} style={localSchedule.enabled ? { backgroundColor: '#FF3621' } : {}} />
-              <div className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${localSchedule.enabled ? "translate-x-5" : "translate-x-0"}`} />
-            </label>
-          </div>
-          {/* Frequency */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <div className="text-sm font-medium text-gray-900">Frequency</div>
-              <div className="text-xs text-gray-500">How often to rebuild tables</div>
-            </div>
-            <select
-              value={localSchedule.frequency}
-              onChange={e => updateSchedule({ ...localSchedule, frequency: e.target.value as ScheduleSettings["frequency"] })}
-              disabled={!localSchedule.enabled}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
-            >
-              <option value="nightly">Nightly</option>
-              <option value="weekly">Weekly (Mondays)</option>
-              <option value="monthly">Monthly (1st of month)</option>
-            </select>
-          </div>
-          {/* Hour */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <div className="text-sm font-medium text-gray-900">Time</div>
-              <div className="text-xs text-gray-500">Hour to run the rebuild (UTC)</div>
-            </div>
-            <select
-              value={localSchedule.hour_utc}
-              onChange={e => updateSchedule({ ...localSchedule, hour_utc: Number(e.target.value) })}
-              disabled={!localSchedule.enabled}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
-            >
-              {HOUR_OPTIONS.map(h => (
-                <option key={h} value={h}>{formatHour(h)}</option>
-              ))}
-            </select>
-          </div>
-          {/* Rebuild window */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <div className="text-sm font-medium text-gray-900">Rebuild Window</div>
-              <div className="text-xs text-gray-500">How far back to pull data on each rebuild</div>
-            </div>
-            <select
-              value={localSchedule.lookback_days}
-              onChange={e => updateSchedule({ ...localSchedule, lookback_days: Number(e.target.value) })}
-              disabled={!localSchedule.enabled}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
-            >
-              <option value={180}>6 months (default)</option>
-              <option value={365}>1 year</option>
-              <option value={730}>2 years</option>
-              <option value={1095}>3 years</option>
-            </select>
-          </div>
-
-        </div>
-      </div>
-
-      {/* ── Export & Branding ────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <h4 className="text-sm font-semibold text-gray-900">Export & Branding</h4>
-        </div>
-        <div className="rounded-lg border border-gray-200 px-4 py-3">
-          <div className="mb-2">
-            <div className="text-sm font-medium text-gray-900">Company Name</div>
-            <div className="text-xs text-gray-500">Appears in PDF report headers</div>
-          </div>
-          <input
-            type="text"
-            value={localSettings.companyName}
-            onChange={(e) => updateSetting("companyName", e.target.value)}
-            placeholder="e.g., Acme Corp"
-            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
-          />
         </div>
       </div>
 

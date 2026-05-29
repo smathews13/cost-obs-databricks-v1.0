@@ -1181,6 +1181,8 @@ function WorkspaceFilterStep({
   locked: boolean;
   lockedIds: string[];
 }) {
+  const [search, setSearch] = useState("");
+
   if (loading) return <LoadingSpinner text="Loading workspaces..." />;
 
   if (locked) {
@@ -1235,8 +1237,22 @@ function WorkspaceFilterStep({
             </div>
           </div>
 
+          {workspaces.length > 5 && (
+            <input
+              type="text"
+              placeholder="Search by name or ID…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 placeholder-gray-400 outline-none focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621]"
+            />
+          )}
+
           <div className="max-h-52 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-2">
-            {workspaces.map((ws) => {
+            {workspaces.filter(ws => {
+              if (!search.trim()) return true;
+              const q = search.toLowerCase();
+              return ws.name.toLowerCase().includes(q) || ws.id.toLowerCase().includes(q);
+            }).map((ws) => {
               const checked = selectedIds.has(ws.id);
               return (
                 <label key={ws.id} className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors ${checked ? "bg-orange-50" : "hover:bg-gray-50"}`}>

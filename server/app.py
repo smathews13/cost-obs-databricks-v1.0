@@ -709,7 +709,12 @@ def startup_tasks():
         logger.warning(f"Permissions pre-warm failed (non-fatal): {e}")
 
     # Step 7: Pre-warm ALL tabs (slower queries, runs after alerts)
-    prewarm_all_tabs()
+    # Skip if setup hasn't completed yet — would hammer the warehouse for many minutes
+    # on a fresh deploy and starve the setup wizard of worker capacity.
+    if _setup_complete:
+        prewarm_all_tabs()
+    else:
+        logger.info("Setup not yet complete — skipping prewarm_all_tabs")
 
     # Step 8: Pre-warm tables status cache so Settings panel loads instantly on first open.
     # Runs last — by this point the warehouse is warm and billing queries are cached.

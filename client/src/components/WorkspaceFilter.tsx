@@ -183,7 +183,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
                 return (
                   <label
                     key={id}
-                    className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50 ${checked && !draftAll ? "bg-red-50" : ""}`}
+                    className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 ${checked && !draftAll ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"}`}
                   >
                     <input
                       type="checkbox"
@@ -221,7 +221,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
                     <>
                       {selectedRows.length > 0 && <div className="my-1 border-t border-gray-100" />}
                       <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                        All workspaces
+                        Others
                       </p>
                       {unselectedRows.map(renderRow)}
                     </>

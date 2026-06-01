@@ -169,21 +169,21 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
           </div>
           <div className="space-y-1 max-h-60 overflow-y-auto">
             {(() => {
-              const filtered = validWorkspaces.filter((ws) => {
-                if (!search) return true;
-                const q = search.toLowerCase();
-                return (ws.workspace_name || ws.workspace_id || "").toLowerCase().includes(q);
-              });
+              const q = search.toLowerCase();
+              const filtered = validWorkspaces.filter((ws) =>
+                !search || (ws.workspace_name || ws.workspace_id || "").toLowerCase().includes(q)
+              );
               if (filtered.length === 0) {
                 return <p className="px-2 py-3 text-center text-xs text-gray-500">No workspaces match</p>;
               }
-              return filtered.map((ws) => {
+
+              const renderRow = (ws: Workspace) => {
                 const id = ws.workspace_id!;
                 const checked = draftAll || draftIds.includes(id);
                 return (
                   <label
                     key={id}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50"
+                    className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50 ${checked && !draftAll ? "bg-red-50" : ""}`}
                   >
                     <input
                       type="checkbox"
@@ -196,7 +196,38 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
                     </span>
                   </label>
                 );
-              });
+              };
+
+              // When there's an active search or all/none selected, render flat
+              if (search || draftAll || draftIds.length === 0) {
+                return filtered.map(renderRow);
+              }
+
+              // Pin selected to top
+              const selectedRows = filtered.filter((ws) => draftIds.includes(ws.workspace_id!));
+              const unselectedRows = filtered.filter((ws) => !draftIds.includes(ws.workspace_id!));
+
+              return (
+                <>
+                  {selectedRows.length > 0 && (
+                    <>
+                      <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                        Selected
+                      </p>
+                      {selectedRows.map(renderRow)}
+                    </>
+                  )}
+                  {unselectedRows.length > 0 && (
+                    <>
+                      {selectedRows.length > 0 && <div className="my-1 border-t border-gray-100" />}
+                      <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                        All workspaces
+                      </p>
+                      {unselectedRows.map(renderRow)}
+                    </>
+                  )}
+                </>
+              );
             })()}
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2">

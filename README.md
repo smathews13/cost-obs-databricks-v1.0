@@ -200,7 +200,7 @@ Use **Settings → Permissions** to manage who can administer or view the app.
 | Feature | Description |
 |---|---|
 | **Spend Over Time** | Daily spend timeseries by product category |
-| **Spend by Product** | Horizontal bar chart with workspace filter — SQL, ETL, Interactive, Model Serving, Vector Search, Fine-Tuning, AI Functions, Serverless |
+| **Spend by Product** | Horizontal bar chart with workspace filter — SQL, ETL, Interactive, Model Serving, AI Search, Fine-Tuning, AI Functions, Serverless |
 | **Spend by SKU** | Top 10 SKUs with workspace filter |
 | **Spend by User** | Top spenders by DBU cost |
 | **Workspace Table** | Per-workspace cost breakdown with top products/users |

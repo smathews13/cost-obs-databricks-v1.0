@@ -6,7 +6,7 @@ The app (`cost-obs`) is deployed on the CMEG Demo workspace and shows as RUNNING
 
 Two deliverables are needed:
 1. **A repeatable CMEG deployment** that actually works end-to-end (data endpoints included)
-2. **A Databricks Asset Bundle** for deploying to other environments with a setup wizard
+2. **A Declarative Automation Bundle** for deploying to other environments with a setup wizard
 
 ---
 
@@ -89,7 +89,7 @@ Single command: `./dba_deploy.sh cost-obs`
 
 ---
 
-## PART 2: Databricks Asset Bundle for Other Environments
+## PART 2: Declarative Automation Bundle for Other Environments
 
 ### Step 1: Create `databricks.yml`
 

@@ -37,7 +37,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   "OpenAI": "#10B981",
   "Anthropic": "#F59E0B",
   "Gemini": "#6B7280",
-  "Vector Search": "#3B82F6",
+  "AI Search": "#3B82F6",
   "Fine Tuning": "#F97316",
 };
 const FALLBACK_COLORS = ["#1B5162", "#06B6D4", "#10B981", "#14B8A6", "#F59E0B", "#3B82F6", "#EC4899", "#EF4444", "#6B7280"];
@@ -248,7 +248,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     <li><strong>Serverless Inference</strong>: Custom model/agent endpoints on Databricks managed infrastructure</li>
                     <li><strong>Batch Inference</strong>: Batch inference jobs for large-scale offline predictions</li>
                     <li><strong>Fine-Tuning</strong>: Model fine-tuning runs using Databricks Mosaic AI</li>
-                    <li><strong>Vector Search</strong>: Databricks Vector Search index compute costs</li>
+                    <li><strong>AI Search</strong>: Databricks AI Search index compute costs</li>
                     <li><strong>Model Serving</strong>: Other model serving workloads not captured above</li>
                   </ul>
                 </div>

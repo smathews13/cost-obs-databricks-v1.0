@@ -579,7 +579,7 @@ def _tab_aiml() -> dict:
         )
         cnt = int((result or [{}])[0].get("cnt", 0))
         if cnt == 0:
-            return {"status": "warn", "detail": "No AI/ML usage rows in last 30 days — AIML tab will show $0", "root_cause": "No Model Serving, Foundation Model APIs, or Vector Search usage detected in last 30 days", "fix": "AIML tab only shows data if your account uses Model Serving, Foundation Model APIs, or Vector Search. This may be expected if those features aren't in use."}
+            return {"status": "warn", "detail": "No AI/ML usage rows in last 30 days — AIML tab will show $0", "root_cause": "No Model Serving, Foundation Model APIs, or AI Search usage detected in last 30 days", "fix": "AIML tab only shows data if your account uses Model Serving, Foundation Model APIs, or AI Search. This may be expected if those features aren't in use."}
         return {"status": "pass", "detail": f"{cnt:,} AI/ML billing rows in last 30 days"}
     except Exception as e:
         return {"status": "warn", "detail": f"Query failed: {str(e)[:200]}", "root_cause": "Missing permission on system.billing.usage", "fix": "Verify the app identity has USE SCHEMA on system.billing and SELECT on system.billing.usage. If the catalog is inaccessible, grant USE CATALOG on the system catalog. See the Permissions section for detailed grant SQL."}

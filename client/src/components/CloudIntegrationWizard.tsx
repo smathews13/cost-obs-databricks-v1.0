@@ -137,21 +137,21 @@ export function CloudIntegrationWizard({
                   {wizardCloud === "azure"
                     ? "Deploy the cloud-infra-costs Azure project to ingest actual Azure billing data (Actuals, Amortized, or FOCUS format) via Streaming Declarative Pipelines into a medallion architecture:"
                     : wizardCloud === "gcp"
-                    ? "Deploy the cloud-infra-costs GCP project to ingest GCP billing data from BigQuery into a medallion architecture via Databricks Asset Bundles:"
-                    : "Deploy the cloud-infra-costs AWS project to ingest CUR 2.0 Standard Data Exports from S3 into a medallion architecture via Databricks Asset Bundles:"}
+                    ? "Deploy the cloud-infra-costs GCP project to ingest GCP billing data from BigQuery into a medallion architecture via Declarative Automation Bundles:"
+                    : "Deploy the cloud-infra-costs AWS project to ingest CUR 2.0 Standard Data Exports from S3 into a medallion architecture via Declarative Automation Bundles:"}
                 </p>
 
                 {(wizardCloud === "azure" ? [
                   "Deploy Terraform (Storage Account, External Location, Catalog)",
                   "Configure Cost Exports in Azure Portal",
-                  "Configure Databricks Asset Bundle (DAB)",
+                  "Configure Declarative Automation Bundle (DAB)",
                   "Authenticate & Deploy the Bundle",
                   "Validate Dashboards (Final Step)",
                 ] : wizardCloud === "gcp" ? [
                   "Enable GCP Billing Export to BigQuery",
                   "Create a GCP Service Account with BigQuery read access",
                   "Create a Databricks Google Cloud Storage External Location",
-                  "Configure & Deploy the Databricks Asset Bundle (DAB)",
+                  "Configure & Deploy the Declarative Automation Bundle (DAB)",
                   "Validate Workflows & Dashboards (Final Step)",
                 ] : [
                   "Create S3 Bucket for Cost Export",
@@ -467,7 +467,7 @@ export function CloudIntegrationWizard({
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
-                    Databricks Asset Bundles Docs
+                    Declarative Automation Bundles Docs
                   </a>
                 </div>
               </div>

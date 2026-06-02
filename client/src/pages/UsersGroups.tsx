@@ -44,7 +44,7 @@ const PRODUCT_COLORS: Record<string, string> = {
   "Serverless": "#F59E0B",
   "Model Serving": "#06B6D4",
   "Fine-Tuning": "#EC4899",
-  "Vector Search": "#EF4444",
+  "AI Search": "#EF4444",
   "AI Functions": "#FF3621",
   "Other": "#6B7280",
 };

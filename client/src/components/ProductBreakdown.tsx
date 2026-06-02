@@ -28,7 +28,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Interactive: "#F59E0B",
   Serverless: "#06B6D4",
   "Model Serving": "#EC4899",
-  "Vector Search": "#EF4444",
+  "AI Search": "#EF4444",
   "Fine-Tuning": "#F97316",
   "AI Functions": "#3B82F6",
   Other: "#6B7280",

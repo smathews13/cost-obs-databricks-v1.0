@@ -22,7 +22,7 @@ const PRODUCT_LABELS: Record<string, string> = {
   DLT: "Spark Declarative Pipelines",
   MODEL_SERVING: "Model Serving",
   INTERACTIVE: "Notebooks",
-  VECTOR_SEARCH: "Vector Search",
+  VECTOR_SEARCH: "AI Search",
   AI_RUNTIME: "AI Runtime",
   AI_GATEWAY: "AI Gateway",
   AI_FUNCTIONS: "AI Functions",

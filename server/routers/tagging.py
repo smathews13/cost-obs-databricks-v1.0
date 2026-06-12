@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query
 
 from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
+from server import cache_ttls
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1001,7 +1002,20 @@ async def get_tagging_dashboard_bundle(
         ("timeseries", lambda: execute_query(_ws(TAG_COVERAGE_TIMESERIES), params)),
     ]
 
-    results = await asyncio.to_thread(execute_queries_parallel, queries)
+    try:
+        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=45.0)
+    except Exception as e:
+        logger.error("tagging dashboard-bundle failed: %s", e)
+        empty_untagged = {"items": [], "total_spend": 0, "count": 0}
+        return {
+            "summary": {"tagged_spend": 0, "untagged_spend": 0, "total_spend": 0, "tagged_percentage": 0, "untagged_percentage": 0},
+            "untagged": {"clusters": empty_untagged, "jobs": empty_untagged, "pipelines": empty_untagged, "warehouses": empty_untagged, "endpoints": empty_untagged},
+            "cost_by_tag": {"tags": [], "total_spend": 0},
+            "timeseries": {"timeseries": [], "categories": ["Tagged", "Untagged"]},
+            "start_date": params["start_date"],
+            "end_date": params["end_date"],
+            "error": str(e),
+        }
 
     # Format summary
     summary_data = results.get("summary", [])
@@ -1075,5 +1089,5 @@ async def get_tagging_dashboard_bundle(
         "start_date": params["start_date"],
         "end_date": params["end_date"],
     }
-    delta_cache_put(_dkey, "tagging:dashboard-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+    delta_cache_put(_dkey, "tagging:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
     return _resp

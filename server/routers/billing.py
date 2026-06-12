@@ -1182,25 +1182,42 @@ async def get_dashboard_bundle(
         ("aws_timeseries", lambda: execute_query(AWS_COST_TIMESERIES, params)),
     ]
 
-    results = await asyncio.to_thread(execute_queries_parallel, queries)
+    try:
+        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=60.0)
 
-    # Format responses to match existing endpoint structures
-    response = {
-        "summary": _format_summary(results["summary"], params),
-        "products": _format_products(results["products"], params),
-        "workspaces": _format_workspaces(results["workspaces"], params),
-        "timeseries": _format_timeseries(results["timeseries"], params),
-        "sql_breakdown": _format_sql_breakdown(results["sql_breakdown"], params),
-        "etl_breakdown": _format_etl_breakdown(results["etl_breakdown"], params),
-        "pipeline_objects": _format_pipeline_objects(results["pipeline_objects"], params),
-        "interactive": _format_interactive(results["interactive"], params),
-        "aws": {
-            "clusters": _format_aws_clusters(results["aws_clusters"], results["aws_instances"], params),
-            "timeseries": _format_aws_timeseries(results["aws_timeseries"], params),
-        },
-    }
+        # Format responses to match existing endpoint structures
+        response = {
+            "summary": _format_summary(results.get("summary"), params),
+            "products": _format_products(results.get("products"), params),
+            "workspaces": _format_workspaces(results.get("workspaces"), params),
+            "timeseries": _format_timeseries(results.get("timeseries"), params),
+            "sql_breakdown": _format_sql_breakdown(results.get("sql_breakdown"), params),
+            "etl_breakdown": _format_etl_breakdown(results.get("etl_breakdown"), params),
+            "pipeline_objects": _format_pipeline_objects(results.get("pipeline_objects"), params),
+            "interactive": _format_interactive(results.get("interactive"), params),
+            "aws": {
+                "clusters": _format_aws_clusters(results.get("aws_clusters"), results.get("aws_instances"), params),
+                "timeseries": _format_aws_timeseries(results.get("aws_timeseries"), params),
+            },
+        }
 
-    return response
+        return response
+    except Exception as e:
+        logger.error("dashboard-bundle failed: %s", e)
+        return {
+            "summary": _format_summary(None, params),
+            "products": _format_products(None, params),
+            "workspaces": _format_workspaces(None, params),
+            "timeseries": _format_timeseries(None, params),
+            "sql_breakdown": _format_sql_breakdown(None, params),
+            "etl_breakdown": _format_etl_breakdown(None, params),
+            "pipeline_objects": _format_pipeline_objects(None, params),
+            "interactive": _format_interactive(None, params),
+            "aws": {
+                "clusters": _format_aws_clusters(None, None, params),
+                "timeseries": _format_aws_timeseries(None, params),
+            },
+        }
 
 
 def _inject_ws_filter(sql: str, clause: str) -> str:
@@ -1354,29 +1371,42 @@ async def get_dashboard_bundle_fast(
             ("workspace_count", lambda: execute_query(WORKSPACE_COUNT_QUERY, params)),
         ]
 
-    results = await asyncio.to_thread(execute_queries_parallel, queries)
+    try:
+        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=45.0)
 
-    # Format responses
-    response = {
-        "summary": _format_summary(results["summary"], params),
-        "products": _format_products_fast(results["products"], params),
-        "workspaces": _format_workspaces(results["workspaces"], params),
-        "timeseries": _format_timeseries_fast(results["timeseries"], params),
-        "etl_breakdown": _format_etl_breakdown(results["etl_breakdown"], params),
-        "is_fast_mode": True,
-        "using_materialized_views": use_mv,
-    }
+        # Format responses
+        response = {
+            "summary": _format_summary(results.get("summary"), params),
+            "products": _format_products_fast(results.get("products"), params),
+            "workspaces": _format_workspaces(results.get("workspaces"), params),
+            "timeseries": _format_timeseries_fast(results.get("timeseries"), params),
+            "etl_breakdown": _format_etl_breakdown(results.get("etl_breakdown"), params),
+            "is_fast_mode": True,
+            "using_materialized_views": use_mv,
+        }
 
-    # Without MVs: override workspace_count with accurate most-recent-day count
-    if not use_mv:
-        wc_results = results.get("workspace_count")
-        if wc_results and len(wc_results) > 0:
-            accurate_count = int(wc_results[0].get("workspace_count") or 0)
-            if accurate_count > 0:
-                response["summary"]["workspace_count"] = accurate_count
+        # Without MVs: override workspace_count with accurate most-recent-day count
+        if not use_mv:
+            wc_results = results.get("workspace_count")
+            if wc_results and len(wc_results) > 0:
+                accurate_count = int(wc_results[0].get("workspace_count") or 0)
+                if accurate_count > 0:
+                    response["summary"]["workspace_count"] = accurate_count
 
-    delta_cache_put(_dkey, "billing:dashboard-bundle-fast", response, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
-    return response
+        delta_cache_put(_dkey, "billing:dashboard-bundle-fast", response, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
+        return response
+    except Exception as e:
+        logger.error("dashboard-bundle-fast failed: %s", e)
+        return {
+            "summary": _format_summary(None, params),
+            "products": _format_products_fast(None, params),
+            "workspaces": _format_workspaces(None, params),
+            "timeseries": _format_timeseries_fast(None, params),
+            "etl_breakdown": _format_etl_breakdown(None, params),
+            "is_fast_mode": True,
+            "using_materialized_views": use_mv,
+            "error": str(e),
+        }
 
 
 def _format_products_fast(results: list[dict[str, Any]] | None, params: dict[str, str]) -> dict[str, Any]:
@@ -2103,7 +2133,19 @@ async def get_kpis_bundle(
     # Supplemental user count from materialized table — failures handled inside execute_query
     parallel_queries.append(("user_count", lambda: execute_query(USER_COUNT_QUERY, params)))
 
-    query_results = await asyncio.to_thread(execute_queries_parallel, parallel_queries)
+    try:
+        query_results = await asyncio.to_thread(execute_queries_parallel, parallel_queries, timeout=45.0)
+    except Exception as e:
+        logger.error("kpis-bundle query execution failed: %s", e)
+        return {"kpis": {
+            "total_queries": 0, "unique_query_users": 0,
+            "total_rows_read": 0, "total_bytes_read": 0, "total_compute_seconds": 0,
+            "total_jobs": 0, "total_job_runs": 0, "successful_runs": 0,
+            "unique_job_owners": 0, "active_workspaces": 0, "active_notebooks": 0,
+            "models_served": 0, "total_serving_dbus": 0,
+            "start_date": params["start_date"], "end_date": params["end_date"],
+            "error": str(e),
+        }, "anomalies": {"anomalies": [], "start_date": params["start_date"], "end_date": params["end_date"]}}
 
     # --- Build KPIs response ---
     kpis_response = {

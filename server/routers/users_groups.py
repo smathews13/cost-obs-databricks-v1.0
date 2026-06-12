@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from server.db import execute_query, execute_queries_parallel, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
+from server import cache_ttls
 from server.email_service import send_alert_email
 
 logger = logging.getLogger(__name__)
@@ -469,7 +470,21 @@ async def get_users_groups_bundle(
         ("spend_growth", lambda: execute_query(_ws(USERS_SPEND_GROWTH), growth_params)),
         ("user_growth", lambda: execute_query(_ws(USERS_GROWTH), growth_date_params)),
     ]
-    results = await asyncio.to_thread(execute_queries_parallel, queries)
+    try:
+        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=45.0)
+    except Exception as e:
+        logger.error("users dashboard-bundle failed: %s", e)
+        return {
+            "summary": {},
+            "top_users": [],
+            "timeseries": [],
+            "timeseries_users": [],
+            "by_workspace": [],
+            "user_growth": [],
+            "start_date": start_date,
+            "end_date": end_date,
+            "error": str(e),
+        }
 
     # Summary
     summary_rows = results.get("summary") or []
@@ -572,7 +587,7 @@ async def get_users_groups_bundle(
         "start_date": start_date,
         "end_date": end_date,
     }
-    delta_cache_put(_dkey, "users:dashboard-bundle", _resp, ttl_seconds=600 if id_list else 1800)
+    delta_cache_put(_dkey, "users:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
     return _resp
 
 

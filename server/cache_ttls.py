@@ -5,7 +5,7 @@ All cache durations in seconds. Change a policy here; it propagates everywhere.
 
 # --- Delta response cache (delta_cache_put) ---
 BUNDLE = 1800          # Analytics bundles: 30 min — expensive aggregations, low churn
-BUNDLE_FILTERED = 600  # Same bundles when a workspace filter is active: 10 min
+BUNDLE_FILTERED = 1800  # Same bundles when a workspace filter is active: 30 min (filter is a WHERE clause, not fresher data)
 KPI = 300              # KPI endpoints: 5 min — users expect near-real-time numbers
 TREND = 1800           # Timeseries / trend data: 30 min
 INFRA = 1800           # Infrastructure cost bundles: 30 min

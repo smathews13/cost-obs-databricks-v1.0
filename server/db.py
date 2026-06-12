@@ -491,8 +491,15 @@ def bundle_cache_key(endpoint: str, start_date: str, end_date: str, workspace_id
     return hashlib.md5(raw.encode()).hexdigest()
 
 
+# L1 in-process cache in front of the Delta SQL cache — avoids a warehouse
+# round-trip on every bundle request when the payload is already warm.
+_delta_l1: TTLCache = TTLCache(maxsize=50, ttl=300)
+
+
 def delta_cache_get(key: str) -> dict | None:
     """Read a bundle payload from the Delta response cache. Returns None on miss/error."""
+    if key in _delta_l1:
+        return _delta_l1[key]
     try:
         cat, sch = get_catalog_schema()
         if not cat or not sch:
@@ -509,7 +516,9 @@ def delta_cache_get(key: str) -> dict | None:
             _user_token.reset(tok)
         if rows and rows[0].get("payload_json"):
             import gzip, base64 as _b64
-            return json.loads(gzip.decompress(_b64.b64decode(rows[0]["payload_json"])).decode())
+            result = json.loads(gzip.decompress(_b64.b64decode(rows[0]["payload_json"])).decode())
+            _delta_l1[key] = result
+            return result
     except Exception as e:
         logger.debug("Delta cache read failed (non-fatal): %s", e)
     return None
@@ -517,6 +526,7 @@ def delta_cache_get(key: str) -> dict | None:
 
 def delta_cache_put(key: str, endpoint: str, payload: dict, ttl_seconds: int = 600) -> None:
     """Write a bundle payload to the Delta response cache. Fails silently; one retry on conflict."""
+    _delta_l1[key] = payload
     if not _ensure_response_cache_table():
         return
     cat, sch = get_catalog_schema()
@@ -1037,7 +1047,7 @@ def get_auth_status() -> dict:
 
 def execute_queries_parallel(
     query_funcs: list[tuple[str, Callable[[], list[dict[str, Any]]]]],
-    timeout: float | None = None,
+    timeout: float | None = 30.0,
 ) -> dict[str, list[dict[str, Any]] | None]:
     """Execute multiple queries in parallel using ThreadPoolExecutor.
 

@@ -447,11 +447,24 @@ async def get_origin_bundle(
             logger.warning(f"Bundle by-warehouse failed: {e}")
             return []
 
-    raw = await asyncio.to_thread(execute_queries_parallel, [
-        ("summary", _run_summary),
-        ("timeseries", _run_timeseries),
-        ("by_warehouse", _run_by_warehouse),
-    ])
+    try:
+        raw = await asyncio.to_thread(execute_queries_parallel, [
+            ("summary", _run_summary),
+            ("timeseries", _run_timeseries),
+            ("by_warehouse", _run_by_warehouse),
+        ], timeout=45.0)
+    except Exception as e:
+        logger.error("query_origin bundle failed: %s", e)
+        return {
+            "available": False,
+            "has_cost_data": False,
+            "summary": {"origins": [], "total_spend": 0},
+            "timeseries": {"timeseries": [], "origins": []},
+            "by_warehouse": {"warehouses": []},
+            "start_date": start_date,
+            "end_date": end_date,
+            "error": str(e),
+        }
 
     # --- Format summary ---
     summary_rows, has_cost = raw.get("summary") or ([], False)

@@ -418,6 +418,8 @@ def prewarm_cache_sync():
             BILLING_BY_WORKSPACE,
             BILLING_TIMESERIES_FAST,
             ETL_BREAKDOWN,
+            BILLING_KPIS_FAST,
+            SPEND_ANOMALIES,
         )
 
         # Default 30-day range
@@ -435,6 +437,8 @@ def prewarm_cache_sync():
             ("workspaces", lambda: execute_query(BILLING_BY_WORKSPACE, params)),
             ("timeseries", lambda: execute_query(BILLING_TIMESERIES_FAST, params)),
             ("etl", lambda: execute_query(ETL_BREAKDOWN, params)),
+            ("kpis", lambda: execute_query(BILLING_KPIS_FAST, params)),
+            ("anomalies", lambda: execute_query(SPEND_ANOMALIES, params)),
         ]
 
         results = execute_queries_parallel(queries)
@@ -723,12 +727,7 @@ def startup_tasks():
         logger.warning(f"Permissions pre-warm failed (non-fatal): {e}")
 
     # Step 7: Pre-warm ALL tabs (slower queries, runs after alerts)
-    # Skip if setup hasn't completed yet — would hammer the warehouse for many minutes
-    # on a fresh deploy and starve the setup wizard of worker capacity.
-    if _setup_complete:
-        prewarm_all_tabs()
-    else:
-        logger.info("Setup not yet complete — skipping prewarm_all_tabs")
+    prewarm_all_tabs()
 
     # Step 8: Pre-warm tables status cache so Settings panel loads instantly on first open.
     # Runs last — by this point the warehouse is warm and billing queries are cached.

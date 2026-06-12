@@ -890,7 +890,23 @@ async def get_aiml_dashboard_bundle(
         ("agent_bricks", lambda: query_with_fallback(_ws(AIML_AGENT_BRICKS_ENRICHED), _ws(AIML_AGENT_BRICKS_FALLBACK), params, label="agent_bricks")),
     ]
 
-    results = await asyncio.to_thread(execute_queries_parallel, queries)
+    try:
+        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=45.0)
+    except Exception as e:
+        logger.error("aiml dashboard-bundle failed: %s", e)
+        return {
+            "summary": {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "endpoint_count": 0},
+            "providers": {"providers": [], "total_spend": 0},
+            "endpoints": {"endpoints": [], "total_spend": 0},
+            "categories": {"categories": [], "total_spend": 0},
+            "timeseries": {"timeseries": [], "categories": []},
+            "models": {"models": []},
+            "ml_clusters": {"clusters": []},
+            "agent_bricks": {"agents": []},
+            "start_date": params["start_date"],
+            "end_date": params["end_date"],
+            "error": str(e),
+        }
 
     # Format summary
     summary_data = results.get("summary", [])

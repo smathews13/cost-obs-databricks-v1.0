@@ -1451,6 +1451,24 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
             cfg = _TABLE_REFRESH_CONFIG.get(table_name, {})
             state = _get_refresh_state(catalog, schema, table_name)
 
+            # If no state record exists but the table already has rows, recover
+            # gracefully by using the incremental MERGE path. This prevents an
+            # unnecessary full CREATE (which is expensive on large workspaces)
+            # when app_mv_refresh_state was cleared or never populated. The MERGE
+            # will cover the rolling reprocess window; any larger data gap was
+            # presumably backfilled manually or by a prior catch-up run.
+            if not force_full_rebuild and not state:
+                try:
+                    _cnt = execute_query(
+                        f"SELECT COUNT(*) AS cnt FROM `{catalog}`.`{schema}`.`{table_name}` LIMIT 1",
+                        no_cache=True,
+                    )
+                    if _cnt and int(_cnt[0].get("cnt", 0) or 0) > 0:
+                        state = {"watermark": str(date.today()), "refresh_count": 0}
+                        logger.info(f"{table_name}: no state record but table has rows — using incremental MERGE")
+                except Exception:
+                    pass  # no table yet — fall through to full CREATE
+
             if not force_full_rebuild and state and state.get("watermark"):
                 # Incremental path: MERGE reprocess window
                 reprocess_days = cfg.get("reprocess_days", 14)

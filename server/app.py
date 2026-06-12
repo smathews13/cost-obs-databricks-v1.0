@@ -335,7 +335,7 @@ def setup_materialized_views():
     — the wizard or a configuration fix is required before any writes happen.
     """
     try:
-        from server.db import get_catalog_schema, validate_app_storage_target, StorageConfigurationError
+        from server.db import get_catalog_schema, validate_app_storage_target, StorageConfigurationError, execute_query
         from server.materialized_views import check_materialized_views_exist, create_materialized_views
 
         catalog, schema = get_catalog_schema()
@@ -374,23 +374,25 @@ def setup_materialized_views():
         # Tables durably exist — background refresh is safe, but skip if recently refreshed.
         # Refreshing on every restart hammers the warehouse during cold start. The nightly
         # scheduler handles regular refreshes; startup only refreshes if data is stale (>26h).
-        import json as _json
+        # Read freshness from the MV table itself (persists across deploys) rather than from
+        # a local log file that gets wiped on every redeploy, which caused spurious concurrent
+        # rebuilds conflicting with the nightly scheduled run (DELTA_METADATA_CHANGED errors).
         import threading
         from datetime import datetime, timezone
-        _log_path = os.path.join(os.path.dirname(__file__), "..", ".settings", "mv_refresh_log.json")
         _hours_since = float("inf")
         try:
-            with open(_log_path) as _lf:
-                _log = _json.load(_lf)
-                _last = _log.get("last_refresh_utc")
-                if _last:
-                    _last_dt = datetime.fromisoformat(_last.replace("Z", "+00:00"))
-                    _hours_since = (datetime.now(timezone.utc) - _last_dt).total_seconds() / 3600
+            _fresh_result = execute_query(
+                f"SELECT CAST(MAX(usage_date) AS DATE) as latest FROM `{catalog}`.`{schema}`.`daily_usage_summary`",
+                no_cache=True,
+            )
+            if _fresh_result and _fresh_result[0].get("latest"):
+                _latest_dt = datetime.fromisoformat(str(_fresh_result[0]["latest"])).replace(tzinfo=timezone.utc)
+                _hours_since = (datetime.now(timezone.utc) - _latest_dt).total_seconds() / 3600
         except Exception:
-            pass  # no log → treat as stale (infinity)
+            pass  # table missing or warehouse unavailable → treat as stale
 
         if _hours_since < 26:
-            logger.info(f"Startup MV refresh SKIPPED — last refresh was {_hours_since:.1f}h ago (< 26h, data is fresh)")
+            logger.info(f"Startup MV refresh SKIPPED — data is {_hours_since:.1f}h old (< 26h, fresh enough)")
             return
 
         def _bg_refresh():
@@ -399,6 +401,12 @@ def setup_materialized_views():
                 r = create_materialized_views(catalog, schema)
                 ok = sum(1 for v in r.values() if v == "created")
                 logger.info(f"Background MV refresh complete: {ok}/{len(r)} tables rebuilt")
+                try:
+                    from server.db import clear_query_cache, delta_cache_invalidate
+                    clear_query_cache()
+                    delta_cache_invalidate()
+                except Exception as inv_exc:
+                    logger.warning(f"Cache invalidation after startup refresh failed: {inv_exc}")
             except Exception as ex:
                 logger.warning(f"Background MV refresh failed (non-fatal): {ex}")
         threading.Thread(target=_bg_refresh, daemon=True).start()

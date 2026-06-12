@@ -567,6 +567,12 @@ def delta_cache_put(key: str, endpoint: str, payload: dict, ttl_seconds: int = 6
 
 def delta_cache_invalidate(pattern: str | None = None) -> None:
     """Delete Delta cache entries, optionally filtered by endpoint prefix."""
+    # Clear L1 in-process cache first (fast, always succeeds).
+    # L1 keys are MD5 hashes with no endpoint info, so pattern-based selective
+    # clearing is impossible — always clear the full L1 cache. It holds at most
+    # 50 entries with a 5-min TTL so a full clear has negligible cost.
+    _delta_l1.clear()
+    # Clear Delta (remote)
     try:
         cat, sch = get_catalog_schema()
         if not cat or not sch:

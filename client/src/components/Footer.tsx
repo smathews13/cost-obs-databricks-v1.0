@@ -2,7 +2,7 @@ export function Footer() {
   return (
     <footer className="mt-8 border-t border-gray-200 bg-white py-6">
       <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-3 gap-8 justify-items-center text-center">
+        <div className="flex justify-center gap-16 text-center">
           {/* System Tables */}
           <div>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
@@ -86,29 +86,6 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Private Preview Repos */}
-          <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-              Private Preview Repo Docs
-            </h3>
-            <ul className="space-y-1 text-xs text-gray-500">
-              <li>
-                <a href="https://github.com/databrickslabs/sandbox/tree/main/dbsql/cost_per_query/PrPr" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700 hover:underline">
-                  DBSQL Cost Granularity
-                </a>
-              </li>
-              <li>
-                <a href="https://github.com/databricks-solutions/cloud-infra-costs/tree/main/aws" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700 hover:underline">
-                  Cloud Infrastructure Costs
-                </a>
-              </li>
-              <li>
-                <a href="https://github.com/numanali-db/Cost-Reporting-Genie" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700 hover:underline">
-                  Cost Analysis Genie
-                </a>
-              </li>
-            </ul>
-          </div>
         </div>
 
         {/* Copyright */}

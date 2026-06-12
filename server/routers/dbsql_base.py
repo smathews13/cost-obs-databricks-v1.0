@@ -638,7 +638,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             return _dcached
 
         try:
-            summary, by_source, by_user, by_warehouse, timeseries, wh_type_ts = await asyncio.wait_for(
+            results_tuple = await asyncio.wait_for(
                 asyncio.gather(
                     get_summary(start_date, end_date, workspace_ids),
                     get_by_source(start_date, end_date, workspace_ids),
@@ -646,11 +646,12 @@ def create_dbsql_router(table_name: str) -> APIRouter:
                     get_by_warehouse(start_date, end_date, workspace_ids),
                     get_timeseries(start_date, end_date, workspace_ids),
                     get_warehouse_type_timeseries(start_date, end_date),
+                    return_exceptions=True,
                 ),
-                timeout=45.0,
+                timeout=180.0,
             )
         except Exception as e:
-            logger.error("dbsql dashboard-bundle failed: %s", e)
+            logger.error("dbsql dashboard-bundle timed out: %s", e)
             _empty = {"available": True, "start_date": start_date, "end_date": end_date}
             return {
                 "available": True,
@@ -658,11 +659,34 @@ def create_dbsql_router(table_name: str) -> APIRouter:
                             "total_spend": 0, "total_dbus": 0, "avg_cost_per_query": 0, "avg_duration_seconds": 0},
                 "by_source": {**_empty, "sources": [], "total_spend": 0},
                 "by_user": {**_empty, "users": []},
-                "by_warehouse": {**_empty, "warehouses": []},
-                "timeseries": {**_empty, "timeseries": []},
+                "by_warehouse": {**_empty, "warehouses": [], "total_spend": 0},
+                "timeseries": {**_empty, "timeseries": [], "source_types": []},
                 "warehouse_type_timeseries": {**_empty, "timeseries": [], "warehouse_types": []},
                 "error": str(e),
             }
+
+        summary, by_source, by_user, by_warehouse, timeseries, wh_type_ts = results_tuple
+        _empty = {"available": True, "start_date": start_date, "end_date": end_date}
+
+        if isinstance(summary, Exception):
+            logger.error("dbsql get_summary failed: %s", summary)
+            summary = {**_empty, "total_queries": 0, "unique_users": 0, "unique_warehouses": 0,
+                       "total_spend": 0, "total_dbus": 0, "avg_cost_per_query": 0, "avg_duration_seconds": 0}
+        if isinstance(by_source, Exception):
+            logger.warning("dbsql get_by_source failed: %s", by_source)
+            by_source = {**_empty, "sources": [], "total_spend": 0}
+        if isinstance(by_user, Exception):
+            logger.warning("dbsql get_by_user failed: %s", by_user)
+            by_user = {**_empty, "users": []}
+        if isinstance(by_warehouse, Exception):
+            logger.warning("dbsql get_by_warehouse failed: %s", by_warehouse)
+            by_warehouse = {**_empty, "warehouses": [], "total_spend": 0}
+        if isinstance(timeseries, Exception):
+            logger.warning("dbsql get_timeseries failed: %s", timeseries)
+            timeseries = {**_empty, "timeseries": [], "source_types": []}
+        if isinstance(wh_type_ts, Exception):
+            logger.warning("dbsql get_warehouse_type_timeseries failed: %s", wh_type_ts)
+            wh_type_ts = {**_empty, "timeseries": [], "warehouse_types": []}
 
         _resp = {
             "available": True,

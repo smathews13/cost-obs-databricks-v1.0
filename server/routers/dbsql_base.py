@@ -637,14 +637,32 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         if (_dcached := delta_cache_get(_dkey)) is not None:
             return _dcached
 
-        summary, by_source, by_user, by_warehouse, timeseries, wh_type_ts = await asyncio.gather(
-            get_summary(start_date, end_date, workspace_ids),
-            get_by_source(start_date, end_date, workspace_ids),
-            get_by_user(start_date, end_date, workspace_ids),
-            get_by_warehouse(start_date, end_date, workspace_ids),
-            get_timeseries(start_date, end_date, workspace_ids),
-            get_warehouse_type_timeseries(start_date, end_date),
-        )
+        try:
+            summary, by_source, by_user, by_warehouse, timeseries, wh_type_ts = await asyncio.wait_for(
+                asyncio.gather(
+                    get_summary(start_date, end_date, workspace_ids),
+                    get_by_source(start_date, end_date, workspace_ids),
+                    get_by_user(start_date, end_date, workspace_ids),
+                    get_by_warehouse(start_date, end_date, workspace_ids),
+                    get_timeseries(start_date, end_date, workspace_ids),
+                    get_warehouse_type_timeseries(start_date, end_date),
+                ),
+                timeout=45.0,
+            )
+        except Exception as e:
+            logger.error("dbsql dashboard-bundle failed: %s", e)
+            _empty = {"available": True, "start_date": start_date, "end_date": end_date}
+            return {
+                "available": True,
+                "summary": {**_empty, "total_queries": 0, "unique_users": 0, "unique_warehouses": 0,
+                            "total_spend": 0, "total_dbus": 0, "avg_cost_per_query": 0, "avg_duration_seconds": 0},
+                "by_source": {**_empty, "sources": [], "total_spend": 0},
+                "by_user": {**_empty, "users": []},
+                "by_warehouse": {**_empty, "warehouses": []},
+                "timeseries": {**_empty, "timeseries": []},
+                "warehouse_type_timeseries": {**_empty, "timeseries": [], "warehouse_types": []},
+                "error": str(e),
+            }
 
         _resp = {
             "available": True,

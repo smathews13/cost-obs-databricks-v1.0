@@ -25,11 +25,14 @@ interface KPITrendModalProps {
   workspaceIds?: string[];
 }
 
-const SPEND_KPIS = new Set(["total_spend", "avg_daily_spend", "aiml_spend", "apps_spend", "tagged_spend", "untagged_spend", "infra_cost", "avg_cost_per_cluster"]);
+const SPEND_KPIS = new Set(["total_spend", "avg_daily_spend", "aiml_spend", "apps_spend", "tagged_spend", "untagged_spend", "infra_cost", "avg_cost_per_cluster", "sql_spend"]);
 
 function defaultBillingFormat(value: number, kpi: string): string {
   if (SPEND_KPIS.has(kpi)) {
     return formatCurrency(value);
+  }
+  if (kpi === "tag_coverage_pct") {
+    return `${value.toFixed(1)}%`;
   }
   return formatNumber(value);
 }

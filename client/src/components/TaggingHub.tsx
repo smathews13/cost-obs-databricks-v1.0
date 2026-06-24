@@ -431,7 +431,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => setSelectedKPI({ kpi: "tagged_spend", label: "Tag Coverage" })}
+          onClick={() => setSelectedKPI({ kpi: "tag_coverage_pct", label: "Tag Coverage %" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">

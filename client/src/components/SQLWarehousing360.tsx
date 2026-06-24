@@ -130,7 +130,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const [showHistoricalQueries, setShowHistoricalQueries] = useState(false);
   const { tableGranted } = useFeatureAvailability();
   const queryHistoryGranted = tableGranted("system.query.history");
-  const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
+  const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string; variant?: "billing" | "platform"} | null>(null);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [sourceQueriesCache, setSourceQueriesCache] = useState<Record<string, SourceQuery[]>>({});
   const [sourceQueriesLoading, setSourceQueriesLoading] = useState(false);
@@ -552,7 +552,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
             return (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_queries", label: "Total Query Spend"})}>
+            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "sql_spend", label: "Total Query Spend", variant: "billing"})}>
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -571,7 +571,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 </div>
               </div>
             </div>
-            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_queries", label: "Total Queries"})}>
+            <div className="rounded-lg bg-white p-6 border shadow-sm">
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -586,7 +586,6 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   <div className="mt-1 text-xs text-gray-500">
                     {summary != null ? `Avg: ${formatCurrency(summary.avg_cost_per_query ?? 0)}/query` : "—"}
                   </div>
-                  <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>
               </div>
             </div>
@@ -634,7 +633,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
           {selectedKPI && startDate && endDate && (
             <KPITrendModal
-              variant="platform"
+              variant={selectedKPI.variant ?? "platform"}
               kpi={selectedKPI.kpi}
               kpiLabel={selectedKPI.label}
               isOpen={!!selectedKPI}

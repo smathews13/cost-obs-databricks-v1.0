@@ -2601,6 +2601,53 @@ async def get_kpi_trend(
         GROUP BY usage_date
         ORDER BY usage_date
         """
+    elif kpi == "sql_spend":
+        query = """
+        WITH usage_with_price AS (
+          SELECT
+            u.usage_date,
+            u.usage_quantity,
+            COALESCE(p.pricing.default, 0) as price_per_dbu
+          FROM system.billing.usage u
+          LEFT JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name
+            AND u.cloud = p.cloud
+            AND p.price_end_time IS NULL
+          WHERE u.usage_date BETWEEN :start_date AND :end_date
+            AND u.usage_quantity > 0
+            AND u.billing_origin_product = 'DBSQL'
+        )
+        SELECT
+          usage_date as date,
+          SUM(usage_quantity * price_per_dbu) as value
+        FROM usage_with_price
+        GROUP BY usage_date
+        ORDER BY usage_date
+        """
+    elif kpi == "tag_coverage_pct":
+        query = """
+        WITH usage_with_tags AS (
+          SELECT
+            u.usage_date,
+            u.usage_quantity,
+            COALESCE(p.pricing.default, 0) as price_per_dbu,
+            CASE WHEN u.custom_tags IS NOT NULL AND size(u.custom_tags) > 0 THEN true ELSE false END as has_tags
+          FROM system.billing.usage u
+          LEFT JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name
+            AND u.cloud = p.cloud
+            AND p.price_end_time IS NULL
+          WHERE u.usage_date BETWEEN :start_date AND :end_date
+            AND u.usage_quantity > 0
+        )
+        SELECT
+          usage_date as date,
+          100.0 * SUM(CASE WHEN has_tags THEN usage_quantity * price_per_dbu ELSE 0 END)
+            / NULLIF(SUM(usage_quantity * price_per_dbu), 0) as value
+        FROM usage_with_tags
+        GROUP BY usage_date
+        ORDER BY usage_date
+        """
     else:
         return {"error": f"Unknown KPI: {kpi}"}
 

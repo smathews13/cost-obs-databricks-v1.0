@@ -235,12 +235,45 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   };
 
 
+  const [selectedUser, setSelectedUser] = useState<{ raw: string; display: string } | null>(null);
+
+  const { data: userQueriesData, isLoading: userQueriesLoading } = useQuery<{
+    available: boolean;
+    queries: Array<{
+      statement_id: string | null;
+      query_source_type: string;
+      executed_by: string;
+      warehouse_id: string | null;
+      workspace_id: string | null;
+      statement_preview: string;
+      duration_seconds: number;
+      cost: number;
+      dbus: number;
+      query_profile_url: string | null;
+      source_url: string | null;
+      start_time: string | null;
+    }>;
+    total_spend: number;
+    query_count: number;
+  }>({
+    queryKey: ["dbsql", "queries-by-user", selectedUser?.raw, startDate, endDate, workspaceIds],
+    queryFn: () => {
+      const params = new URLSearchParams({ user: selectedUser!.raw });
+      if (startDate) params.set("start_date", startDate);
+      if (endDate) params.set("end_date", endDate);
+      if (workspaceIds?.length) params.set("workspace_ids", workspaceIds.join(","));
+      return fetch(`/api/dbsql/queries-by-user?${params}`).then(r => r.json());
+    },
+    enabled: !!selectedUser,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const userBarData = useMemo(() => {
     if (!queryData?.by_user?.users) return [];
-    const byUser: Record<string, { user: string; total_spend: number; query_count: number }> = {};
+    const byUser: Record<string, { user: string; rawUser: string; total_spend: number; query_count: number }> = {};
     for (const u of queryData.by_user.users) {
       if (!byUser[u.executed_by]) {
-        byUser[u.executed_by] = { user: u.executed_by, total_spend: 0, query_count: 0 };
+        byUser[u.executed_by] = { user: u.executed_by, rawUser: u.executed_by, total_spend: 0, query_count: 0 };
       }
       byUser[u.executed_by].total_spend += u.total_spend;
       byUser[u.executed_by].query_count += u.query_count;
@@ -602,10 +635,22 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
             {/* Top Users Bar Chart */}
             <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-              <h3 className="mb-4 text-lg font-semibold text-gray-900">Top Users by Query Spend</h3>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Top Users by Query Spend</h3>
+                <span className="text-xs text-gray-500">Click a bar to drill down</span>
+              </div>
               {userBarData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={userBarData} layout="vertical" margin={{ left: 0, right: 70 }}>
+                  <BarChart
+                    data={userBarData}
+                    layout="vertical"
+                    margin={{ left: 0, right: 70 }}
+                    style={{ cursor: "pointer" }}
+                    onClick={(data) => {
+                      const payload = (data as any)?.activePayload?.[0]?.payload as { user: string; rawUser: string } | undefined;
+                      if (payload) setSelectedUser({ raw: payload.rawUser, display: payload.user });
+                    }}
+                  >
                     <XAxis type="number" tickFormatter={(v) => formatCurrency(v)} stroke="#9ca3af" fontSize={12} tickMargin={8} />
                     <YAxis
                       type="category"
@@ -1249,6 +1294,86 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
             ) : (
               <div className="flex h-40 items-center justify-center text-gray-500">
                 No queries found for this source type
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+      {/* User Query Drilldown Modal */}
+      {selectedUser && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={() => setSelectedUser(null)}>
+          <div className="mx-4 w-full max-w-4xl rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Queries — {selectedUser.display}</h3>
+                {userQueriesData?.total_spend != null && (
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    {userQueriesData.query_count} queries · {formatCurrency(userQueriesData.total_spend)} total
+                  </p>
+                )}
+              </div>
+              <button onClick={() => setSelectedUser(null)} className="rounded-full p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-600">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {userQueriesLoading ? (
+              <div className="flex h-48 items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
+              </div>
+            ) : (userQueriesData?.queries?.length ?? 0) > 0 ? (
+              <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Time</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Source</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Query</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Cost</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Profile</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {userQueriesData!.queries.map((q, idx) => (
+                      <tr key={q.statement_id || idx} className="hover:bg-gray-50">
+                        <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
+                          {q.start_time ? (() => { try { return format(new Date(q.start_time), "MMM d, HH:mm"); } catch { return q.start_time; } })() : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                            {q.query_source_type}
+                          </span>
+                        </td>
+                        <td className="max-w-xs px-4 py-3">
+                          <div className="truncate font-mono text-xs text-gray-500" title={q.statement_preview}>{q.statement_preview || "—"}</div>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
+                          {formatDuration(q.duration_seconds)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">
+                          {formatCurrency(q.cost)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
+                          {q.query_profile_url ? (
+                            <a href={q.query_profile_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#FF3621] hover:underline">
+                              View
+                            </a>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="flex h-48 items-center justify-center text-gray-500">
+                No queries found for this user in the selected date range
               </div>
             )}
           </div>

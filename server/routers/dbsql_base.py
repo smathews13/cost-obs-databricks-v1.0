@@ -150,6 +150,29 @@ def _build_queries(table_name: str) -> dict[str, str]:
             GROUP BY DATE(start_time), query_source_type
             ORDER BY date
         """,
+        "queries_by_user": f"""
+            SELECT
+              statement_id,
+              query_source_type,
+              query_source_id,
+              executed_by,
+              warehouse_id,
+              workspace_id,
+              SUBSTRING(statement_text, 1, 200) as statement_preview,
+              duration_seconds,
+              query_attributed_dollars_estimation as cost,
+              query_attributed_dbus_estimation as dbus,
+              query_profile_url,
+              url_helper as source_url,
+              start_time,
+              end_time
+            FROM `{{catalog}}`.`{{schema}}`.`{table_name}`
+            WHERE start_time >= :start_date
+              AND start_time < :end_date
+              AND executed_by = :user
+            ORDER BY query_attributed_dollars_estimation DESC
+            LIMIT :limit
+        """,
     }
 
 
@@ -514,6 +537,58 @@ def create_dbsql_router(table_name: str) -> APIRouter:
             })
 
         return {"available": True, "queries": queries, "source_type": source_type, "start_date": start_date, "end_date": end_date}
+
+    @router.get("/queries-by-user")
+    async def get_queries_by_user(
+        user: str = Query(..., description="Raw executed_by identity value"),
+        start_date: str = Query(default=None),
+        end_date: str = Query(default=None),
+        limit: int = Query(default=100, le=200),
+        workspace_ids: str = Query(default=None),
+    ) -> dict[str, Any]:
+        catalog, schema = get_catalog_schema()
+        start_date, end_date = _default_dates(start_date, end_date)
+
+        status = await check_mv_status()
+        if not status["mv_available"]:
+            return {"available": False, "queries": [], "user": user, "start_date": start_date, "end_date": end_date}
+
+        results = await _exec_async(
+            "queries_by_user",
+            {"start_date": start_date, "end_date": end_date, "user": user, "limit": limit},
+            catalog, schema, _ws_clause(workspace_ids),
+        )
+
+        host = get_host_url()
+        queries = []
+        for row in results:
+            queries.append({
+                "statement_id": row.get("statement_id"),
+                "query_source_type": row.get("query_source_type") or "Unknown",
+                "query_source_id": row.get("query_source_id"),
+                "executed_by": row.get("executed_by") or "Unknown",
+                "warehouse_id": row.get("warehouse_id"),
+                "workspace_id": row.get("workspace_id"),
+                "statement_preview": row.get("statement_preview") or "",
+                "duration_seconds": float(row.get("duration_seconds") or 0),
+                "cost": float(row.get("cost") or 0),
+                "dbus": float(row.get("dbus") or 0),
+                "query_profile_url": _resolve_url(row.get("query_profile_url"), host),
+                "source_url": _resolve_url(row.get("source_url"), host),
+                "start_time": str(row.get("start_time")) if row.get("start_time") else None,
+                "end_time": str(row.get("end_time")) if row.get("end_time") else None,
+            })
+
+        total_spend = sum(q["cost"] for q in queries)
+        return {
+            "available": True,
+            "queries": queries,
+            "user": user,
+            "total_spend": total_spend,
+            "query_count": len(queries),
+            "start_date": start_date,
+            "end_date": end_date,
+        }
 
     @router.get("/timeseries")
     async def get_timeseries(

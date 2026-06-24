@@ -50,18 +50,25 @@ const COLORS = ["#1B5162", "#06B6D4", "#10B981", "#14B8A6", "#F59E0B", "#3B82F6"
 const COST_TOOLTIP_TEXT = "Costs are estimates: the warehouse's billed DBU-hours are divided across all queries in the period, weighted by task duration. A fast query running during a low-activity window can inherit a large share of the hour's cost.";
 
 function InfoTooltip({ text, stopClick }: { text: string; stopClick?: boolean }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   return (
     <span
-      className="group relative ml-1 inline-flex cursor-help"
+      className="ml-1 inline-flex cursor-help"
+      onMouseEnter={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseMove={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setPos(null)}
       onClick={stopClick ? e => e.stopPropagation() : undefined}
     >
       <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold normal-case text-gray-500">i</span>
-      <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-normal opacity-0 transition-opacity group-hover:opacity-100">
-        <div className="w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal normal-case leading-relaxed text-white shadow-lg">
+      {pos && createPortal(
+        <div
+          className="pointer-events-none fixed z-[9999] w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal normal-case leading-relaxed text-white shadow-lg"
+          style={{ top: pos.y - 12, left: pos.x + 14, transform: 'translateY(-100%)' }}
+        >
           {text}
-          <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
-        </div>
-      </div>
+        </div>,
+        document.body
+      )}
     </span>
   );
 }

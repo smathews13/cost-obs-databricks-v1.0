@@ -646,10 +646,6 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     layout="vertical"
                     margin={{ left: 0, right: 70 }}
                     style={{ cursor: "pointer" }}
-                    onClick={(data) => {
-                      const payload = (data as any)?.activePayload?.[0]?.payload as { user: string; rawUser: string } | undefined;
-                      if (payload) setSelectedUser({ raw: payload.rawUser, display: payload.user });
-                    }}
                   >
                     <XAxis type="number" tickFormatter={(v) => formatCurrency(v)} stroke="#9ca3af" fontSize={12} tickMargin={8} />
                     <YAxis
@@ -664,7 +660,13 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       formatter={(value) => formatCurrency(value as number)}
                       labelFormatter={(label) => `User: ${label}`}
                     />
-                    <Bar dataKey="total_spend" radius={[0, 4, 4, 0]}>
+                    <Bar
+                      dataKey="total_spend"
+                      radius={[0, 4, 4, 0]}
+                      onClick={(entry: any) => {
+                        setSelectedUser({ raw: entry.rawUser, display: entry.user });
+                      }}
+                    >
                       {userBarData.map((_entry, idx) => (
                         <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                       ))}

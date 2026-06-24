@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { format, parseISO } from "date-fns";
 import { X, TrendingUp, TrendingDown, Minus } from "lucide-react";
@@ -51,11 +51,9 @@ export function KPITrendModal({
   variant = "billing",
   workspaceIds,
 }: KPITrendModalProps) {
-  const [granularity, setGranularity] = useState<"daily" | "monthly">("daily");
-
-  const billingTrend = useKPITrend(kpi, startDate, endDate, granularity, workspaceIds);
-  const platformTrend = usePlatformKPITrend(kpi, startDate, endDate, granularity, workspaceIds);
-  const appsTrend = useAppsKPITrend(kpi, startDate, endDate, granularity);
+  const billingTrend = useKPITrend(kpi, startDate, endDate, "daily", workspaceIds);
+  const platformTrend = usePlatformKPITrend(kpi, startDate, endDate, "daily", workspaceIds);
+  const appsTrend = useAppsKPITrend(kpi, startDate, endDate, "daily");
   const { data, isLoading } = variant === "platform" ? platformTrend : variant === "apps" ? appsTrend : billingTrend;
 
   const fmt = formatValue ?? (variant === "platform" ? defaultPlatformFormat : defaultBillingFormat);
@@ -109,23 +107,6 @@ export function KPITrendModal({
 
         {/* Content */}
         <div className="p-6">
-          {/* Granularity Tabs */}
-          <div className="mb-6 inline-flex rounded-lg bg-gray-100 p-1">
-            {(["daily", "monthly"] as const).map((g) => (
-              <button
-                key={g}
-                onClick={() => setGranularity(g)}
-                className={`rounded-md px-4 py-2 text-sm font-medium transition-all ${
-                  granularity === g
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                {g.charAt(0).toUpperCase() + g.slice(1)}
-              </button>
-            ))}
-          </div>
-
           {isLoading ? (
             <div className="flex h-80 items-center justify-center">
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />

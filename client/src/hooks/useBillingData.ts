@@ -339,7 +339,7 @@ export function usePlatformKPIs(dateRange?: DateRange, enabled: boolean = true) 
  * Skips slow query.history joins for 5-10x faster load times.
  * Use this for initial load, then lazy-load detailed breakdowns.
  */
-export function useDashboardBundleFast(dateRange?: DateRange, workspaceIds?: string[]) {
+export function useDashboardBundleFast(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
   const wsKey = workspaceIds?.length ? workspaceIds.join(",") : null;
   return useQuery<DashboardBundleFast>({
     queryKey: ["billing", "dashboard-bundle-fast", dateRange, wsKey],
@@ -351,6 +351,7 @@ export function useDashboardBundleFast(dateRange?: DateRange, workspaceIds?: str
       return fetchJson(url);
     },
     staleTime: 5 * 60 * 1000,
+    enabled,
   });
 }
 

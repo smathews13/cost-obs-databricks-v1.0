@@ -1096,25 +1096,29 @@ def execute_queries_parallel(
                 logger.error("✗ %s failed: %s", name, e)
             results[name] = None
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_name = {
-            executor.submit(_timed(name, func)): name
-            for name, func in query_funcs
-        }
+    # Do NOT use the context manager (with ThreadPoolExecutor) — its __exit__ calls
+    # shutdown(wait=True) which blocks until ALL threads complete regardless of the
+    # timeout we set below. Orphaned threads are intentional: they hold a SQL connection
+    # that will eventually time out on its own via _CONNECTION_TIMEOUT.
+    executor = ThreadPoolExecutor(max_workers=10)
+    future_to_name = {
+        executor.submit(_timed(name, func)): name
+        for name, func in query_funcs
+    }
+    executor.shutdown(wait=False)
 
-        if timeout is not None:
-            done, not_done = _wait(future_to_name.keys(), timeout=timeout, return_when="ALL_COMPLETED")
-            for future in not_done:
-                name = future_to_name[future]
-                elapsed = time.time() - start_time
-                logger.error("✗ %s timed out after %.1fs (thread still running in background)", name, elapsed)
-                results[name] = None
-            for future in done:
-                _collect(future, future_to_name[future])
-        else:
-            # No timeout — wait for every future via as_completed (original behaviour)
-            for future in as_completed(future_to_name):
-                _collect(future, future_to_name[future])
+    if timeout is not None:
+        done, not_done = _wait(future_to_name.keys(), timeout=timeout, return_when="ALL_COMPLETED")
+        for future in not_done:
+            name = future_to_name[future]
+            elapsed = time.time() - start_time
+            logger.error("✗ %s timed out after %.1fs (thread still running in background)", name, elapsed)
+            results[name] = None
+        for future in done:
+            _collect(future, future_to_name[future])
+    else:
+        for future in as_completed(future_to_name):
+            _collect(future, future_to_name[future])
 
     total_elapsed = time.time() - start_time
     logger.info("Parallel execution: %.2fs total (%d/%d queries completed)", total_elapsed, len(results), len(query_funcs))

@@ -18,9 +18,20 @@ import awsLogo from "@/assets/aws.png";
 import azureLogo from "@/assets/azure.png";
 import gcpLogo from "@/assets/gcp.svg";
 
-// Retry a dynamic import once on failure (handles cold-start chunk load errors)
+// Retry a dynamic import on failure. First retry handles transient network blips.
+// If the second attempt also fails (stale deployment — browser has old index.html with
+// outdated chunk hashes that 404 after a redeploy), force a hard page reload to pick up
+// the new assets. A sessionStorage flag prevents reload loops if assets are genuinely broken.
 function lazyWithRetry<T>(factory: () => Promise<T>): Promise<T> {
-  return factory().catch(() => factory());
+  return factory().catch(() =>
+    factory().catch((err) => {
+      if (!sessionStorage.getItem("_chunk_reload")) {
+        sessionStorage.setItem("_chunk_reload", "1");
+        window.location.reload();
+      }
+      throw err;
+    })
+  );
 }
 
 // Lazy-loaded tab views — chunks download on first render
@@ -373,9 +384,18 @@ function Dashboard() {
     staleTime: 0,
   });
   const warehouseWarming = warehouseStatus?.status === "warming_up";
+  // True only when we've confirmed the warehouse is accepting queries.
+  // Undefined (not yet fetched) is treated as NOT ready — prevents firing 15+ SQL
+  // queries against a cold warehouse before we know its state.
+  const warehouseReady = warehouseStatus?.status === "warm";
+
+  // Clear the chunk-reload guard once we know the app is loading correctly.
+  useEffect(() => {
+    if (warehouseReady) sessionStorage.removeItem("_chunk_reload");
+  }, [warehouseReady]);
 
   // Fast bundle for quick initial load (uses materialized views)
-  const { data: bundle, isLoading: bundleLoading } = useDashboardBundleFast(dateRange, selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined);
+  const { data: bundle, isLoading: bundleLoading } = useDashboardBundleFast(dateRange, selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined, warehouseReady);
 
   // Extract data from fast bundle — apply pricing multiplier when account prices are active
   const summary = useMemo(() => {
@@ -481,11 +501,12 @@ function Dashboard() {
   const { data: alertsData } = useQuery({ queryKey: ["alerts", "recent", 30], queryFn: async () => { const r = await fetch("/api/alerts/recent?days_back=30"); if (!r.ok) throw new Error("Failed"); return r.json(); } });
   useQuery({ queryKey: ["alerts", "databricks"], queryFn: async () => { const r = await fetch("/api/alerts/databricks-alerts"); if (!r.ok) throw new Error("Failed"); return r.json(); } });
 
-  // Workspace list for the filter dropdown — pool-scoped, independent of the bundle.
+  // Workspace list for the filter dropdown — SQL-backed, only fire when warehouse is ready.
   const { data: wsListData, isLoading: wsListLoading } = useQuery<{ workspaces: { id: string; name: string }[] }>({
     queryKey: ["billing", "workspaces"],
     queryFn: () => fetch("/api/billing/workspaces").then(r => r.json()),
     staleTime: Infinity,
+    enabled: warehouseReady,
   });
   const wsFilterList = (wsListData?.workspaces ?? []).map(w => ({ workspace_id: w.id, workspace_name: w.name }));
 

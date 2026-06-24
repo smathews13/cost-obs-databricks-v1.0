@@ -895,11 +895,16 @@ async def save_catalog_settings(body: dict):
     if not catalog or not schema:
         raise HTTPException(status_code=400, detail="catalog and schema are required")
     try:
-        # Run in executor — save_catalog_schema makes a DBFS network call that would
-        # block the async event loop if called directly, potentially causing 502s when
-        # the DBFS write is slow or the workspace is momentarily unresponsive.
         loop = _asyncio.get_running_loop()
-        await loop.run_in_executor(None, save_catalog_schema, catalog, schema)
+        await _asyncio.wait_for(
+            loop.run_in_executor(None, save_catalog_schema, catalog, schema),
+            timeout=25.0,
+        )
+    except _asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Server timed out saving configuration. The workspace may be under load — please retry.",
+        )
     except StorageConfigurationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"catalog": catalog, "schema": schema, "source": "override"}

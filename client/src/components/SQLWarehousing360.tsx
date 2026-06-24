@@ -67,9 +67,7 @@ function InfoTooltip({ text, stopClick }: { text: string; stopClick?: boolean })
           style={{
             top: pos.y - 12,
             transform: 'translateY(-100%)',
-            ...(pos.x + 272 > window.innerWidth
-              ? { right: window.innerWidth - pos.x + 8 }
-              : { left: pos.x + 14 }),
+            left: Math.min(pos.x + 14, window.innerWidth - 272),
           }}
         >
           {text}
@@ -1270,7 +1268,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
       {/* Source Drilldown Modal — rendered via portal to avoid stacking context issues */}
       {selectedSource && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={() => setSelectedSource(null)}>
-          <div className="mx-4 w-full max-w-3xl rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="mx-4 w-full max-w-5xl rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div
@@ -1303,11 +1301,15 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
                         Cost <InfoTooltip text={COST_TOOLTIP_TEXT} />
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Links</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">History</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {sourceQueries.map((q, idx) => (
+                    {sourceQueries.map((q, idx) => {
+                      let srcHistUrl: string | null = null;
+                      try { if (q.query_profile_url) srcHistUrl = new URL(q.query_profile_url).origin + "/sql/history"; } catch { /* ignore */ }
+                      try { if (!srcHistUrl && q.source_url) srcHistUrl = new URL(q.source_url).origin + "/sql/history"; } catch { /* ignore */ }
+                      return (
                       <tr key={q.statement_id || idx} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={q.executed_by}>
@@ -1324,24 +1326,14 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                           {formatCurrency(q.cost)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right">
-                          <div className="flex items-center gap-2 justify-end">
-                            {q.query_profile_url && (
-                              <a href={q.query_profile_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#FF3621] hover:underline">
-                                Profile
-                              </a>
-                            )}
-                            {q.source_url && (
-                              <a href={q.source_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#FF3621] hover:underline">
-                                Source
-                              </a>
-                            )}
-                            {!q.query_profile_url && !q.source_url && (
-                              <span className="text-xs text-gray-500">-</span>
-                            )}
-                          </div>
+                          {srcHistUrl
+                            ? <a href={srcHistUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#FF3621] hover:underline">History ↗</a>
+                            : <span className="text-xs text-gray-400">—</span>
+                          }
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -268,6 +268,20 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
     staleTime: 5 * 60 * 1000,
   });
 
+  const _STALE_MS = 30 * 24 * 60 * 60 * 1000;
+  const freshUserQueries = useMemo(() => {
+    if (!userQueriesData?.queries) return [];
+    return userQueriesData.queries
+      .filter(q => !q.start_time || Date.now() - new Date(q.start_time).getTime() <= _STALE_MS)
+      .sort((a, b) => b.cost - a.cost);
+  }, [userQueriesData]);
+  const staleUserQueries = useMemo(() => {
+    if (!userQueriesData?.queries) return [];
+    return userQueriesData.queries
+      .filter(q => q.start_time && Date.now() - new Date(q.start_time).getTime() > _STALE_MS)
+      .sort((a, b) => b.cost - a.cost);
+  }, [userQueriesData]);
+
   const userBarData = useMemo(() => {
     if (!queryData?.by_user?.users) return [];
     const byUser: Record<string, { user: string; rawUser: string; total_spend: number; query_count: number }> = {};
@@ -1022,6 +1036,11 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                         onClick={() => handleSort("cost")}
                       >
                         Cost {sortField === "cost" && (sortDirection === "asc" ? "↑" : "↓")}
+                        <span
+                          title="Costs are estimates: the warehouse's billed DBU-hours are divided across all queries in the period, weighted by task duration. A fast query running during a low-activity window can inherit a large share of the hour's cost."
+                          className="ml-1 cursor-help font-normal normal-case text-gray-400"
+                          onClick={e => e.stopPropagation()}
+                        >ⓘ</span>
                       </th>
                     </tr>
                   </thead>
@@ -1250,7 +1269,9 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">User</th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Query Preview</th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Cost</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Cost <span title="Costs are estimates: the warehouse's billed DBU-hours are divided across all queries in the period, weighted by task duration. A fast query running during a low-activity window can inherit a large share of the hour's cost." className="cursor-help font-normal normal-case text-gray-400">ⓘ</span>
+                      </th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Links</th>
                     </tr>
                   </thead>
@@ -1335,41 +1356,76 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Source</th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Query</th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Cost</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Cost <span title="Costs are estimates: the warehouse's billed DBU-hours are divided across all queries in the period, weighted by task duration. A fast query running during a low-activity window can inherit a large share of the hour's cost." className="cursor-help font-normal normal-case text-gray-400">ⓘ</span>
+                      </th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Profile</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {userQueriesData!.queries.map((q, idx) => (
-                      <tr key={q.statement_id || idx} className="hover:bg-gray-50">
-                        <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
-                          {q.start_time ? (() => { try { return format(new Date(q.start_time), "MMM d, HH:mm"); } catch { return q.start_time; } })() : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3">
-                          <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                            {q.query_source_type}
-                          </span>
-                        </td>
-                        <td className="max-w-xs px-4 py-3">
-                          <div className="truncate font-mono text-xs text-gray-500" title={q.statement_preview}>{q.statement_preview || "—"}</div>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
-                          {formatDuration(q.duration_seconds)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">
-                          {formatCurrency(q.cost)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right">
-                          {q.query_profile_url ? (
-                            <a href={q.query_profile_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#FF3621] hover:underline">
-                              View
-                            </a>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {freshUserQueries.map((q, idx) => {
+                      return (
+                        <tr key={q.statement_id || idx} className="hover:bg-gray-50">
+                          <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
+                            {q.start_time ? (() => { try { return format(new Date(q.start_time), "MMM d, HH:mm"); } catch { return q.start_time; } })() : "—"}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3">
+                            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{q.query_source_type}</span>
+                          </td>
+                          <td className="max-w-xs px-4 py-3">
+                            <div className="truncate font-mono text-xs text-gray-500" title={q.statement_preview}>{q.statement_preview || "—"}</div>
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">{formatDuration(q.duration_seconds)}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">{formatCurrency(q.cost)}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right">
+                            {q.query_profile_url
+                              ? <a href={q.query_profile_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#FF3621] hover:underline">View</a>
+                              : <span className="text-xs text-gray-400">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {staleUserQueries.length > 0 && (
+                      <>
+                        <tr>
+                          <td colSpan={6} className="bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wider text-gray-400">
+                            Historical — profile links expired (30+ days ago)
+                          </td>
+                        </tr>
+                        {staleUserQueries.map((q, idx) => {
+                          let historyUrl: string | null = null;
+                          try { if (q.query_profile_url) historyUrl = new URL(q.query_profile_url).origin + "/sql/history"; } catch { /* ignore */ }
+                          return (
+                            <tr key={q.statement_id || idx} className="opacity-60 hover:bg-gray-50">
+                              <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
+                                {q.start_time ? (() => { try { return format(new Date(q.start_time), "MMM d, HH:mm"); } catch { return q.start_time; } })() : "—"}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3">
+                                <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{q.query_source_type}</span>
+                              </td>
+                              <td className="max-w-xs px-4 py-3">
+                                <div className="truncate font-mono text-xs text-gray-500" title={q.statement_preview}>{q.statement_preview || "—"}</div>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">{formatDuration(q.duration_seconds)}</td>
+                              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">{formatCurrency(q.cost)}</td>
+                              <td className="whitespace-nowrap px-4 py-3 text-right">
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className="text-xs text-gray-400" title="Databricks query history is retained for ~30 days. This query has aged out.">Expired</span>
+                                  {q.statement_id && (
+                                    <button onClick={() => navigator.clipboard.writeText(q.statement_id!)} className="font-mono text-xs text-gray-400 hover:text-gray-600" title={`Copy statement ID: ${q.statement_id}`}>
+                                      {q.statement_id.slice(0, 8)}… ⎘
+                                    </button>
+                                  )}
+                                  {historyUrl && (
+                                    <a href={historyUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">History ↗</a>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>

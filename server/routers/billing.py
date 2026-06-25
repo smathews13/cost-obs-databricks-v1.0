@@ -2187,12 +2187,12 @@ async def get_kpis_bundle(
         kpis_response["unique_job_owners"] = int(row.get("unique_job_owners") or 0)
         kpis_response["active_workspaces"] = int(row.get("active_workspaces") or 0)
         kpis_response["active_notebooks"] = int(row.get("total_clusters") or 0)
+        kpis_response["models_served"] = int(row.get("models_served") or 0)
+        kpis_response["total_serving_dbus"] = float(row.get("total_serving_dbus") or 0)
 
     avg_daily_ws_results = query_results.get("avg_daily_ws")
     if avg_daily_ws_results and len(avg_daily_ws_results) > 0:
         kpis_response["avg_daily_workspaces"] = int(avg_daily_ws_results[0].get("avg_daily_workspaces") or 0)
-        kpis_response["models_served"] = int(row.get("models_served") or 0)
-        kpis_response["total_serving_dbus"] = float(row.get("total_serving_dbus") or 0)
 
     # Lakeflow-backed KPI: successful_runs (may be missing if lakeflow is inaccessible)
     lakeflow_results = query_results.get("lakeflow_kpis")

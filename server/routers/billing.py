@@ -2603,27 +2603,16 @@ async def get_kpi_trend(
         ORDER BY usage_date
         """
     elif kpi == "sql_spend":
-        query = """
-        WITH usage_with_price AS (
-          SELECT
-            u.usage_date,
-            u.usage_quantity,
-            COALESCE(p.pricing.default, 0) as price_per_dbu
-          FROM system.billing.usage u
-          LEFT JOIN system.billing.list_prices p
-            ON u.sku_name = p.sku_name
-            AND u.cloud = p.cloud
-            AND p.price_end_time IS NULL
-          WHERE u.usage_date BETWEEN :start_date AND :end_date
-            AND u.usage_quantity > 0
-            AND u.billing_origin_product = 'DBSQL'
-        )
+        _cat, _sch = get_catalog_schema()
+        query = f"""
         SELECT
-          usage_date as date,
-          SUM(usage_quantity * price_per_dbu) as value
-        FROM usage_with_price
-        GROUP BY usage_date
-        ORDER BY usage_date
+          DATE(start_time) as date,
+          SUM(query_attributed_dollars_estimation) as value
+        FROM `{_cat}`.`{_sch}`.`dbsql_cost_per_query`
+        WHERE DATE(start_time) >= :start_date
+          AND DATE(start_time) <= :end_date
+        GROUP BY DATE(start_time)
+        ORDER BY date
         """
     elif kpi == "tag_coverage_pct":
         query = """
@@ -2825,7 +2814,7 @@ async def get_platform_kpi_trend(
     # KPIs sourced from system.query.history (workspace_id filter via _inject_qh_ws_filter)
     _QH_KPIS = frozenset({"total_queries", "total_rows_read", "total_bytes_read",
                            "total_compute_seconds", "total_users", "avg_query_duration",
-                           "unique_warehouses", "sql_queries", "sql_users"})
+                           "unique_warehouses"})
 
     # For DISTINCT COUNT KPIs, monthly/weekly rollup must be done in SQL — summing
     # daily distinct counts in Python overcounts (user active 30 days = 30x, not 1x).
@@ -2905,19 +2894,33 @@ async def get_platform_kpi_trend(
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
             return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
         elif kpi == "sql_users":
+            _cat, _sch = get_catalog_schema()
             query = f"""
             SELECT
               DATE_TRUNC('{trunc}', DATE(start_time)) as date,
-              COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) as value
-            FROM system.query.history
-            WHERE start_time >= CAST(:start_date AS TIMESTAMP)
-              AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
-              AND warehouse_id IS NOT NULL
-              AND (executed_by IS NOT NULL OR executed_as_user_id IS NOT NULL)
+              COUNT(DISTINCT executed_by) as value
+            FROM `{_cat}`.`{_sch}`.`dbsql_cost_per_query`
+            WHERE DATE(start_time) >= :start_date
+              AND DATE(start_time) <= :end_date
             GROUP BY DATE_TRUNC('{trunc}', DATE(start_time))
             ORDER BY date
             """
-            results = await asyncio.to_thread(execute_query, _inject_qh_ws_filter(query, ws_clause), params)
+            results = await asyncio.to_thread(execute_query, query, params)
+            daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
+            return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
+        elif kpi == "sql_queries":
+            _cat, _sch = get_catalog_schema()
+            query = f"""
+            SELECT
+              DATE_TRUNC('{trunc}', DATE(start_time)) as date,
+              COUNT(*) as value
+            FROM `{_cat}`.`{_sch}`.`dbsql_cost_per_query`
+            WHERE DATE(start_time) >= :start_date
+              AND DATE(start_time) <= :end_date
+            GROUP BY DATE_TRUNC('{trunc}', DATE(start_time))
+            ORDER BY date
+            """
+            results = await asyncio.to_thread(execute_query, query, params)
             daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
             return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
 
@@ -3078,29 +3081,28 @@ async def get_platform_kpi_trend(
         ORDER BY DATE(start_time)
         """
     elif kpi == "sql_queries":
-        query = """
+        _cat, _sch = get_catalog_schema()
+        query = f"""
         SELECT
           DATE(start_time) as date,
           COUNT(*) as value
-        FROM system.query.history
-        WHERE start_time >= CAST(:start_date AS TIMESTAMP)
-          AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
-          AND warehouse_id IS NOT NULL
+        FROM `{_cat}`.`{_sch}`.`dbsql_cost_per_query`
+        WHERE DATE(start_time) >= :start_date
+          AND DATE(start_time) <= :end_date
         GROUP BY DATE(start_time)
-        ORDER BY DATE(start_time)
+        ORDER BY date
         """
     elif kpi == "sql_users":
-        query = """
+        _cat, _sch = get_catalog_schema()
+        query = f"""
         SELECT
           DATE(start_time) as date,
-          COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) as value
-        FROM system.query.history
-        WHERE start_time >= CAST(:start_date AS TIMESTAMP)
-          AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
-          AND warehouse_id IS NOT NULL
-          AND (executed_by IS NOT NULL OR executed_as_user_id IS NOT NULL)
+          COUNT(DISTINCT executed_by) as value
+        FROM `{_cat}`.`{_sch}`.`dbsql_cost_per_query`
+        WHERE DATE(start_time) >= :start_date
+          AND DATE(start_time) <= :end_date
         GROUP BY DATE(start_time)
-        ORDER BY DATE(start_time)
+        ORDER BY date
         """
     else:
         return {"error": f"Unknown platform KPI: {kpi}"}

@@ -841,6 +841,29 @@ function Dashboard() {
                     )}
                   </>
                 )}
+                {warehouseStatus && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      warehouseStatus.status === "warm"
+                        ? "bg-green-500/20 text-green-200"
+                        : warehouseStatus.status === "warming_up"
+                        ? "bg-amber-500/20 text-amber-200"
+                        : "bg-red-500/20 text-red-200"
+                    }`}
+                    title={`SQL Warehouse: ${warehouseStatus.state ?? warehouseStatus.status}`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        warehouseStatus.status === "warm"
+                          ? "bg-green-400"
+                          : warehouseStatus.status === "warming_up"
+                          ? "bg-amber-400 animate-pulse"
+                          : "bg-red-400"
+                      }`}
+                    />
+                    {warehouseStatus.status === "warm" ? "Warehouse" : warehouseStatus.status === "warming_up" ? "Starting" : "Unavailable"}
+                  </span>
+                )}
                 <span className="text-sm opacity-90">
                   {user.email}
                 </span>

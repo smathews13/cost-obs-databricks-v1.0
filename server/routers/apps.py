@@ -197,16 +197,27 @@ WITH apps_usage AS (
   WHERE u.usage_date BETWEEN :start_date AND :end_date
     AND u.usage_quantity > 0
     AND u.billing_origin_product = 'APPS'
+),
+apps_totals AS (
+  SELECT
+    SUM(usage_quantity) as total_dbus,
+    SUM(usage_quantity * price_per_dbu) as total_spend,
+    COUNT(DISTINCT workspace_id) as workspace_count,
+    COUNT(DISTINCT COALESCE(usage_metadata.app_id, 'unknown')) as app_count,
+    COUNT(DISTINCT usage_date) as days_in_range,
+    MIN(usage_date) as first_date,
+    MAX(usage_date) as last_date
+  FROM apps_usage
+),
+apps_by_day AS (
+  SELECT usage_date, COUNT(DISTINCT COALESCE(usage_metadata.app_id, 'unknown')) as daily_apps
+  FROM apps_usage GROUP BY usage_date
+),
+apps_avg AS (
+  SELECT COALESCE(AVG(daily_apps), 0) as avg_daily_apps FROM apps_by_day
 )
-SELECT
-  SUM(usage_quantity) as total_dbus,
-  SUM(usage_quantity * price_per_dbu) as total_spend,
-  COUNT(DISTINCT workspace_id) as workspace_count,
-  COUNT(DISTINCT COALESCE(usage_metadata.app_id, 'unknown')) as app_count,
-  COUNT(DISTINCT usage_date) as days_in_range,
-  MIN(usage_date) as first_date,
-  MAX(usage_date) as last_date
-FROM apps_usage
+SELECT t.*, a.avg_daily_apps
+FROM apps_totals t, apps_avg a
 """
 
 # Returns per-app breakdown with last_usage_date for active filtering.
@@ -556,6 +567,7 @@ async def get_apps_summary(
         "total_spend": total_spend,
         "workspace_count": row.get("workspace_count") or 0,
         "app_count": row.get("app_count") or 0,
+        "avg_daily_apps": round(float(row.get("avg_daily_apps") or 0)),
         "days_in_range": days,
         "avg_daily_spend": total_spend / days if days > 0 else 0,
         "start_date": params["start_date"],
@@ -690,11 +702,13 @@ async def _get_apps_dashboard_bundle_inner(
                 app_workspace_map[app_id].append(ws_name)
             all_workspaces[ws_name] = ws_id
 
-        # Get days_in_range from the raw summary (needed for avg calc)
+        # Get days_in_range and avg_daily_apps from the raw summary
         summary_data = results.get("summary", []) or []
         days_in_range = 1
+        avg_daily_apps = 0
         if summary_data:
             days_in_range = summary_data[0].get("days_in_range") or 1
+            avg_daily_apps = round(float(summary_data[0].get("avg_daily_apps") or 0))
 
         # Process apps with name resolution + active/inactive split
         raw_apps = results.get("apps", []) or []
@@ -713,6 +727,7 @@ async def _get_apps_dashboard_bundle_inner(
             "total_spend": reg_spend,
             "workspace_count": len(all_workspaces),
             "app_count": int(apps_result.get("total_app_count") or 0),
+            "avg_daily_apps": avg_daily_apps,
             "days_in_range": days_in_range,
             "avg_daily_spend": reg_spend / days_in_range if days_in_range > 0 else 0,
         }
@@ -875,6 +890,22 @@ async def get_apps_kpi_trend(
           {app_filter}
         GROUP BY u.usage_date
         ORDER BY u.usage_date
+        """
+    elif kpi == "apps_avg_cost_per_app":
+        query = f"""
+        SELECT
+          usage_date as date,
+          SUM(usage_quantity * COALESCE(p.pricing.default, 0))
+            / NULLIF(COUNT(DISTINCT COALESCE(u.usage_metadata.app_id, 'unknown')), 0) as value
+        FROM system.billing.usage u
+        LEFT JOIN system.billing.list_prices p
+          ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
+        WHERE u.usage_date BETWEEN :start_date AND :end_date
+          AND u.usage_quantity > 0
+          AND u.billing_origin_product = 'APPS'
+          {app_filter}
+        GROUP BY usage_date
+        ORDER BY usage_date
         """
     else:
         return {"error": f"Unknown KPI: {kpi}"}

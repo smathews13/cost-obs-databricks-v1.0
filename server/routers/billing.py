@@ -2119,7 +2119,7 @@ async def get_kpis_bundle(
 
     # Run billing and lakeflow queries separately so a lakeflow permission failure
     # doesn't zero out the billing-backed KPIs (jobs, workspaces, clusters).
-    avg_daily_ws_sql = _inject_ws_filter(AVG_DAILY_WORKSPACES, billing_ws_clause)
+    avg_daily_ws_sql = _get_mv_query(AVG_DAILY_WORKSPACES, mv_ws)
     parallel_queries: list[tuple[str, Any]] = [
         ("billing_kpis", lambda: execute_query(billing_kpis_sql, params)),
         ("avg_daily_ws", lambda: execute_query(avg_daily_ws_sql, params)),
@@ -2632,6 +2632,65 @@ async def get_kpi_trend(
         GROUP BY usage_date
         ORDER BY usage_date
         """
+    elif kpi == "apps_avg_cost_per_app":
+        query = """
+        SELECT
+          usage_date as date,
+          SUM(usage_quantity * COALESCE(p.pricing.default, 0))
+            / NULLIF(COUNT(DISTINCT COALESCE(u.usage_metadata.app_id, 'unknown')), 0) as value
+        FROM system.billing.usage u
+        LEFT JOIN system.billing.list_prices p
+          ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
+        WHERE u.usage_date BETWEEN :start_date AND :end_date
+          AND u.usage_quantity > 0
+          AND u.billing_origin_product = 'APPS'
+        GROUP BY usage_date
+        ORDER BY usage_date
+        """
+    elif kpi == "total_tags":
+        query = """
+        WITH tagged AS (
+          SELECT u.usage_date, t.key as tag_key, t.value as tag_value
+          FROM system.billing.usage u
+          LATERAL VIEW EXPLODE(u.custom_tags) t AS key, value
+          WHERE u.usage_date BETWEEN :start_date AND :end_date
+            AND u.usage_quantity > 0
+            AND u.custom_tags IS NOT NULL
+            AND size(u.custom_tags) > 0
+        )
+        SELECT
+          usage_date as date,
+          COUNT(DISTINCT CONCAT(tag_key, ':', tag_value)) as value
+        FROM tagged
+        GROUP BY usage_date
+        ORDER BY usage_date
+        """
+    elif kpi == "cost_per_tag":
+        query = """
+        WITH tagged AS (
+          SELECT
+            u.usage_date,
+            u.usage_quantity,
+            COALESCE(p.pricing.default, 0) as price_per_dbu,
+            t.key as tag_key,
+            t.value as tag_value
+          FROM system.billing.usage u
+          LEFT JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
+          LATERAL VIEW EXPLODE(u.custom_tags) t AS key, value
+          WHERE u.usage_date BETWEEN :start_date AND :end_date
+            AND u.usage_quantity > 0
+            AND u.custom_tags IS NOT NULL
+            AND size(u.custom_tags) > 0
+        )
+        SELECT
+          usage_date as date,
+          SUM(usage_quantity * price_per_dbu)
+            / NULLIF(COUNT(DISTINCT CONCAT(tag_key, ':', tag_value)), 0) as value
+        FROM tagged
+        GROUP BY usage_date
+        ORDER BY usage_date
+        """
     elif kpi == "sql_spend":
         _cat, _sch = get_catalog_schema()
         query = f"""
@@ -3088,13 +3147,14 @@ async def get_platform_kpi_trend(
         ORDER BY DATE(start_time)
         """
     elif kpi == "avg_query_duration":
-        query = """
+        _cat, _sch = get_catalog_schema()
+        query = f"""
         SELECT
           DATE(start_time) as date,
-          AVG(COALESCE(total_task_duration_ms, 0)) / 1000.0 as value
-        FROM system.query.history
-        WHERE start_time >= CAST(:start_date AS TIMESTAMP)
-          AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
+          AVG(duration_seconds) as value
+        FROM `{_cat}`.`{_sch}`.`dbsql_cost_per_query`
+        WHERE DATE(start_time) >= :start_date
+          AND DATE(start_time) <= :end_date
         GROUP BY DATE(start_time)
         ORDER BY DATE(start_time)
         """

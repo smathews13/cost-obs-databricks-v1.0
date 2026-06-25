@@ -432,6 +432,7 @@ export interface AppsSummary {
   total_dbus: number;
   total_spend: number;
   app_count: number;
+  avg_daily_apps: number;
   workspace_count: number;
   days_in_range: number;
   avg_daily_spend: number;

@@ -12,7 +12,7 @@ import {
   Cell,
 } from "recharts";
 import type { AppsDashboardBundle, AppsApp, AppsConnectedArtifact, DateRange } from "@/types/billing";
-import { useAppsDashboardBundle } from "@/hooks/useBillingData";
+import { useAppsDashboardBundle, useSpNames } from "@/hooks/useBillingData";
 import { KPITrendModal } from "./KPITrendModal";
 import { formatIdentity } from "@/utils/identity";
 
@@ -314,6 +314,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const artifactsPerPage = 10;
 
   const { data: freshData, isLoading: freshLoading, isError: freshError, error: freshErrorObj, refetch } = useAppsDashboardBundle(dateRange, workspaceIds, true);
+  const { data: spNames } = useSpNames();
 
   const data = freshData ?? initialData;
   const isLoading = freshLoading || initialLoading;
@@ -601,7 +602,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Apps Spend</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.total_spend)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="mt-1 text-xs text-gray-500">over {summary.days_in_range} days</p>
             </div>
           </div>
         </div>
@@ -620,7 +621,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total DBUs</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.total_dbus)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="mt-1 text-xs text-gray-500">over {summary.days_in_range} days</p>
             </div>
           </div>
         </div>
@@ -638,15 +639,16 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Active Apps</p>
-              <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.app_count)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.avg_daily_apps ?? summary.app_count)}</p>
+              <p className="mt-1 text-xs text-gray-500">daily avg across {summary.workspace_count} workspaces</p>
             </div>
           </div>
         </div>
 
         <div
-          className="rounded-lg bg-white p-6 border"
+          className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
+          onClick={() => startDate && endDate && setSelectedKPI({kpi: "apps_avg_cost_per_app", label: "Daily Avg App Spend"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -655,9 +657,9 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Avg Daily Spend</p>
+              <p className="text-sm font-medium text-gray-500">App Spend</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.avg_daily_spend)}</p>
-              <p className="mt-1 text-xs text-gray-500">Registered apps only</p>
+              <p className="mt-1 text-xs text-gray-500">daily avg per app</p>
             </div>
           </div>
         </div>
@@ -1207,7 +1209,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                     const appBackendUrl = hostBase && artifact.app_name ? `${hostBase}/apps/${artifact.app_name}` : null;
 
                     const isSP = artifact.artifact_type === 'SERVICE_PRINCIPAL';
-                    const displayName = isSP ? formatIdentity(artifact.artifact_name) : na(artifact.artifact_name);
+                    const displayName = isSP ? formatIdentity(artifact.artifact_name, spNames) : na(artifact.artifact_name);
 
                     return (
                       <tr key={`${artifact.app_id}-${artifact.artifact_name}-${idx}`} className="hover:bg-gray-50">

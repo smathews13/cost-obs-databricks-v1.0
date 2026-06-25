@@ -1286,10 +1286,10 @@ AVG_DAILY_WORKSPACES = """
 SELECT ROUND(AVG(daily_count)) as avg_daily_workspaces
 FROM (
   SELECT usage_date, COUNT(DISTINCT workspace_id) as daily_count
-  FROM system.billing.usage
+  FROM `{catalog}`.`{schema}`.`daily_workspace_breakdown`
   WHERE usage_date >= :start_date
     AND usage_date <= :end_date
-    AND usage_quantity > 0
+    {ws_filter}
   GROUP BY usage_date
 )
 """

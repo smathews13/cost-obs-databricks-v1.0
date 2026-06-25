@@ -79,13 +79,8 @@ WITH aiml_usage AS (
       OR u.sku_name LIKE '%INFERENCE%'
       OR u.sku_name LIKE '%FINE_TUNING%'
     )
-)
-SELECT
-  a.total_dbus, a.total_spend, a.workspace_count, a.endpoint_count,
-  a.days_in_range, a.first_date, a.last_date,
-  COALESCE(d.avg_endpoints_per_day, 0) as avg_endpoints_per_day,
-  COALESCE(c.avg_cost_per_endpoint, 0) as avg_cost_per_endpoint
-FROM (
+),
+aiml_summary AS (
   SELECT
     SUM(usage_quantity) as total_dbus,
     SUM(usage_quantity * price_per_dbu) as total_spend,
@@ -95,24 +90,28 @@ FROM (
     MIN(usage_date) as first_date,
     MAX(usage_date) as last_date
   FROM aiml_usage
-) a
-CROSS JOIN (
-  SELECT AVG(daily_endpoints) as avg_endpoints_per_day FROM (
-    SELECT usage_date, COUNT(DISTINCT usage_metadata.endpoint_name) as daily_endpoints
-    FROM aiml_usage GROUP BY usage_date
-  )
-) d
-CROSS JOIN (
-  SELECT AVG(daily_cost / NULLIF(daily_endpoints, 0)) as avg_cost_per_endpoint FROM (
-    SELECT
-      usage_date,
-      SUM(usage_quantity * price_per_dbu) as daily_cost,
-      COUNT(DISTINCT usage_metadata.endpoint_name) as daily_endpoints
-    FROM aiml_usage
-    WHERE usage_metadata.endpoint_name IS NOT NULL
-    GROUP BY usage_date
-  )
-) c
+),
+aiml_by_day AS (
+  SELECT
+    usage_date,
+    SUM(usage_quantity * price_per_dbu) as daily_cost,
+    COUNT(DISTINCT usage_metadata.endpoint_name) as daily_endpoints
+  FROM aiml_usage
+  WHERE usage_metadata.endpoint_name IS NOT NULL
+  GROUP BY usage_date
+),
+aiml_avg_endpoints AS (
+  SELECT COALESCE(AVG(daily_endpoints), 0) as avg_endpoints_per_day FROM aiml_by_day
+),
+aiml_avg_cost AS (
+  SELECT COALESCE(AVG(daily_cost / NULLIF(daily_endpoints, 0)), 0) as avg_cost_per_endpoint FROM aiml_by_day
+)
+SELECT
+  s.total_dbus, s.total_spend, s.workspace_count, s.endpoint_count,
+  s.days_in_range, s.first_date, s.last_date,
+  e.avg_endpoints_per_day,
+  c.avg_cost_per_endpoint
+FROM aiml_summary s, aiml_avg_endpoints e, aiml_avg_cost c
 """
 
 FMAPI_PROVIDER_COSTS = """

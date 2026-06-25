@@ -99,7 +99,7 @@ async def get_sp_names():
         w = get_workspace_client()
         names: dict = {}
         for sp in w.service_principals.list():
-            display = sp.display_name
+            display = sp.display_name or sp.external_id or (f"SP-{str(sp.id)[:8]}" if sp.id else None)
             if not display:
                 continue
             if sp.application_id:

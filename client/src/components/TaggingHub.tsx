@@ -431,7 +431,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => setSelectedKPI({ kpi: "tag_coverage_pct", label: "Tag Coverage %" })}
+          onClick={() => setSelectedKPI({ kpi: "cost_per_tag", label: "Daily Cost Per Tag" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -440,17 +440,20 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Tag Coverage</p>
-              <p className="text-2xl font-semibold text-gray-900">{(summary.tagged_percentage ?? 0).toFixed(1)}%</p>
-              <p className="text-sm text-gray-500">of total spend</p>
+              <p className="text-sm font-medium text-gray-500">Cost Per Tag</p>
+              <p className="text-2xl font-semibold text-gray-900">
+                {formatCurrency((summary.tagged_spend ?? 0) / Math.max(data?.cost_by_tag?.tags?.length ?? 1, 1))}
+              </p>
+              <p className="text-sm text-gray-500">{(summary.tagged_percentage ?? 0).toFixed(1)}% tag coverage</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>
 
         <div
-          className="rounded-lg bg-white p-6 border"
+          className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
+          onClick={() => setSelectedKPI({ kpi: "total_tags", label: "Daily Total Tags" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -461,7 +464,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Tags</p>
               <p className="text-2xl font-semibold text-gray-900">{data?.cost_by_tag?.tags?.length ?? "—"}</p>
-              <p className="mt-1 text-xs text-gray-500">Unique tag key-value pairs</p>
+              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>

@@ -225,7 +225,7 @@ apps_avg AS (
     SELECT usage_date, COUNT(DISTINCT app_id) as daily_apps
     FROM apps_by_day
     GROUP BY usage_date
-  )
+  ) t
 )
 SELECT t.*, a.avg_daily_apps
 FROM apps_totals t, apps_avg a

@@ -316,7 +316,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_endpoints", label: "Active Endpoints"})}
+          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_endpoints", label: "Daily Active Endpoints"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -327,14 +327,16 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Avg Active Endpoints / Day</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.endpoint_count)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="mt-1 text-xs text-gray-500">Across {summary.workspace_count} workspace{summary.workspace_count !== 1 ? "s" : ""}</p>
+              <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>
 
         <div
-          className="rounded-lg bg-white p-6 border"
+          className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
+          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_avg_endpoint_cost", label: "Avg Daily Endpoint Cost"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -346,6 +348,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
               <p className="text-sm font-medium text-gray-500">Avg Daily Endpoint Cost</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.endpoint_count > 0 ? summary.avg_daily_spend / summary.endpoint_count : 0)}</p>
               <p className="mt-1 text-xs text-gray-500">Per endpoint per day</p>
+              <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>

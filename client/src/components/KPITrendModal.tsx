@@ -25,7 +25,7 @@ interface KPITrendModalProps {
   workspaceIds?: string[];
 }
 
-const SPEND_KPIS = new Set(["total_spend", "avg_daily_spend", "aiml_spend", "apps_spend", "tagged_spend", "untagged_spend", "infra_cost", "avg_cost_per_cluster", "sql_spend"]);
+const SPEND_KPIS = new Set(["total_spend", "avg_daily_spend", "aiml_spend", "apps_spend", "tagged_spend", "untagged_spend", "infra_cost", "avg_cost_per_cluster", "sql_spend", "aiml_avg_endpoint_cost"]);
 
 function defaultBillingFormat(value: number, kpi: string): string {
   if (SPEND_KPIS.has(kpi)) {

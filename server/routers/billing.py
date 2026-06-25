@@ -2437,6 +2437,28 @@ async def get_kpi_trend(
         GROUP BY usage_date
         ORDER BY usage_date
         """
+    elif kpi == "aiml_avg_endpoint_cost":
+        query = """
+        SELECT
+          u.usage_date as date,
+          SUM(u.usage_quantity * COALESCE(p.pricing.default, 0))
+            / NULLIF(COUNT(DISTINCT u.usage_metadata.endpoint_name), 0) as value
+        FROM system.billing.usage u
+        LEFT JOIN system.billing.list_prices p
+          ON u.sku_name = p.sku_name
+          AND u.cloud = p.cloud
+          AND p.price_end_time IS NULL
+        WHERE u.usage_date BETWEEN :start_date AND :end_date
+          AND u.usage_quantity > 0
+          AND (
+            u.billing_origin_product = 'MODEL_SERVING'
+            OR u.sku_name LIKE '%SERVERLESS_REAL_TIME_INFERENCE%'
+            OR u.sku_name LIKE '%INFERENCE%'
+          )
+          AND u.usage_metadata.endpoint_name IS NOT NULL
+        GROUP BY u.usage_date
+        ORDER BY u.usage_date
+        """
     elif kpi == "tagged_spend":
         query = """
         WITH usage_with_tags AS (

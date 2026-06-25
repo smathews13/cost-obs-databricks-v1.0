@@ -331,7 +331,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
         </div>
 
         <div
-          className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
+          className="rounded-lg bg-white p-6 border"
           style={{ borderColor: '#E5E5E5' }}
         >
           <div className="flex items-center">

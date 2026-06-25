@@ -1093,21 +1093,17 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                           </span>
                         </td>
                         <td className="max-w-md px-4 py-3 text-sm text-gray-500">
-                          {query.query_profile_url ? (
-                            <a
-                              href={query.query_profile_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block truncate font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                              title="Click to view query profile"
-                            >
-                              {query.statement_preview}
-                            </a>
-                          ) : (
-                            <div className="truncate font-mono text-xs">
-                              {query.statement_preview}
-                            </div>
-                          )}
+                          {(() => {
+                            let qHistUrl: string | null = host ? `${host}/sql/history` : null;
+                            if (!qHistUrl && query.query_profile_url) { try { qHistUrl = new URL(query.query_profile_url).origin + "/sql/history"; } catch { /* ignore */ } }
+                            return qHistUrl ? (
+                              <a href={qHistUrl} target="_blank" rel="noopener noreferrer" className="block truncate font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline" title="Open Query History">
+                                {query.statement_preview}
+                              </a>
+                            ) : (
+                              <div className="truncate font-mono text-xs">{query.statement_preview}</div>
+                            );
+                          })()}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
                           {formatDuration(query.duration_seconds)}
@@ -1306,9 +1302,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {sourceQueries.map((q, idx) => {
-                      let srcHistUrl: string | null = null;
-                      try { if (q.query_profile_url) srcHistUrl = new URL(q.query_profile_url).origin + "/sql/history"; } catch { /* ignore */ }
-                      try { if (!srcHistUrl && q.source_url) srcHistUrl = new URL(q.source_url).origin + "/sql/history"; } catch { /* ignore */ }
+                      const srcHistUrl: string | null = host ? `${host}/sql/history` : (() => { try { return q.query_profile_url ? new URL(q.query_profile_url).origin + "/sql/history" : null; } catch { return null; } })();
                       return (
                       <tr key={q.statement_id || idx} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
@@ -1387,9 +1381,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {freshUserQueries.map((q, idx) => {
-                      let histUrl: string | null = null;
-                      try { if (q.query_profile_url) histUrl = new URL(q.query_profile_url).origin + "/sql/history"; } catch { /* ignore */ }
-                      try { if (!histUrl && q.source_url) histUrl = new URL(q.source_url).origin + "/sql/history"; } catch { /* ignore */ }
+                      const histUrl: string | null = host ? `${host}/sql/history` : (() => { try { return q.query_profile_url ? new URL(q.query_profile_url).origin + "/sql/history" : null; } catch { return null; } })();
                       return (
                         <tr key={q.statement_id || idx} className="hover:bg-gray-50">
                           <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
@@ -1419,8 +1411,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                           </td>
                         </tr>
                         {staleUserQueries.map((q, idx) => {
-                          let historyUrl: string | null = null;
-                          try { if (q.query_profile_url) historyUrl = new URL(q.query_profile_url).origin + "/sql/history"; } catch { /* ignore */ }
+                          const historyUrl: string | null = host ? `${host}/sql/history` : (() => { try { return q.query_profile_url ? new URL(q.query_profile_url).origin + "/sql/history" : null; } catch { return null; } })();
                           return (
                             <tr key={q.statement_id || idx} className="opacity-60 hover:bg-gray-50">
                               <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">

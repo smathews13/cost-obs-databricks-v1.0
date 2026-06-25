@@ -274,7 +274,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_spend", label: "Total AI/ML Spend"})}
+          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_spend", label: "Daily AI/ML Spend"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -285,7 +285,8 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total AI/ML Spend</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.total_spend)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="mt-1 text-xs text-gray-500">{summary.days_in_range} days</p>
+              <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>
@@ -293,7 +294,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_dbus", label: "Total DBUs"})}
+          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_dbus", label: "Daily AI/ML DBUs"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -304,7 +305,8 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total DBUs</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.total_dbus)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="mt-1 text-xs text-gray-500">{summary.days_in_range} days</p>
+              <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>
@@ -331,7 +333,6 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_spend", label: "Avg Daily Spend"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -340,9 +341,9 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Avg Daily Spend</p>
-              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.avg_daily_spend)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="text-sm font-medium text-gray-500">Avg Daily Endpoint Cost</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.endpoint_count > 0 ? summary.avg_daily_spend / summary.endpoint_count : 0)}</p>
+              <p className="mt-1 text-xs text-gray-500">Per endpoint per day</p>
             </div>
           </div>
         </div>

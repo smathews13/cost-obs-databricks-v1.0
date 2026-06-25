@@ -198,23 +198,34 @@ WITH apps_usage AS (
     AND u.usage_quantity > 0
     AND u.billing_origin_product = 'APPS'
 ),
+apps_by_day AS (
+  SELECT
+    usage_date,
+    workspace_id,
+    COALESCE(usage_metadata.app_id, 'unknown') as app_id,
+    SUM(usage_quantity) as daily_dbus,
+    SUM(usage_quantity * price_per_dbu) as daily_spend
+  FROM apps_usage
+  GROUP BY usage_date, workspace_id, COALESCE(usage_metadata.app_id, 'unknown')
+),
 apps_totals AS (
   SELECT
-    SUM(usage_quantity) as total_dbus,
-    SUM(usage_quantity * price_per_dbu) as total_spend,
+    SUM(daily_dbus) as total_dbus,
+    SUM(daily_spend) as total_spend,
     COUNT(DISTINCT workspace_id) as workspace_count,
-    COUNT(DISTINCT COALESCE(usage_metadata.app_id, 'unknown')) as app_count,
+    COUNT(DISTINCT app_id) as app_count,
     COUNT(DISTINCT usage_date) as days_in_range,
     MIN(usage_date) as first_date,
     MAX(usage_date) as last_date
-  FROM apps_usage
-),
-apps_by_day AS (
-  SELECT usage_date, COUNT(DISTINCT COALESCE(usage_metadata.app_id, 'unknown')) as daily_apps
-  FROM apps_usage GROUP BY usage_date
+  FROM apps_by_day
 ),
 apps_avg AS (
-  SELECT COALESCE(AVG(daily_apps), 0) as avg_daily_apps FROM apps_by_day
+  SELECT COALESCE(AVG(daily_apps), 0) as avg_daily_apps
+  FROM (
+    SELECT usage_date, COUNT(DISTINCT app_id) as daily_apps
+    FROM apps_by_day
+    GROUP BY usage_date
+  )
 )
 SELECT t.*, a.avg_daily_apps
 FROM apps_totals t, apps_avg a

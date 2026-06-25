@@ -80,31 +80,40 @@ WITH aiml_usage AS (
       OR u.sku_name LIKE '%FINE_TUNING%'
     )
 ),
-aiml_summary AS (
-  SELECT
-    SUM(usage_quantity) as total_dbus,
-    SUM(usage_quantity * price_per_dbu) as total_spend,
-    COUNT(DISTINCT workspace_id) as workspace_count,
-    COUNT(DISTINCT usage_metadata.endpoint_name) as endpoint_count,
-    COUNT(DISTINCT usage_date) as days_in_range,
-    MIN(usage_date) as first_date,
-    MAX(usage_date) as last_date
-  FROM aiml_usage
-),
 aiml_by_day AS (
   SELECT
     usage_date,
-    SUM(usage_quantity * price_per_dbu) as daily_cost,
-    COUNT(DISTINCT usage_metadata.endpoint_name) as daily_endpoints
+    workspace_id,
+    usage_metadata.endpoint_name as endpoint_name,
+    SUM(usage_quantity) as daily_dbus,
+    SUM(usage_quantity * price_per_dbu) as daily_spend
   FROM aiml_usage
-  WHERE usage_metadata.endpoint_name IS NOT NULL
+  GROUP BY usage_date, workspace_id, usage_metadata.endpoint_name
+),
+aiml_summary AS (
+  SELECT
+    SUM(daily_dbus) as total_dbus,
+    SUM(daily_spend) as total_spend,
+    COUNT(DISTINCT workspace_id) as workspace_count,
+    COUNT(DISTINCT endpoint_name) as endpoint_count,
+    COUNT(DISTINCT usage_date) as days_in_range,
+    MIN(usage_date) as first_date,
+    MAX(usage_date) as last_date
+  FROM aiml_by_day
+),
+aiml_daily_totals AS (
+  SELECT usage_date,
+    SUM(daily_spend) as daily_cost,
+    COUNT(DISTINCT endpoint_name) as daily_endpoints
+  FROM aiml_by_day
+  WHERE endpoint_name IS NOT NULL
   GROUP BY usage_date
 ),
 aiml_avg_endpoints AS (
-  SELECT COALESCE(AVG(daily_endpoints), 0) as avg_endpoints_per_day FROM aiml_by_day
+  SELECT COALESCE(AVG(daily_endpoints), 0) as avg_endpoints_per_day FROM aiml_daily_totals
 ),
 aiml_avg_cost AS (
-  SELECT COALESCE(AVG(daily_cost / NULLIF(daily_endpoints, 0)), 0) as avg_cost_per_endpoint FROM aiml_by_day
+  SELECT COALESCE(AVG(daily_cost / NULLIF(daily_endpoints, 0)), 0) as avg_cost_per_endpoint FROM aiml_daily_totals
 )
 SELECT
   s.total_dbus, s.total_spend, s.workspace_count, s.endpoint_count,

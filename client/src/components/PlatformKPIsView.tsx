@@ -279,7 +279,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Total Queries Executed"
             value={formatNumber(data.total_queries)}
-            subtitle={`${data.unique_query_users} unique users`}
+            subtitle={`from ${formatNumber(data.unique_query_users)} unique users`}
             isLoading={isLoading || isFetching}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
@@ -345,11 +345,11 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Total Jobs"
             value={formatNumber(data.total_jobs)}
-            subtitle={`${data.unique_job_owners} unique owners`}
+            subtitle={`from ${formatNumber(data.unique_job_owners)} unique owners`}
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
             unavailableReason={jobsUnavailable}
-            onClick={!jobsUnavailable && startDate && endDate ? () => handleKPIClick("total_jobs", "Total Jobs") : undefined}
+            onClick={!jobsUnavailable && startDate && endDate ? () => handleKPIClick("total_jobs", "Daily Active Jobs") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -364,7 +364,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
             unavailableReason={jobsUnavailable}
-            onClick={!jobsUnavailable && startDate && endDate ? () => handleKPIClick("total_job_runs", "Job Runs") : undefined}
+            onClick={!jobsUnavailable && startDate && endDate ? () => handleKPIClick("total_job_runs", "Daily Job Runs") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -393,7 +393,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
             unavailableReason={clustersUnavailable}
-            onClick={!clustersUnavailable && startDate && endDate ? () => handleKPIClick("active_notebooks", "Active Clusters") : undefined}
+            onClick={!clustersUnavailable && startDate && endDate ? () => handleKPIClick("active_notebooks", "Daily Active Clusters") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
@@ -410,10 +410,11 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Active Workspaces"
             value={formatNumber(data.active_workspaces)}
-            subtitle="Collaborative environments"
+            subtitle="Workspaces with DBU activity"
+            infoTooltip="Count of distinct workspaces with any billable usage (usage_quantity > 0) in system.billing.usage during the selected period. A workspace is 'active' if at least one compute resource ran in it."
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
-            onClick={startDate && endDate ? () => handleKPIClick("active_workspaces", "Active Workspaces") : undefined}
+            onClick={startDate && endDate ? () => handleKPIClick("active_workspaces", "Daily Active Workspaces") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -429,7 +430,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
               color="bg-orange-100"
               isLoading={isLoading || isFetching}
               unavailableReason={servingUnavailable}
-              onClick={!servingUnavailable && startDate && endDate ? () => handleKPIClick("models_served", "Models Served") : undefined}
+              onClick={!servingUnavailable && startDate && endDate ? () => handleKPIClick("models_served", "Daily Models Served") : undefined}
               icon={
                 <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />

@@ -391,14 +391,14 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {/* Active users */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_users", label: "Active Users", variant: "platform"})}>
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_users", label: "Daily Active Users", variant: "platform"})}>
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-[#FF3621]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
             </div>
             <div className="min-w-0">
               <p className="text-sm text-gray-500 flex items-center">
-                Active users
+                Unique Active Users
                 <InfoTooltip text="Distinct users (humans and service principals) with any DBU spend in the selected date range, across all products." />
               </p>
               <p className="text-2xl font-semibold text-gray-900">{summary?.user_count?.toLocaleString() ?? "—"}</p>
@@ -423,7 +423,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
           </div>
         </div>
         {/* Top spender */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_spend", label: "Total Spend Trend", variant: "billing"})}>
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-[#FF3621]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
@@ -432,7 +432,6 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               <p className="text-sm text-gray-500">Top spender</p>
               <p className="text-2xl font-semibold text-gray-900">{topUsers[0] ? fmt(topUsers[0].total_spend) : "—"}</p>
               {topUsers[0] && <p className="text-xs text-gray-500 truncate">{displayUser(topUsers[0].user_email)}</p>}
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>

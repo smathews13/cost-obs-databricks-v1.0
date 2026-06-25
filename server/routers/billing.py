@@ -2799,7 +2799,7 @@ def _build_platform_kpi_response(kpi: str, granularity: str, data_points: list[d
 
 @router.get("/platform-kpi-trend")
 async def get_platform_kpi_trend(
-    kpi: str = Query(..., description="Platform KPI: total_queries, total_rows_read, total_bytes_read, total_compute_seconds, total_jobs, total_job_runs, successful_runs, active_notebooks, active_workspaces, models_served, total_users"),
+    kpi: str = Query(..., description="Platform KPI: total_queries, total_rows_read, total_bytes_read, total_compute_seconds, total_jobs, total_job_runs, successful_runs, active_notebooks, active_workspaces, models_served, total_users, sql_queries, sql_users"),
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default=None, description="End date (YYYY-MM-DD)"),
     granularity: str = Query("daily", description="Granularity: daily, weekly, monthly"),
@@ -2824,7 +2824,7 @@ async def get_platform_kpi_trend(
     # KPIs sourced from system.query.history (workspace_id filter via _inject_qh_ws_filter)
     _QH_KPIS = frozenset({"total_queries", "total_rows_read", "total_bytes_read",
                            "total_compute_seconds", "total_users", "avg_query_duration",
-                           "unique_warehouses"})
+                           "unique_warehouses", "sql_queries", "sql_users"})
 
     # For DISTINCT COUNT KPIs, monthly/weekly rollup must be done in SQL — summing
     # daily distinct counts in Python overcounts (user active 30 days = 30x, not 1x).
@@ -2897,6 +2897,22 @@ async def get_platform_kpi_trend(
             WHERE start_time >= CAST(:start_date AS TIMESTAMP)
               AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
               AND warehouse_id IS NOT NULL
+            GROUP BY DATE_TRUNC('{trunc}', DATE(start_time))
+            ORDER BY date
+            """
+            results = await asyncio.to_thread(execute_query, _inject_qh_ws_filter(query, ws_clause), params)
+            daily_points = [{"date": str(r["date"])[:10], "value": float(r["value"] or 0)} for r in results]
+            return _resp(_build_platform_kpi_response(kpi, granularity, daily_points))
+        elif kpi == "sql_users":
+            query = f"""
+            SELECT
+              DATE_TRUNC('{trunc}', DATE(start_time)) as date,
+              COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) as value
+            FROM system.query.history
+            WHERE start_time >= CAST(:start_date AS TIMESTAMP)
+              AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
+              AND warehouse_id IS NOT NULL
+              AND (executed_by IS NOT NULL OR executed_as_user_id IS NOT NULL)
             GROUP BY DATE_TRUNC('{trunc}', DATE(start_time))
             ORDER BY date
             """
@@ -3057,6 +3073,31 @@ async def get_platform_kpi_trend(
         WHERE start_time >= CAST(:start_date AS TIMESTAMP)
           AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
           AND warehouse_id IS NOT NULL
+        GROUP BY DATE(start_time)
+        ORDER BY DATE(start_time)
+        """
+    elif kpi == "sql_queries":
+        query = """
+        SELECT
+          DATE(start_time) as date,
+          COUNT(*) as value
+        FROM system.query.history
+        WHERE start_time >= CAST(:start_date AS TIMESTAMP)
+          AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
+          AND warehouse_id IS NOT NULL
+        GROUP BY DATE(start_time)
+        ORDER BY DATE(start_time)
+        """
+    elif kpi == "sql_users":
+        query = """
+        SELECT
+          DATE(start_time) as date,
+          COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) as value
+        FROM system.query.history
+        WHERE start_time >= CAST(:start_date AS TIMESTAMP)
+          AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
+          AND warehouse_id IS NOT NULL
+          AND (executed_by IS NOT NULL OR executed_as_user_id IS NOT NULL)
         GROUP BY DATE(start_time)
         ORDER BY DATE(start_time)
         """

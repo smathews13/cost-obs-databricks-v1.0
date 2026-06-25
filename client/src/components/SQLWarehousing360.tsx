@@ -235,7 +235,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!startDate || !endDate) return;
-    for (const kpi of ["total_queries", "total_users", "avg_query_duration"]) {
+    for (const kpi of ["sql_queries", "sql_users", "avg_query_duration"]) {
       queryClient.prefetchQuery({
         queryKey: ["platform-kpi-trend", kpi, startDate, endDate, "daily"],
         queryFn: async () => {
@@ -552,7 +552,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
             return (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "sql_spend", label: "Total Query Spend", variant: "billing"})}>
+            <div className="rounded-lg bg-white p-6 border shadow-sm">
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -567,11 +567,10 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   <div className="mt-1 text-xs text-gray-500">
                     {summary != null ? `${formatNumber(summary.total_dbus ?? 0)} DBUs` : "—"}
                   </div>
-                  <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>
               </div>
             </div>
-            <div className="rounded-lg bg-white p-6 border shadow-sm">
+            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "sql_queries", label: "Daily SQL Queries"})}>
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -586,10 +585,11 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   <div className="mt-1 text-xs text-gray-500">
                     {summary != null ? `Avg: ${formatCurrency(summary.avg_cost_per_query ?? 0)}/query` : "—"}
                   </div>
+                  <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>
               </div>
             </div>
-            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_users", label: "Unique Users"})}>
+            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "sql_users", label: "Unique SQL Users"})}>
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -597,7 +597,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   </svg>
                 </div>
                 <div className="ml-4">
-                  <div className="text-sm font-medium text-gray-500">Unique Users</div>
+                  <div className="text-sm font-medium text-gray-500">Unique SQL Users</div>
                   <div className="text-2xl font-semibold text-gray-900">
                     {summary != null ? formatNumber(summary.unique_users ?? 0) : "—"}
                   </div>

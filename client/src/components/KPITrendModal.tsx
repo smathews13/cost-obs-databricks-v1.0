@@ -40,6 +40,7 @@ function defaultBillingFormat(value: number, kpi: string): string {
 function defaultPlatformFormat(value: number, kpi: string): string {
   if (kpi === "total_bytes_read") return formatBytes(value);
   if (kpi === "total_compute_seconds") return formatComputeSecondsCompact(value);
+  if (kpi === "avg_query_duration") return `${value.toFixed(1)}s`;
   return formatNumber(value);
 }
 

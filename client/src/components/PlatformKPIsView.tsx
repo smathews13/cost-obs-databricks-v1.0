@@ -409,7 +409,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <KPICard
             title="Active Workspaces"
-            value={formatNumber(data.avg_daily_workspaces ?? data.active_workspaces)}
+            value={formatNumber(data.avg_daily_workspaces || data.active_workspaces)}
             subtitle="Avg workspaces active per day"
             infoTooltip="Average number of distinct workspaces with billable usage per day in the selected period. Matches the daily trend average."
             color="bg-orange-100"

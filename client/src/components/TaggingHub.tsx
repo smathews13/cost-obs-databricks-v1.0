@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UntaggedResourcesTable } from "./UntaggedResourcesTable";
 import type { UntaggedTab } from "./UntaggedResourcesTable";
 import {
@@ -53,6 +53,11 @@ const formatNumber = (value: number) =>
 export function TaggingHub({ data, isLoading, host, startDate, endDate, workspaceIds, workspaceNameMap }: TaggingHubProps) {
   const [activeUntaggedTab, setActiveUntaggedTab] = useState<UntaggedTab>("clusters");
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
+  const { data: availableTagsData } = useQuery({
+    queryKey: ["available-tags"],
+    queryFn: async () => { const r = await fetch("/api/tagging/available-tags"); if (!r.ok) return { tags: {}, count: 0 }; return r.json(); },
+    staleTime: 30 * 60 * 1000,
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("total_spend");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -449,20 +454,19 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         </div>
 
         <div
-          className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
+          className="rounded-lg bg-white p-6 border"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => setSelectedKPI({ kpi: "total_spend", label: "Total Spend" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total Spend</p>
-              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.total_spend)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="text-sm font-medium text-gray-500">Total Tags</p>
+              <p className="text-2xl font-semibold text-gray-900">{availableTagsData?.count ?? "—"}</p>
+              <p className="mt-1 text-xs text-gray-500">Unique tag key-value pairs</p>
             </div>
           </div>
         </div>

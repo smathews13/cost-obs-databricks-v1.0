@@ -637,7 +637,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total Apps</p>
+              <p className="text-sm font-medium text-gray-500">Active Apps</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.app_count)}</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
@@ -645,9 +645,8 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
         </div>
 
         <div
-          className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
+          className="rounded-lg bg-white p-6 border"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({kpi: "apps_spend", label: "Daily Apps Spend"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -658,7 +657,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Avg Daily Spend</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.avg_daily_spend)}</p>
-              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+              <p className="mt-1 text-xs text-gray-500">Registered apps only</p>
             </div>
           </div>
         </div>

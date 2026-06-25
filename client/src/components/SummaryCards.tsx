@@ -106,7 +106,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
         <Card
           title="Total DBUs"
           value={formatNumber(data?.total_dbus ?? 0)}
-          subtitle="Databricks Units consumed"
+          subtitle={data?.days_in_range != null ? `${data.days_in_range} days` : undefined}
           isLoading={isLoading}
           onClick={() => handleCardClick("total_dbus", "Total DBUs")}
           icon={
@@ -132,7 +132,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
           value={String(data?.workspace_count ?? 0)}
           subtitle="Active workspaces"
           isLoading={isLoading}
-          onClick={() => handleCardClick("workspace_count", "Active Workspaces")}
+          onClick={() => handleCardClick("workspace_count", "Daily Active Workspaces")}
           icon={
             <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />

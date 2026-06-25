@@ -411,7 +411,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             title="Active Workspaces"
             value={formatNumber(data.active_workspaces)}
             subtitle="Workspaces with DBU activity"
-            infoTooltip="Count of distinct workspaces with any billable usage (usage_quantity > 0) in system.billing.usage during the selected period. A workspace is 'active' if at least one compute resource ran in it."
+            infoTooltip="Count of distinct workspaces with any billable usage during the period (period total). The daily trend shows how many workspaces were active each day — typically lower, since the same workspace may be active on multiple days but only counted once here."
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
             onClick={startDate && endDate ? () => handleKPIClick("active_workspaces", "Daily Active Workspaces") : undefined}
@@ -427,6 +427,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
               title="Models Served"
               value={formatNumber(data.models_served)}
               subtitle={`${formatNumber(data.total_serving_dbus)} DBUs`}
+              infoTooltip="Distinct model-serving endpoints active at any point during the period. The daily trend shows unique endpoints per day, which is typically lower — the same endpoint counts once per day vs. once for the entire period."
               color="bg-orange-100"
               isLoading={isLoading || isFetching}
               unavailableReason={servingUnavailable}
@@ -440,13 +441,13 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           )}
 
           <KPICard
-            title="Total Users"
+            title="Total Unique Active Users"
             value={formatNumber(data.unique_query_users + data.unique_job_owners)}
             subtitle="Unique active users"
             isLoading={isLoading || isFetching}
             infoTooltip="Distinct users who ran queries or jobs in the selected period. Counts unique query executors and unique job owners."
             color="bg-orange-100"
-            onClick={startDate && endDate ? () => handleKPIClick("total_users", "Total Users") : undefined}
+            onClick={startDate && endDate ? () => handleKPIClick("total_users", "Daily Active Users") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />

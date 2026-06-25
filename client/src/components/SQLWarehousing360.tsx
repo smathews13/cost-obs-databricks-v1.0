@@ -235,7 +235,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!startDate || !endDate) return;
-    for (const kpi of ["sql_queries", "sql_users", "avg_query_duration"]) {
+    for (const kpi of ["total_queries", "total_users", "avg_query_duration"]) {
       queryClient.prefetchQuery({
         queryKey: ["platform-kpi-trend", kpi, startDate, endDate, "daily"],
         queryFn: async () => {
@@ -570,7 +570,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 </div>
               </div>
             </div>
-            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "sql_queries", label: "Daily SQL Queries"})}>
+            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_queries", label: "Daily Queries"})}>
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -589,7 +589,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 </div>
               </div>
             </div>
-            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "sql_users", label: "Unique SQL Users"})}>
+            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_users", label: "Daily Active Users"})}>
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1214,7 +1214,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                         <td className="px-4 py-3 font-medium text-gray-900">
                           {host ? (
                             <a
-                              href={`https://${host}/sql/warehouses/${rec.warehouse_id}/edit`}
+                              href={`${host}/sql/warehouses/${rec.warehouse_id}/edit`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-600 hover:underline"

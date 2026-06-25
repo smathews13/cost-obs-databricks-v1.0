@@ -3185,7 +3185,7 @@ async def get_platform_kpi_trend(
             }
         }
 
-    # Use all_values for start/end, positive_values for min/max/avg
+    # Use positive_values for start/end/min/max/trend; all_values for avg so it matches card computation
     values = positive_values if positive_values else all_values
 
     period_start_value = values[0] if values else 0
@@ -3212,7 +3212,7 @@ async def get_platform_kpi_trend(
             "change_percent": round(change_percent, 2),
             "min_value": round(min(values), 2),
             "max_value": round(max(values), 2),
-            "avg_value": round(sum(values) / len(values), 2),
+            "avg_value": round(sum(all_values) / len(all_values), 2) if all_values else 0,
             "trend": trend
         }
     })

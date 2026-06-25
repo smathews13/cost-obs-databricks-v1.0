@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { UntaggedResourcesTable } from "./UntaggedResourcesTable";
 import type { UntaggedTab } from "./UntaggedResourcesTable";
 import {
@@ -53,11 +53,6 @@ const formatNumber = (value: number) =>
 export function TaggingHub({ data, isLoading, host, startDate, endDate, workspaceIds, workspaceNameMap }: TaggingHubProps) {
   const [activeUntaggedTab, setActiveUntaggedTab] = useState<UntaggedTab>("clusters");
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
-  const { data: availableTagsData } = useQuery({
-    queryKey: ["available-tags"],
-    queryFn: async () => { const r = await fetch("/api/tagging/available-tags"); if (!r.ok) return { tags: {}, count: 0 }; return r.json(); },
-    staleTime: 30 * 60 * 1000,
-  });
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("total_spend");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -465,7 +460,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Tags</p>
-              <p className="text-2xl font-semibold text-gray-900">{availableTagsData?.count ?? "—"}</p>
+              <p className="text-2xl font-semibold text-gray-900">{data?.cost_by_tag?.tags?.length ?? "—"}</p>
               <p className="mt-1 text-xs text-gray-500">Unique tag key-value pairs</p>
             </div>
           </div>

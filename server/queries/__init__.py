@@ -1282,6 +1282,18 @@ WHERE usage_date >= :start_date
   AND usage_quantity > 0
 """
 
+# Avg distinct workspaces per day — matches the daily avg shown in the Active Workspaces trend modal.
+AVG_DAILY_WORKSPACES = """
+SELECT ROUND(AVG(daily_count)) as avg_daily_workspaces
+FROM (
+  SELECT usage_date, COUNT(DISTINCT workspace_id) as daily_count
+  FROM system.billing.usage
+  WHERE usage_date >= :start_date AND usage_date <= :end_date
+    AND usage_quantity > 0
+  GROUP BY usage_date
+)
+"""
+
 # Lakeflow job run stats — may fail if system.lakeflow is not accessible.
 LAKEFLOW_JOB_STATS = """
 SELECT

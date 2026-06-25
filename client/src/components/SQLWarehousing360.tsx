@@ -552,7 +552,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
             return (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg bg-white p-6 border shadow-sm">
+            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_spend", label: "Total Spend Trend", variant: "billing"})}>
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -567,6 +567,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   <div className="mt-1 text-xs text-gray-500">
                     {summary != null ? `${formatNumber(summary.total_dbus ?? 0)} DBUs` : "—"}
                   </div>
+                  <p className="mt-1 text-xs text-[#FF3621]">Click to see trend →</p>
                 </div>
               </div>
             </div>

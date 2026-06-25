@@ -409,9 +409,9 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <KPICard
             title="Active Workspaces"
-            value={formatNumber(data.active_workspaces)}
-            subtitle="Workspaces with DBU activity"
-            infoTooltip="Count of distinct workspaces with any billable usage during the period (period total). The daily trend shows how many workspaces were active each day — typically lower, since the same workspace may be active on multiple days but only counted once here."
+            value={formatNumber(data.avg_daily_workspaces ?? data.active_workspaces)}
+            subtitle="Avg workspaces active per day"
+            infoTooltip="Average number of distinct workspaces with billable usage per day in the selected period. Matches the daily trend average."
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
             onClick={startDate && endDate ? () => handleKPIClick("active_workspaces", "Daily Active Workspaces") : undefined}

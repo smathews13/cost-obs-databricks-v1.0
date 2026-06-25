@@ -30,6 +30,7 @@ from server.queries import (
     INFRA_COST_TIMESERIES,
     INTERACTIVE_BREAKDOWN,
     PIPELINE_OBJECTS,
+    AVG_DAILY_WORKSPACES,
     BILLING_KPIS_FAST,
     LAKEFLOW_JOB_STATS,
     PLATFORM_KPIS,
@@ -2115,11 +2116,13 @@ async def get_kpis_bundle(
     # ws_clause uses "u.workspace_id" (for aliased queries); build a separate clause here.
     billing_ws_clause = wf.build_ws_filter_clause(id_list=id_list, col="workspace_id")
     billing_kpis_sql = _inject_ws_filter(BILLING_KPIS_FAST, billing_ws_clause)
+    avg_daily_ws_sql = _inject_ws_filter(AVG_DAILY_WORKSPACES, billing_ws_clause)
 
     # Run billing and lakeflow queries separately so a lakeflow permission failure
     # doesn't zero out the billing-backed KPIs (jobs, workspaces, clusters).
     parallel_queries: list[tuple[str, Any]] = [
         ("billing_kpis", lambda: execute_query(billing_kpis_sql, params)),
+        ("avg_daily_ws", lambda: execute_query(avg_daily_ws_sql, params)),
         ("lakeflow_kpis", lambda: execute_query(LAKEFLOW_JOB_STATS, params)),
         ("anomalies", lambda: execute_query(_inject_ws_filter(anomalies_sql, ws_clause), params)),
     ]
@@ -2141,7 +2144,7 @@ async def get_kpis_bundle(
             "total_queries": 0, "unique_query_users": 0,
             "total_rows_read": 0, "total_bytes_read": 0, "total_compute_seconds": 0,
             "total_jobs": 0, "total_job_runs": 0, "successful_runs": 0,
-            "unique_job_owners": 0, "active_workspaces": 0, "active_notebooks": 0,
+            "unique_job_owners": 0, "active_workspaces": 0, "avg_daily_workspaces": 0, "active_notebooks": 0,
             "models_served": 0, "total_serving_dbus": 0,
             "start_date": params["start_date"], "end_date": params["end_date"],
             "error": str(e),
@@ -2152,7 +2155,7 @@ async def get_kpis_bundle(
         "total_queries": 0, "unique_query_users": 0,
         "total_rows_read": 0, "total_bytes_read": 0, "total_compute_seconds": 0,
         "total_jobs": 0, "total_job_runs": 0, "successful_runs": 0,
-        "unique_job_owners": 0, "active_workspaces": 0, "active_notebooks": 0,
+        "unique_job_owners": 0, "active_workspaces": 0, "avg_daily_workspaces": 0, "active_notebooks": 0,
         "models_served": 0, "total_serving_dbus": 0,
         "start_date": params["start_date"], "end_date": params["end_date"],
     }
@@ -2184,6 +2187,10 @@ async def get_kpis_bundle(
         kpis_response["unique_job_owners"] = int(row.get("unique_job_owners") or 0)
         kpis_response["active_workspaces"] = int(row.get("active_workspaces") or 0)
         kpis_response["active_notebooks"] = int(row.get("total_clusters") or 0)
+
+    avg_daily_ws_results = query_results.get("avg_daily_ws")
+    if avg_daily_ws_results and len(avg_daily_ws_results) > 0:
+        kpis_response["avg_daily_workspaces"] = int(avg_daily_ws_results[0].get("avg_daily_workspaces") or 0)
         kpis_response["models_served"] = int(row.get("models_served") or 0)
         kpis_response["total_serving_dbus"] = float(row.get("total_serving_dbus") or 0)
 

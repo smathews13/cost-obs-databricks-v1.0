@@ -246,6 +246,7 @@ export interface PlatformKPIsResponse {
   successful_runs: number;
   unique_job_owners: number;
   active_workspaces: number;
+  avg_daily_workspaces?: number;
   active_notebooks: number;
   models_served: number;
   total_serving_dbus: number;

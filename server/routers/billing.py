@@ -1267,13 +1267,19 @@ async def get_workspace_list(
         ORDER BY workspace_name
     """
     try:
-        rows = await asyncio.to_thread(execute_query, sql, params)
+        rows = await asyncio.wait_for(
+            asyncio.to_thread(execute_query, sql, params),
+            timeout=30.0,
+        )
         return {
             "workspaces": [{"id": r["workspace_id"], "name": r["workspace_name"]} for r in rows],
             "is_scoped": bool(configured_ids),
             "env_var": "COST_OBS_WORKSPACES",
             "env_var_value": ",".join(configured_ids),
         }
+    except asyncio.TimeoutError:
+        logger.warning("get_workspace_list timed out after 30s")
+        return {"workspaces": [], "is_scoped": bool(configured_ids), "error": "timeout"}
     except Exception as e:
         logger.warning("get_workspace_list failed: %s", e)
         return {"workspaces": [], "is_scoped": bool(configured_ids), "error": str(e)}
@@ -2119,13 +2125,14 @@ async def get_kpis_bundle(
 
     # Run billing and lakeflow queries separately so a lakeflow permission failure
     # doesn't zero out the billing-backed KPIs (jobs, workspaces, clusters).
-    avg_daily_ws_sql = _get_mv_query(AVG_DAILY_WORKSPACES, mv_ws)
     parallel_queries: list[tuple[str, Any]] = [
         ("billing_kpis", lambda: execute_query(billing_kpis_sql, params)),
-        ("avg_daily_ws", lambda: execute_query(avg_daily_ws_sql, params)),
         ("lakeflow_kpis", lambda: execute_query(LAKEFLOW_JOB_STATS, params)),
         ("anomalies", lambda: execute_query(_inject_ws_filter(anomalies_sql, ws_clause), params)),
     ]
+    if use_mv:
+        avg_daily_ws_sql = _get_mv_query(AVG_DAILY_WORKSPACES, mv_ws)
+        parallel_queries.append(("avg_daily_ws", lambda: execute_query(avg_daily_ws_sql, params)))
 
     # delta_query_stats is a Delta-direct fallback; skip it when MV is available to avoid redundant scan
     if use_mv:

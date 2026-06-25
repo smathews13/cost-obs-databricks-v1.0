@@ -313,6 +313,7 @@ export interface AIMLSummary {
   endpoint_count: number;
   days_in_range: number;
   avg_daily_spend: number;
+  avg_cost_per_endpoint: number;
   start_date: string;
   end_date: string;
   first_date: string | null;

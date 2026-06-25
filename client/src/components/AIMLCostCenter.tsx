@@ -346,7 +346,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Avg Daily Endpoint Cost</p>
-              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.endpoint_count > 0 ? summary.avg_daily_spend / summary.endpoint_count : 0)}</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.avg_cost_per_endpoint || 0)}</p>
               <p className="mt-1 text-xs text-gray-500">Per endpoint per day</p>
               <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>

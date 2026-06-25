@@ -83,7 +83,8 @@ WITH aiml_usage AS (
 SELECT
   a.total_dbus, a.total_spend, a.workspace_count, a.endpoint_count,
   a.days_in_range, a.first_date, a.last_date,
-  COALESCE(d.avg_endpoints_per_day, 0) as avg_endpoints_per_day
+  COALESCE(d.avg_endpoints_per_day, 0) as avg_endpoints_per_day,
+  COALESCE(c.avg_cost_per_endpoint, 0) as avg_cost_per_endpoint
 FROM (
   SELECT
     SUM(usage_quantity) as total_dbus,
@@ -101,6 +102,17 @@ CROSS JOIN (
     FROM aiml_usage GROUP BY usage_date
   )
 ) d
+CROSS JOIN (
+  SELECT AVG(daily_cost / NULLIF(daily_endpoints, 0)) as avg_cost_per_endpoint FROM (
+    SELECT
+      usage_date,
+      SUM(usage_quantity * price_per_dbu) as daily_cost,
+      COUNT(DISTINCT usage_metadata.endpoint_name) as daily_endpoints
+    FROM aiml_usage
+    WHERE usage_metadata.endpoint_name IS NOT NULL
+    GROUP BY usage_date
+  )
+) c
 """
 
 FMAPI_PROVIDER_COSTS = """
@@ -644,6 +656,7 @@ async def get_aiml_summary(
         "endpoint_count": round(float(row.get("avg_endpoints_per_day") or row.get("endpoint_count") or 0)),
         "days_in_range": days,
         "avg_daily_spend": total_spend / days if days > 0 else 0,
+        "avg_cost_per_endpoint": float(row.get("avg_cost_per_endpoint") or 0),
         "start_date": params["start_date"],
         "end_date": params["end_date"],
         "first_date": str(row.get("first_date")) if row.get("first_date") else None,
@@ -921,9 +934,10 @@ async def get_aiml_dashboard_bundle(
             "endpoint_count": round(float(row.get("avg_endpoints_per_day") or row.get("endpoint_count") or 0)),
             "days_in_range": days,
             "avg_daily_spend": total_spend / days if days > 0 else 0,
+            "avg_cost_per_endpoint": float(row.get("avg_cost_per_endpoint") or 0),
         }
     else:
-        summary = {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "endpoint_count": 0}
+        summary = {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "endpoint_count": 0, "avg_cost_per_endpoint": 0}
 
     # Format providers
     providers_data = results.get("providers", []) or []

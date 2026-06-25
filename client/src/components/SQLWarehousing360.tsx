@@ -552,7 +552,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
             return (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "sql_spend", label: "SQL Spend Trend", variant: "billing"})}>
+            <div className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "sql_spend", label: "Daily SQL Spend Trend", variant: "billing"})}>
               <div className="flex items-center">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
                   <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">

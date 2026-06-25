@@ -861,7 +861,8 @@ function Dashboard() {
                           : "bg-red-400"
                       }`}
                     />
-                    {warehouseStatus.status === "warm" ? "Warehouse" : warehouseStatus.status === "warming_up" ? "Starting" : "Unavailable"}
+                    {warehouseStatus.status === "warm" ? "Active" : warehouseStatus.status === "warming_up" ? "Starting" : "Offline"}
+                    <span className="opacity-60">SQL</span>
                   </span>
                 )}
                 <span className="text-sm opacity-90">

@@ -3,6 +3,7 @@ import type { InteractiveBreakdownResponse } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
 import { formatIdentity } from "@/utils/identity";
+import { useSpNames } from "@/hooks/useBillingData";
 
 interface InteractiveBreakdownProps {
   data: InteractiveBreakdownResponse | undefined;
@@ -41,6 +42,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
   const itemsPerPage = 10;
+  const { data: spNames } = useSpNames();
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -330,7 +332,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                 : viewMode === "by-notebook" && item.key !== "(No Notebook)"
                 ? item.key.split("/").pop() || item.key
                 : viewMode === "by-user"
-                ? formatIdentity(item.key)
+                ? formatIdentity(item.key, spNames)
                 : item.key;
 
               return (
@@ -376,7 +378,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                     <td className="px-3 py-3">
                       {item.user ? (
                         <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-36 truncate" title={item.user}>
-                          {formatIdentity(item.user)}
+                          {formatIdentity(item.user, spNames)}
                         </span>
                       ) : (
                         <span className="text-gray-500">—</span>

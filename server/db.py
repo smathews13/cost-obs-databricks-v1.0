@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Callable, Generator
@@ -508,8 +508,8 @@ def delta_cache_get(key: str) -> dict | None:
         cat, sch = get_catalog_schema()
         if not cat or not sch:
             return None
-        import contextvars
-        from concurrent.futures import wait as _cfwait
+        import threading, contextvars
+        from concurrent.futures import Future, wait as _cfwait
         ctx = contextvars.copy_context()
 
         def _run():
@@ -524,9 +524,15 @@ def delta_cache_get(key: str) -> dict | None:
             finally:
                 _user_token.reset(tok)
 
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(ctx.run, _run)
-        executor.shutdown(wait=False)
+        future: Future = Future()
+
+        def _daemon_run(f=future, fn=ctx.run, inner=_run):
+            try:
+                f.set_result(fn(inner))
+            except Exception as e:
+                f.set_exception(e)
+
+        threading.Thread(target=_daemon_run, daemon=True, name="sql-delta-cache-get").start()
         done, _ = _cfwait([future], timeout=5.0)
         if not done:
             logger.debug("Delta cache SQL read timed out after 5s — treating as cache miss")
@@ -1073,18 +1079,23 @@ def execute_queries_parallel(
     query_funcs: list[tuple[str, Callable[[], list[dict[str, Any]]]]],
     timeout: float | None = 30.0,
 ) -> dict[str, list[dict[str, Any]] | None]:
-    """Execute multiple queries in parallel using ThreadPoolExecutor.
+    """Execute multiple queries in parallel using daemon threads.
+
+    Daemon threads are automatically killed when the process exits, so the app
+    can shut down cleanly on SIGTERM without waiting for slow SQL connections
+    (which have a 300-second socket timeout) to finish.
 
     Args:
         query_funcs: List of (name, lambda) tuples where lambda executes the query
         timeout: Optional wall-clock timeout in seconds. Queries not finished by
-                 deadline are logged as timed-out and return None (threads keep
-                 running in background — callers must handle None gracefully).
+                 deadline return None; their daemon threads are killed on process exit.
 
     Returns:
         Dictionary mapping query names to results
     """
-    from concurrent.futures import wait as _wait
+    import threading
+    from concurrent.futures import Future, wait as _cfwait, ALL_COMPLETED
+
     start_time = time.time()
     results: dict[str, list[dict[str, Any]] | None] = {}
 
@@ -1104,7 +1115,7 @@ def execute_queries_parallel(
         "[SCHEMA_NOT_FOUND]",
     )
 
-    def _collect(future, name: str) -> None:
+    def _collect(future: Future, name: str) -> None:
         try:
             results[name] = future.result()
         except Exception as e:
@@ -1114,29 +1125,30 @@ def execute_queries_parallel(
                 logger.error("✗ %s failed: %s", name, e)
             results[name] = None
 
-    # Do NOT use the context manager (with ThreadPoolExecutor) — its __exit__ calls
-    # shutdown(wait=True) which blocks until ALL threads complete regardless of the
-    # timeout we set below. Orphaned threads are intentional: they hold a SQL connection
-    # that will eventually time out on its own via _CONNECTION_TIMEOUT.
-    executor = ThreadPoolExecutor(max_workers=10)
-    future_to_name = {
-        executor.submit(_timed(name, func)): name
-        for name, func in query_funcs
-    }
-    executor.shutdown(wait=False)
+    futures_map: dict[Future, str] = {}
+    for name, func in query_funcs:
+        future: Future = Future()
+        futures_map[future] = name
+
+        def _run(f=future, fn=_timed(name, func)):
+            try:
+                f.set_result(fn())
+            except Exception as e:
+                f.set_exception(e)
+
+        threading.Thread(target=_run, daemon=True, name=f"sql-{name}").start()
 
     if timeout is not None:
-        done, not_done = _wait(future_to_name.keys(), timeout=timeout, return_when="ALL_COMPLETED")
+        done, not_done = _cfwait(list(futures_map.keys()), timeout=timeout, return_when=ALL_COMPLETED)
         for future in not_done:
-            name = future_to_name[future]
             elapsed = time.time() - start_time
-            logger.error("✗ %s timed out after %.1fs (thread still running in background)", name, elapsed)
-            results[name] = None
+            logger.error("✗ %s timed out after %.1fs (daemon thread will be killed on exit)", futures_map[future], elapsed)
+            results[futures_map[future]] = None
         for future in done:
-            _collect(future, future_to_name[future])
+            _collect(future, futures_map[future])
     else:
-        for future in as_completed(future_to_name):
-            _collect(future, future_to_name[future])
+        for future in as_completed(futures_map):
+            _collect(future, futures_map[future])
 
     total_elapsed = time.time() - start_time
     logger.info("Parallel execution: %.2fs total (%d/%d queries completed)", total_elapsed, len(results), len(query_funcs))

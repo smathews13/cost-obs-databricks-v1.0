@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -749,6 +750,27 @@ def startup_tasks():
             logger.warning(f"Tables status cache pre-warm failed (non-fatal): {e}")
 
 
+async def _run_in_daemon_thread(fn):
+    """Await fn() running in a daemon thread.
+
+    Unlike loop.run_in_executor(), uses a daemon thread so long-running
+    background work (MV refresh, cache prewarm) is automatically killed on
+    SIGTERM, allowing the process to exit within the 15-second grace window.
+    """
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future = loop.create_future()
+
+    def _target():
+        try:
+            loop.call_soon_threadsafe(fut.set_result, fn())
+        except BaseException as exc:
+            if not fut.done():
+                loop.call_soon_threadsafe(fut.set_exception, exc)
+
+    threading.Thread(target=_target, daemon=True).start()
+    return await fut
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
@@ -773,8 +795,9 @@ async def lifespan(app: FastAPI):
     except Exception as _rle:
         logger.warning("Pre-scheduler refresh log restore failed (non-fatal): %s", _rle)
 
-    # Remaining startup tasks run in background
-    asyncio.get_running_loop().run_in_executor(None, startup_tasks)
+    # Remaining startup tasks run in a daemon thread so SIGTERM can kill them
+    # within the 15-second grace window without waiting for slow SQL connections.
+    threading.Thread(target=startup_tasks, daemon=True, name="startup-tasks").start()
 
     # MV refresh scheduler — frequency/hour configurable via Settings > General.
     # Defaults: nightly at 05:00 UTC. Uses a file lock so only one worker fires.
@@ -832,9 +855,7 @@ async def lifespan(app: FastAPI):
                                     with open(lock_path, "w") as lf:
                                         fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
                                         lookback_days = sched.get("lookback_days", 180)
-                                        await asyncio.get_running_loop().run_in_executor(
-                                            None, lambda: _run_mv_refresh(lookback_days=lookback_days)
-                                        )
+                                        await _run_in_daemon_thread(lambda: _run_mv_refresh(lookback_days=lookback_days))
                                         logger.info("Catch-up rebuild complete")
                                         fcntl.flock(lf, fcntl.LOCK_UN)
                                 except BlockingIOError:
@@ -874,9 +895,7 @@ async def lifespan(app: FastAPI):
                         fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
                         lookback_days = sched.get("lookback_days", 180)
                         logger.info(f"Running scheduled rebuild ({frequency}, lookback={lookback_days}d)...")
-                        await asyncio.get_running_loop().run_in_executor(
-                            None, lambda: _run_mv_refresh(lookback_days=lookback_days)
-                        )
+                        await _run_in_daemon_thread(lambda: _run_mv_refresh(lookback_days=lookback_days))
                         logger.info("Scheduled rebuild complete")
                         fcntl.flock(lf, fcntl.LOCK_UN)
                 except BlockingIOError:

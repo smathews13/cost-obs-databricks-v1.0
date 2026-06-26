@@ -62,21 +62,21 @@ def test_warehouse_timeout_returns_quickly():
 
 def test_single_flight_reuses_inflight_future():
     """Two consecutive calls to _get_or_start_warehouse_check_future() while a future
-    is in-flight must reuse that future — not submit a second background task.
+    is in-flight must reuse that future — not start a second daemon thread.
     """
-    submitted_count = 0
-    sentinel_future: Future = Future()  # Stays incomplete (not done)
+    thread_starts: list = []
 
-    def counting_submit(fn, *args, **kwargs):
-        nonlocal submitted_count
-        submitted_count += 1
-        return sentinel_future
+    class _NoopThread:
+        def __init__(self, *args, **kwargs):
+            pass
+        def start(self):
+            thread_starts.append(1)
 
-    with patch.object(setup_mod._wh_check_executor, "submit", side_effect=counting_submit):
+    with patch("server.routers.setup.threading.Thread", _NoopThread):
         f1 = _get_or_start_warehouse_check_future()
-        f2 = _get_or_start_warehouse_check_future()  # Should reuse f1, not submit again
+        f2 = _get_or_start_warehouse_check_future()  # Should reuse f1, not start again
 
-    assert submitted_count == 1, "executor.submit should be called exactly once"
+    assert len(thread_starts) == 1, "Thread.start() should be called exactly once"
     assert f1 is f2
 
 
@@ -148,9 +148,9 @@ def test_not_configured_result_is_cached_with_long_ttl():
     remaining_ttl = cached.expires_at - time.monotonic()
     assert remaining_ttl > 3500, f"Expected ~3600 s TTL, got {remaining_ttl:.0f} s"
 
-    # Second call must hit cache — same object reference, no new future submitted
-    with patch.object(setup_mod._wh_check_executor, "submit",
-                      side_effect=AssertionError("executor must not be called on cache hit")):
+    # Second call must hit cache — same object reference, no new thread started
+    with patch("server.routers.setup.threading.Thread",
+               side_effect=AssertionError("Thread must not be started on cache hit")):
         result2 = check_warehouse_readiness()
 
     assert result2 is result1

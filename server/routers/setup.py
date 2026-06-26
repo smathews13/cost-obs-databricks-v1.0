@@ -1715,9 +1715,6 @@ class TimedWarehouseCheckCache:
 
 _CORE_TABLES = {"system.billing.usage", "system.billing.list_prices"}
 
-# Persistent single-worker executor — prevents shutdown(wait=True) from blocking
-# the request thread when a cold-warehouse future is abandoned on timeout.
-_wh_check_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wh_check")
 _wh_check_lock = threading.Lock()
 _wh_check_inflight: _Future | None = None
 _wh_check_cache: TimedWarehouseCheckCache | None = None
@@ -1753,7 +1750,7 @@ def _resolve_warehouse_config() -> tuple[str, str]:
 
 
 def _run_blocking_warehouse_check() -> WarehouseCheckResult:
-    """Execute a test query as the SP. Runs inside _wh_check_executor.
+    """Execute a test query as the SP. Runs inside a daemon thread.
 
     Classifies exceptions into typed CheckStatus so callers can apply the
     right cache TTL and surface a useful error message.
@@ -1822,7 +1819,15 @@ def _get_or_start_warehouse_check_future() -> _Future:
     with _wh_check_lock:
         if _wh_check_inflight is not None and not _wh_check_inflight.done():
             return _wh_check_inflight
-        future = _wh_check_executor.submit(_run_blocking_warehouse_check)
+        future: _Future = _Future()
+
+        def _run(f=future):
+            try:
+                f.set_result(_run_blocking_warehouse_check())
+            except Exception as exc:
+                f.set_exception(exc)
+
+        threading.Thread(target=_run, daemon=True, name="wh-check").start()
         _wh_check_inflight = future
         return future
 
@@ -2091,12 +2096,15 @@ def _check_readiness_sync(bypass_cache: bool = False) -> dict[str, Any]:
 
 
 def shutdown_readiness_executor() -> None:
-    """Shut down the warehouse check executor on app shutdown."""
+    """Clear the in-flight warehouse check on shutdown.
+
+    Previously shut down a ThreadPoolExecutor; now a no-op for the executor
+    (warehouse check uses a daemon thread) but still clears the future reference.
+    """
     global _wh_check_inflight
     with _wh_check_lock:
         _wh_check_inflight = None
-    _wh_check_executor.shutdown(wait=False)
-    logger.info("Readiness executor shut down")
+    logger.info("Readiness executor shut down (daemon thread)")
 
 
 def reset_readiness_caches() -> None:

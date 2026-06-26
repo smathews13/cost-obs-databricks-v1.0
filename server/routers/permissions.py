@@ -1,10 +1,11 @@
 """Permissions check endpoints for system table access verification."""
 
 import asyncio
+import contextvars
 import logging
 import os
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -30,9 +31,6 @@ def _get_check_client():
         if host:
             return WorkspaceClient(host=host, token=user_token, auth_type="pat")
     return get_workspace_client()
-
-# Dedicated executor so permissions checks don't contend with startup tasks
-_permissions_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="permissions")
 
 # Simple in-process cache so repeated wizard loads are instant (5-min TTL)
 _permissions_cache: dict[str, Any] | None = None
@@ -272,16 +270,24 @@ async def check_permissions(request: Request, refresh: bool = False) -> dict[str
     user_token = request.headers.get("x-forwarded-access-token", "")
     using_user_auth = bool(user_token)
 
-    # Set ContextVar here in the async handler so it's guaranteed to propagate
-    # into run_in_executor (which copies the current context to its thread).
+    # Set ContextVar here so it's captured by copy_context() before the daemon thread starts.
     ctx_tok = _user_token.set(user_token)
     try:
         bypass = refresh or using_user_auth
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            _permissions_executor,
-            lambda: _check_permissions_sync(bypass_cache=bypass),
-        )
+        ctx = contextvars.copy_context()
+        async_fut: asyncio.Future = loop.create_future()
+
+        def _run():
+            try:
+                r = ctx.run(_check_permissions_sync, bypass_cache=bypass)
+                loop.call_soon_threadsafe(async_fut.set_result, r)
+            except Exception as exc:
+                if not async_fut.done():
+                    loop.call_soon_threadsafe(async_fut.set_exception, exc)
+
+        threading.Thread(target=_run, daemon=True, name="permissions-check").start()
+        result = await async_fut
     finally:
         _user_token.reset(ctx_tok)
 

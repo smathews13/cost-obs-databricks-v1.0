@@ -109,7 +109,8 @@ def _check_mv_available() -> bool:
     if _mv_cache["available"] is not None and (now - _mv_cache["checked_at"]) < _MV_CHECK_INTERVAL:
         return _mv_cache["available"]
 
-    from concurrent.futures import ThreadPoolExecutor as _TPE, wait as _cfwait
+    import threading
+    from concurrent.futures import Future, wait as _cfwait
 
     def _check():
         catalog, schema = get_catalog_schema()
@@ -117,9 +118,15 @@ def _check_mv_available() -> bool:
         core_tables = ["daily_usage_summary", "daily_product_breakdown", "daily_workspace_breakdown"]
         return all(tables.get(t, False) for t in core_tables)
 
-    executor = _TPE(max_workers=1)
-    future = executor.submit(_check)
-    executor.shutdown(wait=False)
+    future: Future = Future()
+
+    def _daemon_run(f=future, fn=_check):
+        try:
+            f.set_result(fn())
+        except Exception as e:
+            f.set_exception(e)
+
+    threading.Thread(target=_daemon_run, daemon=True, name="sql-mv-check").start()
     done, _ = _cfwait([future], timeout=10.0)
     if not done:
         logger.debug("MV availability check timed out after 10s — assuming unavailable")

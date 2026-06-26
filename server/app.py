@@ -1,6 +1,7 @@
 """Cost Observability & Control (COC) - FastAPI Application"""
 
 import asyncio
+import concurrent.futures
 import logging
 import os
 import threading
@@ -735,6 +736,19 @@ def startup_tasks():
             logger.warning(f"Tables status cache pre-warm failed (non-fatal): {e}")
 
 
+class _NonBlockingShutdownExecutor(concurrent.futures.ThreadPoolExecutor):
+    """ThreadPoolExecutor whose shutdown() never blocks on running threads.
+
+    asyncio.run() calls loop.shutdown_default_executor() → executor.shutdown(wait=True)
+    at process exit. In-flight SQL threads (from asyncio.to_thread()) hold this call
+    open past the 15-second SIGTERM grace window. ThreadPoolExecutor threads are already
+    daemon threads in Python 3.9+, so they die with the process — skipping the join is safe.
+    """
+
+    def shutdown(self, wait=True, *, cancel_futures=False):
+        super().shutdown(wait=False, cancel_futures=True)
+
+
 async def _run_in_daemon_thread(fn):
     """Await fn() running in a daemon thread.
 
@@ -759,6 +773,14 @@ async def _run_in_daemon_thread(fn):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
+    # Replace the default executor so asyncio.to_thread() / run_in_executor(None, ...)
+    # don't stall process exit at SIGTERM. asyncio.run() calls
+    # loop.shutdown_default_executor() → executor.shutdown(wait=True) during cleanup;
+    # the non-blocking override returns immediately, letting daemon threads die naturally.
+    asyncio.get_running_loop().set_default_executor(
+        _NonBlockingShutdownExecutor(thread_name_prefix="to-thread")
+    )
+
     # Warehouse setup runs synchronously before accepting requests so the
     # setup wizard immediately shows the correct warehouse on first load.
     # Everything else (MV creation, job scheduling, cache prewarm) runs in

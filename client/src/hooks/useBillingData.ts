@@ -366,7 +366,6 @@ export function useDashboardBundleFast(dateRange?: DateRange, workspaceIds?: str
 }
 
 const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 90_000;
 
 async function fetchWithPoll<T>(url: string): Promise<T | null> {
   const response = await fetch(url);
@@ -398,12 +397,7 @@ export function useAIMLDashboardBundle(dateRange?: DateRange, workspaceIds?: str
     queryFn: () => fetchWithPoll<AIMLDashboardBundle>(buildUrlWithWs("/api/aiml/dashboard-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
-    refetchInterval: (q) => {
-      if (q.state.data !== null) return false;
-      const updated = q.state.dataUpdatedAt;
-      if (updated && Date.now() - updated > POLL_TIMEOUT_MS) return false;
-      return POLL_INTERVAL_MS;
-    },
+    refetchInterval: (q) => q.state.data === null ? POLL_INTERVAL_MS : false,
   });
   return {
     ...result,
@@ -422,12 +416,7 @@ export function useAppsDashboardBundle(dateRange?: DateRange, workspaceIds?: str
     queryFn: () => fetchWithPoll<AppsDashboardBundle>(buildUrlWithWs("/api/apps/dashboard-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
-    refetchInterval: (q) => {
-      if (q.state.data !== null) return false;
-      const updated = q.state.dataUpdatedAt;
-      if (updated && Date.now() - updated > POLL_TIMEOUT_MS) return false;
-      return POLL_INTERVAL_MS;
-    },
+    refetchInterval: (q) => q.state.data === null ? POLL_INTERVAL_MS : false,
   });
   return {
     ...result,

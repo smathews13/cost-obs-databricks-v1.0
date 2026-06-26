@@ -614,12 +614,12 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
     _endpoint = f"apps:dashboard-bundle:{'active' if active_only else 'all'}"
     _start = _time.time()
 
-    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
-
-    def _ws(sql: str) -> str:
-        return wf.inject_ws_filter(sql, ws_clause)
-
     try:
+        ws_clause = wf.build_ws_filter_clause(id_list=id_list)
+
+        def _ws(sql: str) -> str:
+            return wf.inject_ws_filter(sql, ws_clause)
+
         # Use stale registry immediately; refresh in background daemon thread
         registry = _app_name_cache
         threading.Thread(target=_get_app_registry, daemon=True, name="apps-registry-bg").start()

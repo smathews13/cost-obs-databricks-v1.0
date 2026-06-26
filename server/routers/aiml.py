@@ -6,7 +6,7 @@ import threading
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put
@@ -885,21 +885,21 @@ async def get_aiml_sku_catalog(
 
 def _compute_aiml_bundle(params: dict, id_list: list | None, ws_clause: str, dkey: str) -> None:
     """Background worker: run all 8 AIML queries, build response, write to Delta cache."""
-    def _ws(sql: str) -> str:
-        return wf.inject_ws_filter(sql, ws_clause)
-
-    queries = [
-        ("summary", lambda: execute_query(_ws(AIML_SUMMARY), params)),
-        ("providers", lambda: execute_query(_ws(FMAPI_PROVIDER_COSTS), params)),
-        ("endpoints", lambda: execute_query(_ws(SERVERLESS_INFERENCE_BY_ENDPOINT), params)),
-        ("categories", lambda: execute_query(_ws(AIML_BY_CATEGORY), params)),
-        ("timeseries", lambda: execute_query(_ws(AIML_TIMESERIES), params)),
-        ("models", lambda: execute_query(_ws(AIML_TOP_MODELS_AND_FEATURE_STORES), params)),
-        ("ml_clusters", lambda: query_with_fallback(_ws(AIML_ML_RUNTIME_CLUSTERS_ENRICHED), _ws(AIML_ML_RUNTIME_CLUSTERS_FALLBACK), params, label="ml_clusters")),
-        ("agent_bricks", lambda: query_with_fallback(_ws(AIML_AGENT_BRICKS_ENRICHED), _ws(AIML_AGENT_BRICKS_FALLBACK), params, label="agent_bricks")),
-    ]
-
     try:
+        def _ws(sql: str) -> str:
+            return wf.inject_ws_filter(sql, ws_clause)
+
+        queries = [
+            ("summary", lambda: execute_query(_ws(AIML_SUMMARY), params)),
+            ("providers", lambda: execute_query(_ws(FMAPI_PROVIDER_COSTS), params)),
+            ("endpoints", lambda: execute_query(_ws(SERVERLESS_INFERENCE_BY_ENDPOINT), params)),
+            ("categories", lambda: execute_query(_ws(AIML_BY_CATEGORY), params)),
+            ("timeseries", lambda: execute_query(_ws(AIML_TIMESERIES), params)),
+            ("models", lambda: execute_query(_ws(AIML_TOP_MODELS_AND_FEATURE_STORES), params)),
+            ("ml_clusters", lambda: query_with_fallback(_ws(AIML_ML_RUNTIME_CLUSTERS_ENRICHED), _ws(AIML_ML_RUNTIME_CLUSTERS_FALLBACK), params, label="ml_clusters")),
+            ("agent_bricks", lambda: query_with_fallback(_ws(AIML_AGENT_BRICKS_ENRICHED), _ws(AIML_AGENT_BRICKS_FALLBACK), params, label="agent_bricks")),
+        ]
+
         results = execute_queries_parallel(queries, timeout=45.0)
 
         # Format summary
@@ -1075,7 +1075,6 @@ async def get_aiml_dashboard_bundle(
 
     if (_dcached := delta_cache_get(_dkey)) is not None:
         if isinstance(_dcached, dict) and "_error" in _dcached:
-            from fastapi import HTTPException
             raise HTTPException(status_code=500, detail=_dcached.get("_error", "Bundle compute failed"))
         return _dcached
 

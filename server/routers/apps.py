@@ -620,9 +620,7 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
         def _ws(sql: str) -> str:
             return wf.inject_ws_filter(sql, ws_clause)
 
-        # Use stale registry immediately; refresh in background daemon thread
-        registry = _app_name_cache
-        threading.Thread(target=_get_app_registry, daemon=True, name="apps-registry-bg").start()
+        registry = _get_app_registry()  # TTL-cached (1h); always populated before filter is built
         app_filter = _build_app_id_filter(registry)
 
         filtered_timeseries = f"""
@@ -658,11 +656,31 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
         ) t
         """
 
+        # Mean-of-daily-ratios: matches the kpi-trend drilldown methodology exactly.
+        avg_cost_per_app_query = f"""
+        SELECT COALESCE(AVG(daily_cost_per_app), 0) as avg_cost_per_app
+        FROM (
+          SELECT u.usage_date,
+            SUM(u.usage_quantity * COALESCE(p.pricing.default, 0))
+              / NULLIF(COUNT(DISTINCT u.usage_metadata.app_id), 0) as daily_cost_per_app
+          FROM system.billing.usage u
+          LEFT JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
+          WHERE u.usage_date BETWEEN :start_date AND :end_date
+            AND u.usage_quantity > 0
+            AND u.billing_origin_product = 'APPS'
+            {app_filter}
+            {ws_clause}
+          GROUP BY u.usage_date
+        ) t
+        """
+
         queries = [
             ("summary", lambda: execute_query(_ws(APPS_SUMMARY), params)),
             ("apps", lambda: execute_query(_ws(APPS_BY_APP_FULL), params)),
             ("timeseries", lambda: execute_query(filtered_timeseries, params)),
             ("filtered_avg_apps", lambda: execute_query(filtered_avg_apps_query, params)),
+            ("avg_cost_per_app", lambda: execute_query(avg_cost_per_app_query, params)),
             ("sku_breakdown", lambda: execute_query(_ws(APPS_BY_APP_SKU), params)),
             ("workspaces", lambda: _query_app_workspaces(params, ws_clause)),
             ("service_principals", lambda: execute_query(_ws(APPS_SERVICE_PRINCIPALS), params)),
@@ -700,13 +718,17 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
         for app in apps_result["apps"]:
             app["workspace_names"] = app_workspace_map.get(app["app_id"], [])
 
-        reg_spend = float(apps_result.get("total_spend") or 0)
-        reg_dbus = sum(float(a.get("total_dbus") or 0) for a in apps_result.get("apps", []))
-        avg_daily_spend = reg_spend / days_in_range if days_in_range > 0 else 0
-        avg_cost_per_app = avg_daily_spend / max(avg_daily_apps, 1) if avg_daily_apps > 0 else 0
+        summary_row = summary_data[0] if summary_data else {}
+        total_spend_all = float(summary_row.get("total_spend") or 0)
+        total_dbus_all = float(summary_row.get("total_dbus") or 0)
+        avg_daily_spend = total_spend_all / days_in_range if days_in_range > 0 else 0
+
+        avg_cost_per_app_data = results.get("avg_cost_per_app", []) or []
+        avg_cost_per_app = float(avg_cost_per_app_data[0].get("avg_cost_per_app") or 0) if avg_cost_per_app_data else 0
+
         summary = {
-            "total_dbus": reg_dbus,
-            "total_spend": reg_spend,
+            "total_dbus": total_dbus_all,
+            "total_spend": total_spend_all,
             "workspace_count": len(all_workspaces),
             "app_count": int(apps_result.get("total_app_count") or 0),
             "avg_daily_apps": avg_daily_apps,

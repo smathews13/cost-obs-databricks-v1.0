@@ -116,6 +116,22 @@ def _build_queries(table_name: str) -> dict[str, str]:
             LIMIT :limit
         """,
         "summary": f"""
+            WITH q AS (
+              SELECT
+                query_attributed_dollars_estimation,
+                query_attributed_dbus_estimation,
+                duration_seconds,
+                executed_by,
+                warehouse_id,
+                DATE(start_time) as query_date
+              FROM `{{catalog}}`.`{{schema}}`.`{table_name}`
+              WHERE DATE(start_time) >= :start_date
+                AND DATE(start_time) <= :end_date
+            ),
+            daily_dur AS (
+              SELECT query_date, AVG(duration_seconds) as daily_avg_dur
+              FROM q GROUP BY query_date
+            )
             SELECT
               COUNT(*) as total_queries,
               COUNT(DISTINCT executed_by) as unique_users,
@@ -123,10 +139,8 @@ def _build_queries(table_name: str) -> dict[str, str]:
               SUM(query_attributed_dollars_estimation) as total_spend,
               SUM(query_attributed_dbus_estimation) as total_dbus,
               AVG(query_attributed_dollars_estimation) as avg_cost_per_query,
-              AVG(duration_seconds) as avg_duration_seconds
-            FROM `{{catalog}}`.`{{schema}}`.`{table_name}`
-            WHERE DATE(start_time) >= :start_date
-              AND DATE(start_time) <= :end_date
+              (SELECT AVG(daily_avg_dur) FROM daily_dur) as avg_duration_seconds
+            FROM q
         """,
         "by_warehouse": f"""
             SELECT

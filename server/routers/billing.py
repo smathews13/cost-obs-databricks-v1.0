@@ -255,7 +255,7 @@ async def get_billing_summary(
     }
     id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
-    use_mv = _check_mv_available()
+    use_mv = await asyncio.to_thread(_check_mv_available)
 
     if use_mv:
         results = await asyncio.to_thread(_exec_mv, MV_BILLING_SUMMARY, params, _mv_ws_clause(id_list))
@@ -420,7 +420,7 @@ async def get_sql_breakdown(
     try:
         from server import workspace_filter as wf
         ws_clause = wf.build_ws_filter_clause(id_list=id_list)
-        use_mv = _check_mv_available()
+        use_mv = await asyncio.to_thread(_check_mv_available)
         if use_mv:
             results = await asyncio.to_thread(_exec_mv, MV_SQL_TOOL_ATTRIBUTION, params, _mv_ws_clause(id_list))
         else:
@@ -1342,7 +1342,7 @@ async def get_dashboard_bundle_fast(
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
     mv_ws = _mv_ws_clause(id_list)
 
-    use_mv = _check_mv_available()
+    use_mv = await asyncio.to_thread(_check_mv_available)
 
     if use_mv:
         # Use materialized views — much faster than live system.billing.usage scans.
@@ -2060,7 +2060,7 @@ async def get_platform_kpis(
     }
 
     # Check if we can use materialized views for query stats
-    use_mv = _check_mv_available()
+    use_mv = await asyncio.to_thread(_check_mv_available)
 
     if use_mv:
         # Try to get query stats from materialized view (fast!)
@@ -2127,7 +2127,7 @@ async def get_kpis_bundle(
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     # Determine which KPI query to run
-    use_mv = _check_mv_available()
+    use_mv = await asyncio.to_thread(_check_mv_available)
 
     # Supplemental query for accurate user count (MV uses MAX of daily counts which under-counts)
     catalog, schema = get_catalog_schema()
@@ -2305,7 +2305,7 @@ async def get_kpi_trend(
 
     ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
 
-    use_mv = _check_mv_available()
+    use_mv = await asyncio.to_thread(_check_mv_available)
     # MV tables are pre-aggregated and cannot be filtered by individual workspace
     if id_list:
         use_mv = False

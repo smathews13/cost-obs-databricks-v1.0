@@ -586,7 +586,7 @@ function Dashboard() {
           tagging: taggingData,
           users: usersGroupsData,
           alerts: alertsData,
-          query360: dbsqlData,
+          query360: dbsqlData ?? undefined,
         },
         sections,
         { start: dateRange.startDate, end: dateRange.endDate },
@@ -633,7 +633,7 @@ function Dashboard() {
         apps: appsData,
         tagging: taggingData,
         platformKPIs,
-        query360: dbsqlData,
+        query360: dbsqlData ?? undefined,
         users: usersGroupsData,
         useCases: useCasesSummaryData,
         alerts: alertsData,
@@ -1213,8 +1213,8 @@ function Dashboard() {
           <TabErrorBoundary tabName="SQL">
           <SQLWarehousing360
             sqlBreakdownData={sqlBreakdown}
-            queryData={dbsqlData}
-            isLoading={sqlLoading || dbsqlLoading || dbsqlFetching}
+            queryData={dbsqlData ?? undefined}
+            isLoading={sqlLoading || dbsqlLoading || dbsqlFetching || dbsqlData === null}
             topQueriesData={dbsqlTopQueriesData}
             topQueriesLoading={dbsqlTopQueriesLoading}
             host={accountInfo?.host}

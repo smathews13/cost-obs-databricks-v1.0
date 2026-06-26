@@ -470,13 +470,18 @@ export function useGCPActualCosts(dateRange?: DateRange, enabled: boolean = true
  * @param dateRange - Date range for the query
  * @param enabled - Whether to enable the query (set false when tab not active)
  */
+/**
+ * DBSQL 360 dashboard bundle — submit-and-poll: returns null while computing, data when ready.
+ * isLoading is true while data is null (pending or first fetch).
+ */
 export function useDBSQLQueryCosts(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
-  return useQuery<DBSQLDashboardBundle>({
+  return useQuery<DBSQLDashboardBundle | null>({
     queryKey: ["dbsql", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
     queryFn: () =>
-      fetchJson(buildUrlWithWs("/api/dbsql/dashboard-bundle", dateRange, workspaceIds)),
+      fetchWithPoll<DBSQLDashboardBundle>(buildUrlWithWs("/api/dbsql/dashboard-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
+    refetchInterval: (q) => q.state.data === null ? POLL_INTERVAL_MS : false,
   });
 }
 

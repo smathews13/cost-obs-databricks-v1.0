@@ -707,12 +707,9 @@ def startup_tasks():
     except Exception as e:
         logger.warning(f"Workspace filter restore failed (non-fatal): {e}")
 
-    # Step 3: Pre-warm cache (billing - fast queries first)
-    # Skip if setup hasn't completed yet — MVs don't exist, prewarm would cache empty results.
-    if _setup_complete:
-        prewarm_cache_sync()
-    else:
-        logger.info("Setup not yet complete — skipping cache prewarm")
+    # prewarm_cache_sync() disabled — 7 parallel billing queries at startup compete with
+    # first-user DBSQL bundle requests. Re-enable once the 202+poll pattern is proven stable.
+    logger.info("Startup cache prewarm skipped (disabled for stability)")
 
     # Step 6: Pre-warm permissions check (warms SDK auth + caches result for wizard)
     try:
@@ -723,8 +720,9 @@ def startup_tasks():
     except Exception as e:
         logger.warning(f"Permissions pre-warm failed (non-fatal): {e}")
 
-    # Step 7: Pre-warm ALL tabs (slower queries, runs after alerts)
-    prewarm_all_tabs()
+    # prewarm_all_tabs() disabled — 9 tagging + 5 AI/ML queries in parallel saturate the
+    # warehouse exactly when the first user's DBSQL bundle request arrives. Re-enable once stable.
+    logger.info("All-tabs prewarm skipped (disabled for stability)")
 
     # Step 8: Pre-warm tables status cache so Settings panel loads instantly on first open.
     # Runs last — by this point the warehouse is warm and billing queries are cached.

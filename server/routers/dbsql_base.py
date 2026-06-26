@@ -8,17 +8,22 @@ difference between the two is the table name.
 
 import asyncio
 import logging
+import threading
 import time as _time
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 
-from server.db import execute_query, get_catalog_schema, get_host_url, bundle_cache_key, delta_cache_get, delta_cache_put
+from server.db import execute_query, execute_queries_parallel, get_catalog_schema, get_host_url, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
 from server import cache_ttls
 
 logger = logging.getLogger(__name__)
+
+_dbsql_bundle_inflight: set[str] = set()
+_dbsql_bundle_inflight_lock = threading.Lock()
 
 # Per-table MV status cache (keyed by table_name).
 # Uses UC REST API so it never blocks the event loop on cold warehouses.
@@ -202,6 +207,181 @@ def create_dbsql_router(table_name: str) -> APIRouter:
                 1,
             )
         return execute_query(query, params)
+
+    def _compute_dbsql_bundle(start_date: str, end_date: str, id_list: list | None, workspace_ids_str: str | None, dkey: str) -> None:
+        """Background worker: run all DBSQL queries in parallel, build response, write to Delta cache."""
+        import time as _t
+        _start = _t.time()
+        try:
+            catalog, schema = get_catalog_schema()
+            ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
+            params = {"start_date": start_date, "end_date": end_date}
+
+            queries = [
+                ("summary",      lambda: _exec("summary",      params, catalog, schema, ws_clause)),
+                ("by_source",    lambda: _exec("by_source",    params, catalog, schema, ws_clause)),
+                ("by_user",      lambda: _exec("by_user",      params, catalog, schema, ws_clause)),
+                ("by_warehouse", lambda: _exec("by_warehouse", params, catalog, schema, ws_clause)),
+                ("timeseries",   lambda: _exec("timeseries",   params, catalog, schema, ws_clause)),
+                ("wh_meta",      lambda: execute_query("""
+                    SELECT w.warehouse_id, MAX(w.warehouse_name) as warehouse_name,
+                           MAX(w.warehouse_type) as warehouse_type, MAX(w.warehouse_size) as warehouse_size,
+                           MAX(w.workspace_id) as workspace_id,
+                           MAX(ws.workspace_name) as workspace_name
+                    FROM system.compute.warehouses w
+                    LEFT JOIN system.access.workspaces_latest ws ON w.workspace_id = ws.workspace_id
+                    GROUP BY w.warehouse_id
+                """)),
+                ("wh_type_billing", lambda: execute_query("""
+                    SELECT
+                      u.usage_date as date,
+                      u.usage_metadata.warehouse_id as warehouse_id,
+                      SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) as daily_spend
+                    FROM system.billing.usage u
+                    LEFT JOIN system.billing.list_prices p
+                      ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
+                    WHERE u.billing_origin_product = 'SQL'
+                      AND u.usage_date BETWEEN :start_date AND :end_date
+                      AND u.usage_quantity > 0
+                    GROUP BY u.usage_date, u.usage_metadata.warehouse_id
+                """, params)),
+            ]
+
+            results = execute_queries_parallel(queries, 120.0)
+
+            _empty = {"available": True, "start_date": start_date, "end_date": end_date}
+
+            # summary
+            summary_rows = results.get("summary") or []
+            if summary_rows:
+                r = summary_rows[0]
+                summary = {
+                    "available": True,
+                    "total_queries": r.get("total_queries") or 0,
+                    "unique_users": r.get("unique_users") or 0,
+                    "unique_warehouses": r.get("unique_warehouses") or 0,
+                    "total_spend": float(r.get("total_spend") or 0),
+                    "total_dbus": float(r.get("total_dbus") or 0),
+                    "avg_cost_per_query": float(r.get("avg_cost_per_query") or 0),
+                    "avg_duration_seconds": float(r.get("avg_duration_seconds") or 0),
+                    "start_date": start_date, "end_date": end_date,
+                }
+            else:
+                summary = {**_empty, "total_queries": 0, "unique_users": 0, "unique_warehouses": 0,
+                           "total_spend": 0, "total_dbus": 0, "avg_cost_per_query": 0, "avg_duration_seconds": 0}
+
+            # by_source
+            sources, total_src_spend = [], 0.0
+            for r in (results.get("by_source") or []):
+                spend = float(r.get("total_spend") or 0)
+                total_src_spend += spend
+                sources.append({"query_source_type": r.get("query_source_type") or "Unknown",
+                                 "query_count": r.get("query_count") or 0, "total_spend": spend,
+                                 "total_dbus": float(r.get("total_dbus") or 0),
+                                 "avg_cost_per_query": float(r.get("avg_cost_per_query") or 0)})
+            for s in sources:
+                s["percentage"] = (s["total_spend"] / total_src_spend * 100) if total_src_spend > 0 else 0
+            by_source = {**_empty, "sources": sources, "total_spend": total_src_spend}
+
+            # by_user
+            users = [{"executed_by": r.get("executed_by") or "Unknown",
+                      "query_source_type": r.get("query_source_type") or "Unknown",
+                      "query_count": r.get("query_count") or 0,
+                      "total_spend": float(r.get("total_spend") or 0),
+                      "total_dbus": float(r.get("total_dbus") or 0)}
+                     for r in (results.get("by_user") or [])]
+            by_user = {**_empty, "users": users}
+
+            # by_warehouse (enriched with metadata)
+            wh_meta: dict[str, dict] = {}
+            for r in (results.get("wh_meta") or []):
+                wid = r.get("warehouse_id")
+                if wid:
+                    wh_meta[wid] = {"warehouse_name": r.get("warehouse_name"),
+                                    "warehouse_type": r.get("warehouse_type") or "CLASSIC",
+                                    "warehouse_size": r.get("warehouse_size") or "UNKNOWN",
+                                    "workspace_id": str(r.get("workspace_id")) if r.get("workspace_id") else None,
+                                    "workspace_name": r.get("workspace_name")}
+            warehouses, total_wh_spend = [], 0.0
+            for r in (results.get("by_warehouse") or []):
+                spend = float(r.get("total_spend") or 0)
+                total_wh_spend += spend
+                wid = r.get("warehouse_id")
+                meta = wh_meta.get(wid, {})
+                warehouses.append({"warehouse_id": wid, "warehouse_name": meta.get("warehouse_name"),
+                                    "warehouse_type": meta.get("warehouse_type"), "warehouse_size": meta.get("warehouse_size"),
+                                    "workspace_id": meta.get("workspace_id"), "workspace_name": meta.get("workspace_name"),
+                                    "query_count": r.get("query_count") or 0, "unique_users": r.get("unique_users") or 0,
+                                    "total_spend": spend, "total_dbus": float(r.get("total_dbus") or 0)})
+            for wh in warehouses:
+                wh["percentage"] = (wh["total_spend"] / total_wh_spend * 100) if total_wh_spend > 0 else 0
+            by_warehouse = {**_empty, "warehouses": warehouses, "total_spend": total_wh_spend}
+
+            # timeseries
+            ts_by_date: dict[str, dict] = {}
+            src_types_set: set[str] = set()
+            for r in (results.get("timeseries") or []):
+                d = str(r.get("date"))
+                st = r.get("query_source_type") or "Unknown"
+                src_types_set.add(st)
+                if d not in ts_by_date:
+                    ts_by_date[d] = {"date": d}
+                ts_by_date[d][st] = float(r.get("daily_spend") or 0)
+            src_types = sorted(src_types_set)
+            ts_list = []
+            for d in sorted(ts_by_date):
+                row_d = ts_by_date[d]
+                for st in src_types:
+                    row_d.setdefault(st, 0)
+                ts_list.append(row_d)
+            timeseries = {**_empty, "timeseries": ts_list, "source_types": src_types}
+
+            # warehouse_type_timeseries — derive type lookup from wh_meta (already fetched above)
+            wh_type_lookup = {wid: info.get("warehouse_type") or "CLASSIC" for wid, info in wh_meta.items()}
+            wh_ts_by_date: dict[str, dict] = {}
+            wh_type_set: set[str] = set()
+            for r in (results.get("wh_type_billing") or []):
+                d = str(r.get("date"))
+                wid = r.get("warehouse_id") or ""
+                wt = wh_type_lookup.get(wid, "CLASSIC")
+                spend = float(r.get("daily_spend") or 0)
+                wh_type_set.add(wt)
+                if d not in wh_ts_by_date:
+                    wh_ts_by_date[d] = {"date": d}
+                wh_ts_by_date[d][wt] = wh_ts_by_date[d].get(wt, 0) + spend
+            wh_types_list = sorted(wh_type_set)
+            wh_ts_list = []
+            for d in sorted(wh_ts_by_date):
+                row_d = wh_ts_by_date[d]
+                for wt in wh_types_list:
+                    row_d.setdefault(wt, 0)
+                wh_ts_list.append(row_d)
+            warehouse_type_timeseries = {"available": True, "timeseries": wh_ts_list, "warehouse_types": wh_types_list}
+
+            _resp = {
+                "available": True,
+                "summary": summary,
+                "by_source": by_source,
+                "by_user": by_user,
+                "by_warehouse": by_warehouse,
+                "timeseries": timeseries,
+                "warehouse_type_timeseries": warehouse_type_timeseries,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+            delta_cache_put(dkey, f"dbsql:{table_name}:dashboard-bundle", _resp,
+                            ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
+            logger.info("dbsql dashboard-bundle background compute complete: %.1fs table=%s", _t.time() - _start, table_name)
+        except Exception as e:
+            logger.error("dbsql dashboard-bundle background compute failed: %s", e, exc_info=True)
+            try:
+                delta_cache_put(dkey, f"dbsql:{table_name}:dashboard-bundle",
+                                {"_error": str(e), "status": "error"}, ttl_seconds=60)
+            except Exception:
+                pass
+        finally:
+            with _dbsql_bundle_inflight_lock:
+                _dbsql_bundle_inflight.discard(dkey)
 
     def _ws_clause(workspace_ids: str | None) -> str:
         id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
@@ -693,9 +873,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         end_date: str = Query(default=None),
         workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
-        """Fast bundle — excludes top_queries so it returns as soon as summary/by_source/etc. are ready.
-        Top queries load separately via /top-queries to avoid blocking the initial tab render.
-        """
+        """DBSQL bundle — submit-and-poll: cache hit returns 200, cache miss starts background compute and returns 202."""
         start_date, end_date = _default_dates(start_date, end_date)
 
         status = await check_mv_status()
@@ -710,72 +888,28 @@ def create_dbsql_router(table_name: str) -> APIRouter:
         id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
         _dkey = bundle_cache_key(f"dbsql:{table_name}:dashboard-bundle", start_date, end_date, id_list)
         if (_dcached := delta_cache_get(_dkey)) is not None:
+            if isinstance(_dcached, dict) and "_error" in _dcached:
+                raise HTTPException(status_code=500, detail=_dcached.get("_error", "Bundle compute failed"))
             return _dcached
 
-        try:
-            results_tuple = await asyncio.wait_for(
-                asyncio.gather(
-                    get_summary(start_date, end_date, workspace_ids),
-                    get_by_source(start_date, end_date, workspace_ids),
-                    get_by_user(start_date, end_date, workspace_ids),
-                    get_by_warehouse(start_date, end_date, workspace_ids),
-                    get_timeseries(start_date, end_date, workspace_ids),
-                    get_warehouse_type_timeseries(start_date, end_date),
-                    return_exceptions=True,
-                ),
-                timeout=180.0,
-            )
-        except Exception as e:
-            logger.error("dbsql dashboard-bundle timed out: %s", e)
-            _empty = {"available": True, "start_date": start_date, "end_date": end_date}
-            return {
-                "available": True,
-                "summary": {**_empty, "total_queries": 0, "unique_users": 0, "unique_warehouses": 0,
-                            "total_spend": 0, "total_dbus": 0, "avg_cost_per_query": 0, "avg_duration_seconds": 0},
-                "by_source": {**_empty, "sources": [], "total_spend": 0},
-                "by_user": {**_empty, "users": []},
-                "by_warehouse": {**_empty, "warehouses": [], "total_spend": 0},
-                "timeseries": {**_empty, "timeseries": [], "source_types": []},
-                "warehouse_type_timeseries": {**_empty, "timeseries": [], "warehouse_types": []},
-                "error": str(e),
-            }
+        with _dbsql_bundle_inflight_lock:
+            if _dkey not in _dbsql_bundle_inflight:
+                _dbsql_bundle_inflight.add(_dkey)
+                threading.Thread(
+                    target=_compute_dbsql_bundle,
+                    args=(start_date, end_date, id_list, workspace_ids, _dkey),
+                    daemon=True,
+                    name=f"dbsql-bundle-bg-{table_name}",
+                ).start()
+                logger.info("dbsql dashboard-bundle: started background compute for %s", _dkey)
+            else:
+                logger.debug("dbsql dashboard-bundle: already inflight for %s", _dkey)
 
-        summary, by_source, by_user, by_warehouse, timeseries, wh_type_ts = results_tuple
-        _empty = {"available": True, "start_date": start_date, "end_date": end_date}
-
-        if isinstance(summary, Exception):
-            logger.error("dbsql get_summary failed: %s", summary)
-            summary = {**_empty, "total_queries": 0, "unique_users": 0, "unique_warehouses": 0,
-                       "total_spend": 0, "total_dbus": 0, "avg_cost_per_query": 0, "avg_duration_seconds": 0}
-        if isinstance(by_source, Exception):
-            logger.warning("dbsql get_by_source failed: %s", by_source)
-            by_source = {**_empty, "sources": [], "total_spend": 0}
-        if isinstance(by_user, Exception):
-            logger.warning("dbsql get_by_user failed: %s", by_user)
-            by_user = {**_empty, "users": []}
-        if isinstance(by_warehouse, Exception):
-            logger.warning("dbsql get_by_warehouse failed: %s", by_warehouse)
-            by_warehouse = {**_empty, "warehouses": [], "total_spend": 0}
-        if isinstance(timeseries, Exception):
-            logger.warning("dbsql get_timeseries failed: %s", timeseries)
-            timeseries = {**_empty, "timeseries": [], "source_types": []}
-        if isinstance(wh_type_ts, Exception):
-            logger.warning("dbsql get_warehouse_type_timeseries failed: %s", wh_type_ts)
-            wh_type_ts = {**_empty, "timeseries": [], "warehouse_types": []}
-
-        _resp = {
-            "available": True,
-            "summary": summary,
-            "by_source": by_source,
-            "by_user": by_user,
-            "by_warehouse": by_warehouse,
-            "timeseries": timeseries,
-            "warehouse_type_timeseries": wh_type_ts,
-            "start_date": start_date,
-            "end_date": end_date,
-        }
-        delta_cache_put(_dkey, f"dbsql:{table_name}:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
-        return _resp
+        return JSONResponse(
+            status_code=202,
+            content={"status": "pending", "cache_key": _dkey},
+            headers={"Retry-After": "2"},
+        )
 
     # Expose check_mv_status for prpr-specific endpoints
     router.check_mv_status = check_mv_status  # type: ignore[attr-defined]

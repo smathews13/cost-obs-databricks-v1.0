@@ -116,9 +116,9 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
           }
         />
         <Card
-          title="Avg Daily Spend"
+          title="Daily Spend"
           value={formatCurrency(data?.avg_daily_spend ?? 0)}
-          subtitle="Per day average"
+          subtitle={data?.days_in_range != null ? `${data.days_in_range}-day average` : "Per day average"}
           isLoading={isLoading}
           onClick={() => handleCardClick("avg_daily_spend", "Average Daily Spend")}
           icon={

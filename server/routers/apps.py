@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import threading
 import time
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -15,7 +16,7 @@ _SP_UUID_RE = re.compile(
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from server.db import execute_query, execute_queries_parallel, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
@@ -23,6 +24,9 @@ from server import cache_ttls
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_apps_bundle_inflight: set[str] = set()
+_apps_bundle_inflight_lock = threading.Lock()
 
 
 def get_default_start_date() -> str:
@@ -588,47 +592,6 @@ async def get_apps_summary(
     }
 
 
-@router.get("/dashboard-bundle")
-async def get_apps_dashboard_bundle(
-    start_date: str = Query(default=None),
-    end_date: str = Query(default=None),
-    active_only: bool = Query(default=False, description="Show only apps active in last 7 days"),
-    workspace_ids: str = Query(default=None),
-) -> dict[str, Any]:
-    """Get all Apps dashboard data in a single request."""
-    import time as _time
-    _req_start = _time.time()
-    params = {
-        "start_date": start_date or get_default_start_date(),
-        "end_date": end_date or get_default_end_date(),
-    }
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
-    logger.info(
-        "apps/dashboard-bundle request: start=%s end=%s workspaces=%s active_only=%s",
-        params["start_date"], params["end_date"],
-        id_list or "all", active_only,
-    )
-    try:
-        return await asyncio.wait_for(
-            _get_apps_dashboard_bundle_inner(params, id_list, active_only, _req_start),
-            timeout=90.0,
-        )
-    except asyncio.TimeoutError:
-        _elapsed = _time.time() - _req_start
-        logger.error(
-            "apps/dashboard-bundle TIMED OUT after %.1fs: workspaces=%s",
-            _elapsed, id_list or "all",
-        )
-        raise HTTPException(status_code=504, detail="Apps dashboard query timed out — try a shorter date range or fewer workspace filters")
-    except Exception as exc:
-        _elapsed = _time.time() - _req_start
-        logger.error(
-            "apps/dashboard-bundle FAILED after %.1fs: workspaces=%s error=%s",
-            _elapsed, id_list or "all", exc, exc_info=True,
-        )
-        raise
-
-
 def _empty_bundle(params: dict, active_only: bool) -> dict[str, Any]:
     """Return a valid zero-data bundle — used when workspace filter finds no Apps rows."""
     return {
@@ -645,64 +608,57 @@ def _empty_bundle(params: dict, active_only: bool) -> dict[str, Any]:
     }
 
 
-async def _get_apps_dashboard_bundle_inner(
-    params: dict, id_list: list | None, active_only: bool, req_start: float
-) -> dict[str, Any]:
+def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, dkey: str) -> None:
+    """Background worker: run all Apps queries, build response, write to Delta cache."""
     import time as _time
     _endpoint = f"apps:dashboard-bundle:{'active' if active_only else 'all'}"
-    _dkey = bundle_cache_key(_endpoint, params["start_date"], params["end_date"], id_list)
-    try:
-        if (_dcached := delta_cache_get(_dkey)) is not None:
-            logger.info("apps/dashboard-bundle cache hit (%.1fs)", _time.time() - req_start)
-            return _dcached
-    except Exception as _ce:
-        logger.debug("apps/dashboard-bundle cache read failed (non-fatal): %s", _ce)
+    _start = _time.time()
+
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     def _ws(sql: str) -> str:
         return wf.inject_ws_filter(sql, ws_clause)
 
-    # Use stale registry immediately so SQL can start now; refresh in background
-    registry = _app_name_cache
-    asyncio.create_task(asyncio.to_thread(_get_app_registry))
-    app_filter = _build_app_id_filter(registry)
-
-    # Build a filtered timeseries query for registered apps only
-    filtered_timeseries = f"""
-    SELECT
-      u.usage_date,
-      SUM(u.usage_quantity) as total_dbus,
-      SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) as total_spend
-    FROM system.billing.usage u
-    LEFT JOIN system.billing.list_prices p
-      ON u.sku_name = p.sku_name
-      AND u.cloud = p.cloud
-      AND p.price_end_time IS NULL
-    WHERE u.usage_date BETWEEN :start_date AND :end_date
-      AND u.usage_quantity > 0
-      AND u.billing_origin_product = 'APPS'
-      {app_filter}
-      {ws_clause}
-    GROUP BY u.usage_date
-    ORDER BY u.usage_date
-    """
-
-    queries = [
-        ("summary", lambda: execute_query(_ws(APPS_SUMMARY), params)),
-        ("apps", lambda: execute_query(_ws(APPS_BY_APP_FULL), params)),
-        ("timeseries", lambda: execute_query(filtered_timeseries, params)),
-        ("sku_breakdown", lambda: execute_query(_ws(APPS_BY_APP_SKU), params)),
-        ("workspaces", lambda: _query_app_workspaces(params, ws_clause)),
-        ("service_principals", lambda: execute_query(_ws(APPS_SERVICE_PRINCIPALS), params)),
-    ]
-
-    results = await asyncio.to_thread(execute_queries_parallel, queries, 75.0)
-
     try:
-        # Build workspace lookup per app_id (name → id mapping)
+        # Use stale registry immediately; refresh in background daemon thread
+        registry = _app_name_cache
+        threading.Thread(target=_get_app_registry, daemon=True, name="apps-registry-bg").start()
+        app_filter = _build_app_id_filter(registry)
+
+        filtered_timeseries = f"""
+        SELECT
+          u.usage_date,
+          SUM(u.usage_quantity) as total_dbus,
+          SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) as total_spend
+        FROM system.billing.usage u
+        LEFT JOIN system.billing.list_prices p
+          ON u.sku_name = p.sku_name
+          AND u.cloud = p.cloud
+          AND p.price_end_time IS NULL
+        WHERE u.usage_date BETWEEN :start_date AND :end_date
+          AND u.usage_quantity > 0
+          AND u.billing_origin_product = 'APPS'
+          {app_filter}
+          {ws_clause}
+        GROUP BY u.usage_date
+        ORDER BY u.usage_date
+        """
+
+        queries = [
+            ("summary", lambda: execute_query(_ws(APPS_SUMMARY), params)),
+            ("apps", lambda: execute_query(_ws(APPS_BY_APP_FULL), params)),
+            ("timeseries", lambda: execute_query(filtered_timeseries, params)),
+            ("sku_breakdown", lambda: execute_query(_ws(APPS_BY_APP_SKU), params)),
+            ("workspaces", lambda: _query_app_workspaces(params, ws_clause)),
+            ("service_principals", lambda: execute_query(_ws(APPS_SERVICE_PRINCIPALS), params)),
+        ]
+
+        results = execute_queries_parallel(queries, 75.0)
+
+        # Build workspace lookup per app_id
         workspace_rows = results.get("workspaces", []) or []
-        app_workspace_map: dict[str, list[str]] = {}  # app_id → [workspace_name, ...]
-        all_workspaces: dict[str, str] = {}  # workspace_name → workspace_id
+        app_workspace_map: dict[str, list[str]] = {}
+        all_workspaces: dict[str, str] = {}
         for row in workspace_rows:
             app_id = row.get("app_id", "")
             ws_name = str(row.get("workspace_name", ""))
@@ -713,7 +669,6 @@ async def _get_apps_dashboard_bundle_inner(
                 app_workspace_map[app_id].append(ws_name)
             all_workspaces[ws_name] = ws_id
 
-        # Get days_in_range and avg_daily_apps from the raw summary
         summary_data = results.get("summary", []) or []
         days_in_range = 1
         avg_daily_apps = 0
@@ -721,16 +676,13 @@ async def _get_apps_dashboard_bundle_inner(
             days_in_range = summary_data[0].get("days_in_range") or 1
             avg_daily_apps = round(float(summary_data[0].get("avg_daily_apps") or 0))
 
-        # Process apps with name resolution + active/inactive split
         raw_apps = results.get("apps", []) or []
         sku_rows = results.get("sku_breakdown", []) or []
         apps_result = _process_apps(raw_apps, active_only, params["end_date"], registry, sku_rows)
 
-        # Attach workspace names to each processed app
         for app in apps_result["apps"]:
             app["workspace_names"] = app_workspace_map.get(app["app_id"], [])
 
-        # Build summary from registered apps only (not all billing UUIDs)
         reg_spend = float(apps_result.get("total_spend") or 0)
         reg_dbus = sum(float(a.get("total_dbus") or 0) for a in apps_result.get("apps", []))
         summary = {
@@ -743,22 +695,15 @@ async def _get_apps_dashboard_bundle_inner(
             "avg_daily_spend": reg_spend / days_in_range if days_in_range > 0 else 0,
         }
 
-        # Format timeseries — single aggregate line
         timeseries_data = results.get("timeseries", []) or []
         timeseries = sorted(
-            [
-                {"date": str(row.get("usage_date")), "Total": float(row.get("total_spend") or 0)}
-                for row in timeseries_data
-            ],
+            [{"date": str(row.get("usage_date")), "Total": float(row.get("total_spend") or 0)} for row in timeseries_data],
             key=lambda x: x["date"],
         )
 
-        # Use stale resources immediately; refresh in background
+        # Use stale resources; refresh in background daemon thread
         resources_by_app = _app_resources_cache
-        try:
-            asyncio.create_task(asyncio.to_thread(_get_app_resources))
-        except Exception as _task_exc:
-            logger.debug("Could not spawn app-resources background refresh: %s", _task_exc)
+        threading.Thread(target=_get_app_resources, daemon=True, name="apps-resources-bg").start()
         connected_artifacts: list[dict[str, Any]] = []
         for uid, entry in registry.items():
             app_name = entry.get("name", uid)
@@ -771,7 +716,6 @@ async def _get_apps_dashboard_bundle_inner(
                     "artifact_description": str(res.get("description", "")),
                 })
 
-        # Add service principal run_as identities from billing
         sp_rows = results.get("service_principals", []) or []
         seen_sp: set[tuple[str, str]] = set()
         for row in sp_rows:
@@ -802,28 +746,65 @@ async def _get_apps_dashboard_bundle_inner(
             "start_date": params["start_date"],
             "end_date": params["end_date"],
         }
-        # Use short TTL when registry was cold so next request gets properly filtered data
         cache_ttl = 60 if not registry else (600 if id_list else 1800)
         try:
-            delta_cache_put(_dkey, _endpoint, _resp, ttl_seconds=cache_ttl)
+            delta_cache_put(dkey, _endpoint, _resp, ttl_seconds=cache_ttl)
         except Exception as _ce:
             logger.debug("Delta cache write failed for apps/dashboard-bundle: %s", _ce)
-        import time as _time
         logger.info(
-            "apps/dashboard-bundle OK: %.1fs workspaces=%s apps=%d",
-            _time.time() - req_start, id_list or "all",
-            apps_result.get("total_app_count", 0),
+            "apps dashboard-bundle background compute complete: %.1fs workspaces=%s apps=%d",
+            _time.time() - _start, id_list or "all", apps_result.get("total_app_count", 0),
         )
-        return _resp
+    except Exception as e:
+        logger.error("apps dashboard-bundle background compute failed: %s", e, exc_info=True)
+        try:
+            delta_cache_put(dkey, _endpoint, {"_error": str(e), "status": "error"}, ttl_seconds=60)
+        except Exception:
+            pass
+    finally:
+        with _apps_bundle_inflight_lock:
+            _apps_bundle_inflight.discard(dkey)
 
-    except Exception as proc_exc:
-        import time as _time
-        logger.error(
-            "apps/dashboard-bundle processing failed after %.1fs (workspaces=%s): %s",
-            _time.time() - req_start, id_list or "all", proc_exc, exc_info=True,
-        )
-        # Return empty bundle rather than surfacing a 500 — workspace may simply have no apps
-        return _empty_bundle(params, active_only)
+
+@router.get("/dashboard-bundle")
+async def get_apps_dashboard_bundle(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    active_only: bool = Query(default=False, description="Show only apps active in last 7 days"),
+    workspace_ids: str = Query(default=None),
+) -> dict[str, Any]:
+    """Get all Apps dashboard data in a single request (submit-and-poll: 202 on cache miss)."""
+    params = {
+        "start_date": start_date or get_default_start_date(),
+        "end_date": end_date or get_default_end_date(),
+    }
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    _endpoint = f"apps:dashboard-bundle:{'active' if active_only else 'all'}"
+    _dkey = bundle_cache_key(_endpoint, params["start_date"], params["end_date"], id_list)
+
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        if isinstance(_dcached, dict) and "_error" in _dcached:
+            raise HTTPException(status_code=500, detail=_dcached.get("_error", "Bundle compute failed"))
+        return _dcached
+
+    with _apps_bundle_inflight_lock:
+        if _dkey not in _apps_bundle_inflight:
+            _apps_bundle_inflight.add(_dkey)
+            threading.Thread(
+                target=_compute_apps_bundle,
+                args=(params, id_list, active_only, _dkey),
+                daemon=True,
+                name="apps-bundle-bg",
+            ).start()
+            logger.info("apps dashboard-bundle: started background compute for %s", _dkey)
+        else:
+            logger.debug("apps dashboard-bundle: already inflight for %s", _dkey)
+
+    return JSONResponse(
+        status_code=202,
+        content={"status": "pending", "cache_key": _dkey},
+        headers={"Retry-After": "2"},
+    )
 
 
 # ── KPI Trend (registered-apps-only) ─────────────────────────────────

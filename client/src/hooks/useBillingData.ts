@@ -365,32 +365,75 @@ export function useDashboardBundleFast(dateRange?: DateRange, workspaceIds?: str
   });
 }
 
-/**
- * AI/ML 360 dashboard bundle
- * @param dateRange - Date range for the query
- * @param enabled - Whether to enable the query (set false when tab not active)
- */
-export function useAIMLDashboardBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
-  return useQuery<AIMLDashboardBundle>({
-    queryKey: ["aiml", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
-    queryFn: () => fetchJson(buildUrlWithWs("/api/aiml/dashboard-bundle", dateRange, workspaceIds)),
-    staleTime: 5 * 60 * 1000,
-    enabled,
-  });
+const POLL_INTERVAL_MS = 2000;
+const POLL_TIMEOUT_MS = 90_000;
+
+async function fetchWithPoll<T>(url: string): Promise<T | null> {
+  const response = await fetch(url);
+  if (response.status === 202) {
+    return null; // still computing — caller will poll
+  }
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (body?.detail) detail = `${response.status}: ${body.detail}`;
+    } catch { /* ignore parse errors */ }
+    throw new Error(detail);
+  }
+  const data = await response.json() as T & { _error?: string };
+  if (data && typeof data === "object" && "_error" in data) {
+    throw new Error((data as { _error: string })._error || "Bundle compute failed");
+  }
+  return data;
 }
 
 /**
- * Apps dashboard bundle
- * @param dateRange - Date range for the query
- * @param enabled - Whether to enable the query (set false when tab not active)
+ * AI/ML 360 dashboard bundle — submit-and-poll: returns null while computing, data when ready.
+ * isLoading is true while data is null (pending or first fetch).
  */
-export function useAppsDashboardBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
-  return useQuery<AppsDashboardBundle>({
-    queryKey: ["apps", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
-    queryFn: () => fetchJson(buildUrlWithWs("/api/apps/dashboard-bundle", dateRange, workspaceIds)),
+export function useAIMLDashboardBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
+  const result = useQuery<AIMLDashboardBundle | null>({
+    queryKey: ["aiml", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchWithPoll<AIMLDashboardBundle>(buildUrlWithWs("/api/aiml/dashboard-bundle", dateRange, workspaceIds)),
     staleTime: 5 * 60 * 1000,
     enabled,
+    refetchInterval: (q) => {
+      if (q.state.data !== null) return false;
+      const updated = q.state.dataUpdatedAt;
+      if (updated && Date.now() - updated > POLL_TIMEOUT_MS) return false;
+      return POLL_INTERVAL_MS;
+    },
   });
+  return {
+    ...result,
+    data: (result.data ?? undefined) as AIMLDashboardBundle | undefined,
+    isLoading: result.isLoading || result.data === null,
+  };
+}
+
+/**
+ * Apps dashboard bundle — submit-and-poll: returns null while computing, data when ready.
+ * isLoading is true while data is null (pending or first fetch).
+ */
+export function useAppsDashboardBundle(dateRange?: DateRange, workspaceIds?: string[], enabled: boolean = true) {
+  const result = useQuery<AppsDashboardBundle | null>({
+    queryKey: ["apps", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
+    queryFn: () => fetchWithPoll<AppsDashboardBundle>(buildUrlWithWs("/api/apps/dashboard-bundle", dateRange, workspaceIds)),
+    staleTime: 5 * 60 * 1000,
+    enabled,
+    refetchInterval: (q) => {
+      if (q.state.data !== null) return false;
+      const updated = q.state.dataUpdatedAt;
+      if (updated && Date.now() - updated > POLL_TIMEOUT_MS) return false;
+      return POLL_INTERVAL_MS;
+    },
+  });
+  return {
+    ...result,
+    data: (result.data ?? undefined) as AppsDashboardBundle | undefined,
+    isLoading: result.isLoading || result.data === null,
+  };
 }
 
 /**

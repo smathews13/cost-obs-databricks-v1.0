@@ -2,10 +2,12 @@
 
 import asyncio
 import logging
+import threading
 from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 
 from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put
 from server import workspace_filter as wf
@@ -28,6 +30,9 @@ def query_with_fallback(enriched_sql: str, fallback_sql: str, query_params: dict
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_aiml_bundle_inflight: set[str] = set()
+_aiml_bundle_inflight_lock = threading.Lock()
 
 
 def get_default_start_date() -> str:
@@ -878,25 +883,8 @@ async def get_aiml_sku_catalog(
     }
 
 
-@router.get("/dashboard-bundle")
-async def get_aiml_dashboard_bundle(
-    start_date: str = Query(default=None),
-    end_date: str = Query(default=None),
-    workspace_ids: str = Query(default=None),
-) -> dict[str, Any]:
-    """Get all AI/ML dashboard data in a single request."""
-    params = {
-        "start_date": start_date or get_default_start_date(),
-        "end_date": end_date or get_default_end_date(),
-    }
-    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
-
-    _dkey = bundle_cache_key("aiml:dashboard-bundle", params["start_date"], params["end_date"], id_list)
-    if (_dcached := delta_cache_get(_dkey)) is not None:
-        return _dcached
-
-    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
-
+def _compute_aiml_bundle(params: dict, id_list: list | None, ws_clause: str, dkey: str) -> None:
+    """Background worker: run all 8 AIML queries, build response, write to Delta cache."""
     def _ws(sql: str) -> str:
         return wf.inject_ws_filter(sql, ws_clause)
 
@@ -912,166 +900,202 @@ async def get_aiml_dashboard_bundle(
     ]
 
     try:
-        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=45.0)
-    except Exception as e:
-        logger.error("aiml dashboard-bundle failed: %s", e)
-        return {
-            "summary": {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "endpoint_count": 0},
-            "providers": {"providers": [], "total_spend": 0},
-            "endpoints": {"endpoints": [], "total_spend": 0},
-            "categories": {"categories": [], "total_spend": 0},
-            "timeseries": {"timeseries": [], "categories": []},
-            "models": {"models": []},
-            "ml_clusters": {"clusters": []},
-            "agent_bricks": {"agents": []},
+        results = execute_queries_parallel(queries, timeout=45.0)
+
+        # Format summary
+        summary_data = results.get("summary", [])
+        if summary_data:
+            row = summary_data[0]
+            days = row.get("days_in_range") or 1
+            total_spend = float(row.get("total_spend") or 0)
+            summary = {
+                "total_dbus": float(row.get("total_dbus") or 0),
+                "total_spend": total_spend,
+                "workspace_count": row.get("workspace_count") or 0,
+                "endpoint_count": round(float(row.get("avg_endpoints_per_day") or row.get("endpoint_count") or 0)),
+                "days_in_range": days,
+                "avg_daily_spend": total_spend / days if days > 0 else 0,
+                "avg_cost_per_endpoint": float(row.get("avg_cost_per_endpoint") or 0),
+            }
+        else:
+            summary = {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "endpoint_count": 0, "avg_cost_per_endpoint": 0}
+
+        # Format providers
+        providers_data = results.get("providers", []) or []
+        providers_total = sum(float(r.get("total_spend") or 0) for r in providers_data)
+        providers = [
+            {
+                "provider": r.get("provider"),
+                "sku_name": r.get("sku_name"),
+                "total_dbus": float(r.get("total_dbus") or 0),
+                "total_spend": float(r.get("total_spend") or 0),
+                "percentage": (float(r.get("total_spend") or 0) / providers_total * 100) if providers_total > 0 else 0,
+            }
+            for r in providers_data
+        ]
+
+        # Format endpoints
+        endpoints_data = results.get("endpoints", []) or []
+        endpoints_total = sum(float(r.get("total_spend") or 0) for r in endpoints_data)
+        endpoints = [
+            {
+                "endpoint_name": r.get("endpoint_name"),
+                "sku_name": r.get("sku_name"),
+                "cost_type": r.get("cost_type"),
+                "total_dbus": float(r.get("total_dbus") or 0),
+                "total_spend": float(r.get("total_spend") or 0),
+                "days_active": r.get("days_active") or 0,
+                "percentage": (float(r.get("total_spend") or 0) / endpoints_total * 100) if endpoints_total > 0 else 0,
+            }
+            for r in endpoints_data
+        ]
+
+        # Format categories
+        categories_data = results.get("categories", []) or []
+        categories_total = sum(float(r.get("total_spend") or 0) for r in categories_data)
+        categories = [
+            {
+                "category": r.get("category"),
+                "total_dbus": float(r.get("total_dbus") or 0),
+                "total_spend": float(r.get("total_spend") or 0),
+                "percentage": (float(r.get("total_spend") or 0) / categories_total * 100) if categories_total > 0 else 0,
+            }
+            for r in categories_data
+        ]
+
+        # Format timeseries
+        timeseries_data = results.get("timeseries", []) or []
+        date_map: dict[str, dict[str, Any]] = {}
+        ts_categories = set()
+        for row in timeseries_data:
+            date_str = str(row.get("usage_date"))
+            category = row.get("category")
+            spend = float(row.get("total_spend") or 0)
+            if date_str not in date_map:
+                date_map[date_str] = {"date": date_str}
+            date_map[date_str][category] = spend
+            ts_categories.add(category)
+        timeseries = sorted(date_map.values(), key=lambda x: x["date"])
+
+        # Format models & feature stores
+        models_data = results.get("models", []) or []
+        models = [
+            {
+                "model_name": r.get("model_name") or "Unknown",
+                "model_type": r.get("model_type") or "Other",
+                "total_dbus": float(r.get("total_dbus") or 0),
+                "total_spend": float(r.get("total_spend") or 0),
+                "days_active": r.get("days_active") or 0,
+                "workspace_count": r.get("workspace_count") or 0,
+            }
+            for r in models_data
+        ]
+
+        # Format ML runtime clusters — aggregate by cluster (may have multiple SKU rows)
+        ml_clusters_data = results.get("ml_clusters", []) or []
+        ml_clusters_by_id: dict[str, dict[str, Any]] = {}
+        for r in ml_clusters_data:
+            cid = r.get("cluster_id") or "Unknown"
+            if cid not in ml_clusters_by_id:
+                ml_clusters_by_id[cid] = {
+                    "cluster_name": r.get("cluster_name") or "Unknown",
+                    "cluster_id": cid,
+                    "workspace_id": str(r.get("workspace_id")) if r.get("workspace_id") else None,
+                    "runtime_version": r.get("runtime_version") or "Unknown",
+                    "owner": r.get("owner") or "Unknown",
+                    "total_dbus": 0.0,
+                    "total_spend": 0.0,
+                    "days_active": r.get("days_active") or 0,
+                }
+            ml_clusters_by_id[cid]["total_dbus"] += float(r.get("total_dbus") or 0)
+            ml_clusters_by_id[cid]["total_spend"] += float(r.get("total_spend") or 0)
+            ml_clusters_by_id[cid]["days_active"] = max(
+                ml_clusters_by_id[cid]["days_active"], r.get("days_active") or 0
+            )
+        ml_clusters = sorted(ml_clusters_by_id.values(), key=lambda x: x["total_spend"], reverse=True)
+
+        # Format agent bricks
+        agent_bricks_data = results.get("agent_bricks", []) or []
+        agent_bricks = [
+            {
+                "agent_name": r.get("agent_name") or "Unknown",
+                "agent_type": r.get("agent_type") or "Agent",
+                "endpoint_id": r.get("endpoint_id"),
+                "workspace_id": str(r.get("workspace_id")) if r.get("workspace_id") else None,
+                "total_dbus": float(r.get("total_dbus") or 0),
+                "total_spend": float(r.get("total_spend") or 0),
+                "days_active": r.get("days_active") or 0,
+                "workspace_count": r.get("workspace_count") or 0,
+                "first_seen": str(r.get("first_seen")) if r.get("first_seen") else None,
+                "last_seen": str(r.get("last_seen")) if r.get("last_seen") else None,
+                "avg_daily_spend": float(r.get("avg_daily_spend") or 0),
+            }
+            for r in agent_bricks_data
+        ]
+
+        _resp = {
+            "summary": summary,
+            "providers": {"providers": providers, "total_spend": providers_total},
+            "endpoints": {"endpoints": endpoints, "total_spend": endpoints_total},
+            "categories": {"categories": categories, "total_spend": categories_total},
+            "timeseries": {"timeseries": timeseries, "categories": sorted(list(ts_categories))},
+            "models": {"models": models},
+            "ml_clusters": {"clusters": ml_clusters},
+            "agent_bricks": {"agents": agent_bricks},
             "start_date": params["start_date"],
             "end_date": params["end_date"],
-            "error": str(e),
         }
+        delta_cache_put(dkey, "aiml:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
+        logger.info("aiml dashboard-bundle background compute complete: %s", dkey)
+    except Exception as e:
+        logger.error("aiml dashboard-bundle background compute failed: %s", e, exc_info=True)
+        try:
+            delta_cache_put(dkey, "aiml:dashboard-bundle", {"_error": str(e), "status": "error"}, ttl_seconds=60)
+        except Exception:
+            pass
+    finally:
+        with _aiml_bundle_inflight_lock:
+            _aiml_bundle_inflight.discard(dkey)
 
-    # Format summary
-    summary_data = results.get("summary", [])
-    if summary_data:
-        row = summary_data[0]
-        days = row.get("days_in_range") or 1
-        total_spend = float(row.get("total_spend") or 0)
-        summary = {
-            "total_dbus": float(row.get("total_dbus") or 0),
-            "total_spend": total_spend,
-            "workspace_count": row.get("workspace_count") or 0,
-            "endpoint_count": round(float(row.get("avg_endpoints_per_day") or row.get("endpoint_count") or 0)),
-            "days_in_range": days,
-            "avg_daily_spend": total_spend / days if days > 0 else 0,
-            "avg_cost_per_endpoint": float(row.get("avg_cost_per_endpoint") or 0),
-        }
-    else:
-        summary = {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "endpoint_count": 0, "avg_cost_per_endpoint": 0}
 
-    # Format providers
-    providers_data = results.get("providers", []) or []
-    providers_total = sum(float(r.get("total_spend") or 0) for r in providers_data)
-    providers = [
-        {
-            "provider": r.get("provider"),
-            "sku_name": r.get("sku_name"),
-            "total_dbus": float(r.get("total_dbus") or 0),
-            "total_spend": float(r.get("total_spend") or 0),
-            "percentage": (float(r.get("total_spend") or 0) / providers_total * 100) if providers_total > 0 else 0,
-        }
-        for r in providers_data
-    ]
-
-    # Format endpoints
-    endpoints_data = results.get("endpoints", []) or []
-    endpoints_total = sum(float(r.get("total_spend") or 0) for r in endpoints_data)
-    endpoints = [
-        {
-            "endpoint_name": r.get("endpoint_name"),
-            "sku_name": r.get("sku_name"),
-            "cost_type": r.get("cost_type"),
-            "total_dbus": float(r.get("total_dbus") or 0),
-            "total_spend": float(r.get("total_spend") or 0),
-            "days_active": r.get("days_active") or 0,
-            "percentage": (float(r.get("total_spend") or 0) / endpoints_total * 100) if endpoints_total > 0 else 0,
-        }
-        for r in endpoints_data
-    ]
-
-    # Format categories
-    categories_data = results.get("categories", []) or []
-    categories_total = sum(float(r.get("total_spend") or 0) for r in categories_data)
-    categories = [
-        {
-            "category": r.get("category"),
-            "total_dbus": float(r.get("total_dbus") or 0),
-            "total_spend": float(r.get("total_spend") or 0),
-            "percentage": (float(r.get("total_spend") or 0) / categories_total * 100) if categories_total > 0 else 0,
-        }
-        for r in categories_data
-    ]
-
-    # Format timeseries
-    timeseries_data = results.get("timeseries", []) or []
-    date_map: dict[str, dict[str, Any]] = {}
-    ts_categories = set()
-    for row in timeseries_data:
-        date_str = str(row.get("usage_date"))
-        category = row.get("category")
-        spend = float(row.get("total_spend") or 0)
-        if date_str not in date_map:
-            date_map[date_str] = {"date": date_str}
-        date_map[date_str][category] = spend
-        ts_categories.add(category)
-    timeseries = sorted(date_map.values(), key=lambda x: x["date"])
-
-    # Format models & feature stores
-    models_data = results.get("models", []) or []
-    models = [
-        {
-            "model_name": r.get("model_name") or "Unknown",
-            "model_type": r.get("model_type") or "Other",
-            "total_dbus": float(r.get("total_dbus") or 0),
-            "total_spend": float(r.get("total_spend") or 0),
-            "days_active": r.get("days_active") or 0,
-            "workspace_count": r.get("workspace_count") or 0,
-        }
-        for r in models_data
-    ]
-
-    # Format ML runtime clusters — aggregate by cluster (may have multiple SKU rows)
-    ml_clusters_data = results.get("ml_clusters", []) or []
-    ml_clusters_by_id: dict[str, dict[str, Any]] = {}
-    for r in ml_clusters_data:
-        cid = r.get("cluster_id") or "Unknown"
-        if cid not in ml_clusters_by_id:
-            ml_clusters_by_id[cid] = {
-                "cluster_name": r.get("cluster_name") or "Unknown",
-                "cluster_id": cid,
-                "workspace_id": str(r.get("workspace_id")) if r.get("workspace_id") else None,
-                "runtime_version": r.get("runtime_version") or "Unknown",
-                "owner": r.get("owner") or "Unknown",
-                "total_dbus": 0.0,
-                "total_spend": 0.0,
-                "days_active": r.get("days_active") or 0,
-            }
-        ml_clusters_by_id[cid]["total_dbus"] += float(r.get("total_dbus") or 0)
-        ml_clusters_by_id[cid]["total_spend"] += float(r.get("total_spend") or 0)
-        # Keep the max days_active across SKUs
-        ml_clusters_by_id[cid]["days_active"] = max(
-            ml_clusters_by_id[cid]["days_active"], r.get("days_active") or 0
-        )
-    ml_clusters = sorted(ml_clusters_by_id.values(), key=lambda x: x["total_spend"], reverse=True)
-
-    # Format agent bricks
-    agent_bricks_data = results.get("agent_bricks", []) or []
-    agent_bricks = [
-        {
-            "agent_name": r.get("agent_name") or "Unknown",
-            "agent_type": r.get("agent_type") or "Agent",
-            "endpoint_id": r.get("endpoint_id"),
-            "workspace_id": str(r.get("workspace_id")) if r.get("workspace_id") else None,
-            "total_dbus": float(r.get("total_dbus") or 0),
-            "total_spend": float(r.get("total_spend") or 0),
-            "days_active": r.get("days_active") or 0,
-            "workspace_count": r.get("workspace_count") or 0,
-            "first_seen": str(r.get("first_seen")) if r.get("first_seen") else None,
-            "last_seen": str(r.get("last_seen")) if r.get("last_seen") else None,
-            "avg_daily_spend": float(r.get("avg_daily_spend") or 0),
-        }
-        for r in agent_bricks_data
-    ]
-
-    _resp = {
-        "summary": summary,
-        "providers": {"providers": providers, "total_spend": providers_total},
-        "endpoints": {"endpoints": endpoints, "total_spend": endpoints_total},
-        "categories": {"categories": categories, "total_spend": categories_total},
-        "timeseries": {"timeseries": timeseries, "categories": sorted(list(ts_categories))},
-        "models": {"models": models},
-        "ml_clusters": {"clusters": ml_clusters},
-        "agent_bricks": {"agents": agent_bricks},
-        "start_date": params["start_date"],
-        "end_date": params["end_date"],
+@router.get("/dashboard-bundle")
+async def get_aiml_dashboard_bundle(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    workspace_ids: str = Query(default=None),
+) -> dict[str, Any]:
+    """Get all AI/ML dashboard data in a single request (submit-and-poll: 202 on cache miss)."""
+    params = {
+        "start_date": start_date or get_default_start_date(),
+        "end_date": end_date or get_default_end_date(),
     }
-    delta_cache_put(_dkey, "aiml:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
-    return _resp
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+
+    _dkey = bundle_cache_key("aiml:dashboard-bundle", params["start_date"], params["end_date"], id_list)
+
+    if (_dcached := delta_cache_get(_dkey)) is not None:
+        if isinstance(_dcached, dict) and "_error" in _dcached:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail=_dcached.get("_error", "Bundle compute failed"))
+        return _dcached
+
+    ws_clause = wf.build_ws_filter_clause(id_list=id_list)
+
+    with _aiml_bundle_inflight_lock:
+        if _dkey not in _aiml_bundle_inflight:
+            _aiml_bundle_inflight.add(_dkey)
+            threading.Thread(
+                target=_compute_aiml_bundle,
+                args=(params, id_list, ws_clause, _dkey),
+                daemon=True,
+                name="aiml-bundle-bg",
+            ).start()
+            logger.info("aiml dashboard-bundle: started background compute for %s", _dkey)
+        else:
+            logger.debug("aiml dashboard-bundle: already inflight for %s", _dkey)
+
+    return JSONResponse(
+        status_code=202,
+        content={"status": "pending", "cache_key": _dkey},
+        headers={"Retry-After": "2"},
+    )

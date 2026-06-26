@@ -460,37 +460,36 @@ function Dashboard() {
 
   const _wsIds = selectedWorkspaceIds.length ? selectedWorkspaceIds : undefined;
 
-  // DBU tab sub-queries: pipelines, interactive, SKU are account-wide → always preload.
-  // sqlBreakdown fires in parallel with bundle — not gated so workspace filter changes don't stall it.
-  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, true);
-  const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, _wsIds, true);
-  const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, _wsIds, true);
-  const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, _wsIds, true);
+  // All tab queries gate on warehouseReady so nothing hits the warehouse before the health
+  // check confirms it is accepting queries. This prevents cold-warehouse contention and
+  // ensures the health check SQL probe is never competing with 15+ simultaneous queries.
+  const { data: sqlBreakdown, isLoading: sqlLoading } = useSqlBreakdown(dateRange, _wsIds, warehouseReady);
+  const { data: pipelineObjects, isLoading: pipelineLoading } = usePipelineObjects(dateRange, _wsIds, warehouseReady);
+  const { data: interactiveBreakdown, isLoading: interactiveLoading } = useInteractiveBreakdown(dateRange, _wsIds, warehouseReady);
+  const { data: skuBreakdown, isLoading: skuLoading } = useSKUBreakdown(dateRange, _wsIds, warehouseReady);
 
-  // All tabs preload eagerly — backend delta_cache returns instantly on hits.
-  // asyncio.to_thread on the server ensures concurrent requests don't block each other.
-  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, true);
+  const { data: infraBundle, isLoading: infraBundleLoading } = useInfraBundle(dateRange, _wsIds, warehouseReady);
   const infraCosts = infraBundle?.infra_costs;
   const infraCostsTimeseries = infraBundle?.infra_timeseries;
 
-  const { data: kpisBundle, isLoading: kpisBundleLoading, isFetching: kpisBundleFetching } = useKPIsBundle(dateRange, _wsIds, true);
+  const { data: kpisBundle, isLoading: kpisBundleLoading, isFetching: kpisBundleFetching } = useKPIsBundle(dateRange, _wsIds, warehouseReady);
   const spendAnomalies = kpisBundle?.anomalies;
   const platformKPIs = kpisBundle?.kpis;
   const anomaliesLoading = kpisBundleLoading;
   const kpisLoading = kpisBundleLoading;
 
   const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, _wsIds, activeTab === "aiml");
-  const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, _wsIds, true);
-  const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, _wsIds, true);
+  const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, _wsIds, warehouseReady);
+  const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, _wsIds, warehouseReady);
 
-  // Cloud actual costs — no workspace filter; always preload
-  const { data: awsActualData, isLoading: awsActualLoading } = useAWSActualCosts(dateRange, true);
-  const { data: azureActualData, isLoading: azureActualLoading } = useAzureActualCosts(dateRange, true);
-  const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, true);
+  // Cloud actual costs — no workspace filter
+  const { data: awsActualData, isLoading: awsActualLoading } = useAWSActualCosts(dateRange, warehouseReady);
+  const { data: azureActualData, isLoading: azureActualLoading } = useAzureActualCosts(dateRange, warehouseReady);
+  const { data: gcpActualData, isLoading: gcpActualLoading } = useGCPActualCosts(dateRange, warehouseReady);
 
-  const { data: dbsqlData, isLoading: dbsqlLoading, isFetching: dbsqlFetching } = useDBSQLQueryCosts(dateRange, _wsIds, true);
-  const { data: dbsqlTopQueriesData, isLoading: dbsqlTopQueriesLoading } = useDBSQLTopQueries(dateRange, _wsIds, true);
-  const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, true);
+  const { data: dbsqlData, isLoading: dbsqlLoading, isFetching: dbsqlFetching } = useDBSQLQueryCosts(dateRange, _wsIds, warehouseReady);
+  const { data: dbsqlTopQueriesData, isLoading: dbsqlTopQueriesLoading } = useDBSQLTopQueries(dateRange, _wsIds, warehouseReady);
+  const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, warehouseReady);
 
   // Use Cases tab data - only fetch when feature is enabled
   const useCasesEnabled = appSettings.enableUseCaseTracking;

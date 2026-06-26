@@ -66,13 +66,6 @@ function preloadTabChunks() {
   import("@/pages/UsersGroups");
 }
 
-if (typeof window !== "undefined") {
-  if ("requestIdleCallback" in window) {
-    requestIdleCallback(preloadTabChunks, { timeout: 5000 });
-  } else {
-    setTimeout(preloadTabChunks, 2000);
-  }
-}
 import {
   useAccountInfo,
   useAWSActualCosts,
@@ -389,9 +382,18 @@ function Dashboard() {
   // queries against a cold warehouse before we know its state.
   const warehouseReady = warehouseStatus?.status === "warm";
 
-  // Clear the chunk-reload guard once we know the app is loading correctly.
+  // Clear the chunk-reload guard and preload lazy chunks once the warehouse is
+  // confirmed warm. Gating preloading here prevents the browser's ES module
+  // registry from caching rejected import() promises during the risky startup
+  // window (SIGTERM switchover, cold warehouse, transient server errors).
   useEffect(() => {
-    if (warehouseReady) sessionStorage.removeItem("_chunk_reload");
+    if (!warehouseReady) return;
+    sessionStorage.removeItem("_chunk_reload");
+    if ("requestIdleCallback" in window) {
+      requestIdleCallback(preloadTabChunks, { timeout: 5000 });
+    } else {
+      setTimeout(preloadTabChunks, 2000);
+    }
   }, [warehouseReady]);
 
   // Fast bundle for quick initial load (uses materialized views)

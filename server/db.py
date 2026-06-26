@@ -499,11 +499,21 @@ _delta_l1: TTLCache = TTLCache(maxsize=50, ttl=300)
 def delta_cache_get(key: str) -> dict | None:
     """Read a bundle payload from the Delta response cache. Returns None on miss/error.
 
-    The SQL leg runs in a thread with a hard 5-second timeout so it never blocks
-    the calling async endpoint — a slow or starting warehouse just becomes a cache miss.
+    On the asyncio event loop: returns None immediately on L1 miss — never blocks.
+    On daemon/sync threads: runs the SQL check with a 5-second timeout.
+    Async handlers wanting a Delta read should call asyncio.to_thread(delta_cache_get, key).
     """
     if key in _delta_l1:
         return _delta_l1[key]
+    # Skip the blocking SQL check when called from the event loop thread.
+    # The blocking _cfwait below would freeze the event loop for up to 5 seconds;
+    # return None (cache miss) instead and let the handler recompute.
+    try:
+        import asyncio as _asyncio
+        _asyncio.get_running_loop()
+        return None  # on event loop — don't block
+    except RuntimeError:
+        pass  # not on event loop — safe to proceed with blocking SQL
     try:
         cat, sch = get_catalog_schema()
         if not cat or not sch:
@@ -549,44 +559,52 @@ def delta_cache_get(key: str) -> dict | None:
 
 
 def delta_cache_put(key: str, endpoint: str, payload: dict, ttl_seconds: int = 600) -> None:
-    """Write a bundle payload to the Delta response cache. Fails silently; one retry on conflict."""
-    _delta_l1[key] = payload
-    if not _ensure_response_cache_table():
-        return
-    cat, sch = get_catalog_schema()
-    if not cat or not sch:
-        return
-    import gzip, base64 as _b64
-    compressed = _b64.b64encode(gzip.compress(json.dumps(payload).encode())).decode("ascii")
-    merge_sql = f"""MERGE INTO `{cat}`.`{sch}`.`app_response_cache` AS tgt
-        USING (SELECT
-            :key      AS cache_key,
-            :endpoint AS endpoint,
-            :payload  AS payload_json,
-            CURRENT_TIMESTAMP() AS computed_at,
-            TIMESTAMPADD(SECOND, {ttl_seconds}, CURRENT_TIMESTAMP()) AS expires_at
-        ) AS src
-        ON tgt.cache_key = src.cache_key
-        WHEN MATCHED THEN UPDATE SET *
-        WHEN NOT MATCHED BY TARGET THEN INSERT *"""
-    merge_params = {"key": key, "endpoint": endpoint, "payload": compressed}
-    for attempt in range(2):
-        try:
-            tok = _user_token.set("")
-            try:
-                execute_query(
-                    f"DELETE FROM `{cat}`.`{sch}`.`app_response_cache` WHERE expires_at < CURRENT_TIMESTAMP()",
-                    no_cache=True,
-                )
-                execute_query(merge_sql, merge_params, no_cache=True)
-            finally:
-                _user_token.reset(tok)
+    """Write a bundle payload to the Delta response cache. Fails silently; one retry on conflict.
+
+    L1 is updated synchronously and immediately. The Delta SQL write runs in a fire-and-forget
+    daemon thread so the caller (async handler or daemon thread) is never blocked.
+    """
+    _delta_l1[key] = payload  # L1 update is always immediate
+
+    def _write(_key=key, _endpoint=endpoint, _payload=payload, _ttl=ttl_seconds):
+        if not _ensure_response_cache_table():
             return
-        except Exception as e:
-            if attempt == 0:
-                logger.debug("Delta cache write conflict, retrying: %s", e)
-            else:
-                logger.debug("Delta cache write failed after retry (non-fatal): %s", e)
+        cat, sch = get_catalog_schema()
+        if not cat or not sch:
+            return
+        import gzip, base64 as _b64
+        compressed = _b64.b64encode(gzip.compress(json.dumps(_payload).encode())).decode("ascii")
+        merge_sql = f"""MERGE INTO `{cat}`.`{sch}`.`app_response_cache` AS tgt
+            USING (SELECT
+                :key      AS cache_key,
+                :endpoint AS endpoint,
+                :payload  AS payload_json,
+                CURRENT_TIMESTAMP() AS computed_at,
+                TIMESTAMPADD(SECOND, {_ttl}, CURRENT_TIMESTAMP()) AS expires_at
+            ) AS src
+            ON tgt.cache_key = src.cache_key
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED BY TARGET THEN INSERT *"""
+        merge_params = {"key": _key, "endpoint": _endpoint, "payload": compressed}
+        for attempt in range(2):
+            try:
+                tok = _user_token.set("")
+                try:
+                    execute_query(
+                        f"DELETE FROM `{cat}`.`{sch}`.`app_response_cache` WHERE expires_at < CURRENT_TIMESTAMP()",
+                        no_cache=True,
+                    )
+                    execute_query(merge_sql, merge_params, no_cache=True)
+                finally:
+                    _user_token.reset(tok)
+                return
+            except Exception as e:
+                if attempt == 0:
+                    logger.debug("Delta cache write conflict, retrying: %s", e)
+                else:
+                    logger.debug("Delta cache write failed after retry (non-fatal): %s", e)
+
+    threading.Thread(target=_write, daemon=True, name="delta-cache-put").start()
 
 
 def delta_cache_invalidate(pattern: str | None = None) -> None:

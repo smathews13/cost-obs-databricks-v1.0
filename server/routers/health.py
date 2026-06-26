@@ -89,10 +89,21 @@ async def get_sql_warehouse_status() -> dict[str, Any]:
         warehouse_id = _m.group(1) if _m else None
 
     # ── 1. Try warehouse REST API state ──────────────────────────────────────
+    # IMPORTANT: the Databricks SDK uses the blocking `requests` library.
+    # Calling warehouses.get() directly in an async function freezes the
+    # asyncio event loop for the duration of the HTTP round-trip (can be
+    # seconds to minutes in degraded environments). Run it in a thread with
+    # a hard 5-second timeout so a hung SDK call falls through to the SQL
+    # probe instead of blocking all other requests.
     if warehouse_id:
         try:
+            import asyncio as _asyncio
             from server.db import get_workspace_client
-            wh = get_workspace_client().warehouses.get(warehouse_id)
+            _wh_id = warehouse_id  # capture for lambda
+            wh = await _asyncio.wait_for(
+                _asyncio.to_thread(lambda: get_workspace_client().warehouses.get(_wh_id)),
+                timeout=5.0,
+            )
             raw_state = str(wh.state.value) if wh.state else "UNKNOWN"
             warming_states = {"STOPPED", "STOPPING", "STARTING", "DELETING", "DELETED"}
             if raw_state.upper() in warming_states:

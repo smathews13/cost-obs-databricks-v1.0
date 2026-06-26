@@ -570,15 +570,36 @@ export function CloudCostsView({
   }
 
   if (!data || data.clusters.length === 0) {
+    const bs = (data as any)?.billing_summary as { total_cost?: number; avg_clusters_per_day?: number; avg_cost_per_cluster?: number; days_in_range?: number } | undefined;
+    const hasBillingSummary = bs && (bs.total_cost || 0) > 0;
     return (
       <div className="space-y-6">
         {ModeToggle}
         {CurSetupBanner}
+        {hasBillingSummary && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
+              <p className="text-sm font-medium text-gray-500">Compute Spend</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(bs!.total_cost || 0)}</p>
+              <p className="mt-1 text-xs text-gray-500">{bs!.days_in_range || 0} days (all-purpose + jobs + DLT)</p>
+            </div>
+            <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
+              <p className="text-sm font-medium text-gray-500">Avg Active Clusters / Day</p>
+              <p className="text-2xl font-semibold text-gray-900">{bs!.avg_clusters_per_day || 0}</p>
+              <p className="mt-1 text-xs text-gray-500">daily average</p>
+            </div>
+            <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
+              <p className="text-sm font-medium text-gray-500">Avg Cost / Cluster</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(bs!.avg_cost_per_cluster || 0)}</p>
+              <p className="mt-1 text-xs text-gray-500">per cluster per day</p>
+            </div>
+          </div>
+        )}
         <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
           <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Infrastructure Costs</h3>
           <div className="flex h-32 flex-col items-center justify-center gap-2 text-gray-500">
-            <p className="text-base font-medium">No cluster data available</p>
-            <p className="text-sm">Infrastructure cost estimates require active compute clusters in the selected date range</p>
+            <p className="text-base font-medium">No cluster instance data available</p>
+            <p className="text-sm text-center max-w-md">Cluster-level VM cost estimates require classic (non-serverless) compute. This workspace may be using serverless jobs, SQL warehouses, or serverless DLT — which don't expose instance types.</p>
           </div>
         </div>
       </div>

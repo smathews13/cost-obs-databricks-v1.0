@@ -201,11 +201,10 @@ def _get_memory_info() -> dict[str, Any]:
 
 def _run_prewarm():
     """Run cache prewarm in background."""
-    from server.app import prewarm_cache_sync, prewarm_all_tabs
-    logger.info("Starting manual cache prewarm...")
-    prewarm_cache_sync()
-    prewarm_all_tabs()
-    logger.info("Manual cache prewarm complete")
+    # prewarm_cache_sync() disabled — 7 parallel billing queries compete with first user request
+    logger.info("Cache prewarm skipped (disabled for stability)")
+    # prewarm_all_tabs() disabled — 9 tagging + 5 AI/ML queries saturate the warehouse at startup
+    logger.info("All-tabs prewarm skipped (disabled for stability)")
 
 
 @router.post("/cache/clear")

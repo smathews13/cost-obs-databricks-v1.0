@@ -477,7 +477,7 @@ function Dashboard() {
   const anomaliesLoading = kpisBundleLoading;
   const kpisLoading = kpisBundleLoading;
 
-  const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, _wsIds, true);
+  const { data: aimlData, isLoading: aimlLoading } = useAIMLDashboardBundle(dateRange, _wsIds, activeTab === "aiml");
   const { data: appsData, isLoading: appsLoading } = useAppsDashboardBundle(dateRange, _wsIds, true);
   const { data: taggingData, isLoading: taggingLoading } = useTaggingDashboardBundle(dateRange, _wsIds, true);
 

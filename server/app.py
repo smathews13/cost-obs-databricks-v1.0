@@ -467,11 +467,6 @@ def prewarm_all_tabs():
             UNTAGGED_PIPELINES, UNTAGGED_WAREHOUSES, UNTAGGED_ENDPOINTS,
             COST_BY_TAG, COST_BY_TAG_KEY, TAG_COVERAGE_TIMESERIES,
         )
-        from server.routers.aiml import (
-            AIML_SUMMARY, FMAPI_PROVIDER_COSTS, SERVERLESS_INFERENCE_BY_ENDPOINT,
-            AIML_BY_CATEGORY, AIML_TIMESERIES,
-        )
-        from server.routers.use_cases import router as use_cases_router
         from server.routers.query_origin import (
             _SUMMARY_SQL, _SUMMARY_SQL_NO_COST,
             _TIMESERIES_SQL, _TIMESERIES_SQL_NO_COST,
@@ -520,20 +515,10 @@ def prewarm_all_tabs():
             ("tag_timeseries", lambda: execute_query(TAG_COVERAGE_TIMESERIES, params)),
         ]
 
-        # AI/ML queries
-        aiml_queries = [
-            ("aiml_summary", lambda: execute_query(AIML_SUMMARY, params)),
-            ("aiml_providers", lambda: execute_query(FMAPI_PROVIDER_COSTS, params)),
-            ("aiml_endpoints", lambda: execute_query(SERVERLESS_INFERENCE_BY_ENDPOINT, params)),
-            ("aiml_categories", lambda: execute_query(AIML_BY_CATEGORY, params)),
-            ("aiml_timeseries", lambda: execute_query(AIML_TIMESERIES, params)),
-        ]
-
         # Run all queries in parallel
-        all_queries = tagging_queries + aiml_queries
-        results = execute_queries_parallel(all_queries)
+        results = execute_queries_parallel(tagging_queries)
         success_count = sum(1 for v in results.values() if v is not None)
-        logger.info(f"Background cache pre-warming complete: {success_count}/{len(all_queries)} queries cached")
+        logger.info(f"Background cache pre-warming complete: {success_count}/{len(tagging_queries)} queries cached")
 
     except Exception as e:
         logger.warning(f"Background cache pre-warming failed (non-fatal): {e}")

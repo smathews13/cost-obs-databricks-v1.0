@@ -2893,8 +2893,17 @@ def _build_platform_kpi_response(kpi: str, granularity: str, data_points: list[d
     change_amount = period_end_value - period_start_value
     change_percent = (change_amount / period_start_value * 100) if period_start_value > 0 else 0
     trend = "flat" if abs(change_percent) < 5 else ("increasing" if change_percent > 0 else "decreasing")
+    # For avg metrics that carry a query_count weight, use a weighted mean so the summary
+    # matches the KPI card (which computes AVG over all individual queries, not daily avgs).
+    if kpi in PLATFORM_AVG_KPIS and any("query_count" in dp for dp in data_points):
+        total_weight = sum(dp.get("query_count", 1) for dp in data_points)
+        avg_value = sum(dp["value"] * dp.get("query_count", 1) for dp in data_points) / total_weight if total_weight > 0 else 0
+    else:
+        avg_value = sum(all_values) / len(all_values)
+    # Strip internal weight fields before returning to the client
+    clean_points = [{"date": dp["date"], "value": dp["value"]} for dp in data_points]
     return {
-        "kpi": kpi, "granularity": granularity, "data_points": data_points,
+        "kpi": kpi, "granularity": granularity, "data_points": clean_points,
         "summary": {
             "period_start_value": round(period_start_value, 2),
             "period_end_value": round(period_end_value, 2),
@@ -2902,7 +2911,7 @@ def _build_platform_kpi_response(kpi: str, granularity: str, data_points: list[d
             "change_percent": round(change_percent, 2),
             "min_value": round(min(all_values), 2),
             "max_value": round(max(all_values), 2),
-            "avg_value": round(sum(all_values) / len(all_values), 2),
+            "avg_value": round(avg_value, 2),
             "trend": trend,
         }
     }
@@ -3183,7 +3192,8 @@ async def get_platform_kpi_trend(
         query = f"""
         SELECT
           DATE(start_time) as date,
-          AVG(duration_seconds) as value
+          AVG(duration_seconds) as value,
+          COUNT(*) as query_count
         FROM `{_cat}`.`{_sch}`.`dbsql_cost_per_query`
         WHERE DATE(start_time) >= :start_date
           AND DATE(start_time) <= :end_date

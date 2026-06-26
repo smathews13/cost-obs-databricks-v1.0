@@ -2,11 +2,13 @@
 
 import asyncio
 import concurrent.futures
+import concurrent.futures.thread as _fut_thread
 import logging
 import os
 import threading
 import time
 import uuid
+import weakref
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
@@ -736,16 +738,57 @@ def startup_tasks():
             logger.warning(f"Tables status cache pre-warm failed (non-fatal): {e}")
 
 
-class _NonBlockingShutdownExecutor(concurrent.futures.ThreadPoolExecutor):
-    """ThreadPoolExecutor whose shutdown() never blocks on running threads.
+# Max concurrent request-path SQL threads. High enough to handle bursty traffic
+# across all endpoints; low enough to avoid overwhelming the warehouse connection pool.
+_REQUEST_EXECUTOR_MAX_WORKERS = 20
 
-    asyncio.run() calls loop.shutdown_default_executor() → executor.shutdown(wait=True)
-    at process exit. In-flight SQL threads (from asyncio.to_thread()) hold this call
-    open past the 15-second SIGTERM grace window. ThreadPoolExecutor threads are already
-    daemon threads in Python 3.9+, so they die with the process — skipping the join is safe.
+
+class _DaemonThreadPoolExecutor(concurrent.futures.ThreadPoolExecutor):
+    """ThreadPoolExecutor that creates daemon worker threads not tracked by atexit.
+
+    Standard ThreadPoolExecutor blocks SIGTERM exit in two independent ways:
+    (1) loop.shutdown_default_executor() calls executor.shutdown(wait=True), joining
+        in-flight threads that may be mid-way through a 30-45 s SQL query.
+    (2) concurrent.futures._python_exit() (registered via atexit) joins every thread
+        in _threads_queues at interpreter shutdown — a second, separate barrier.
+
+    This subclass fixes both:
+    - _adjust_thread_count() spawns daemon threads and skips _threads_queues
+      registration, so _python_exit() never sees them and they are killed
+      automatically when the main thread exits.
+    - shutdown() logs active thread count then uses wait=False so
+      shutdown_default_executor() returns immediately instead of joining.
     """
 
+    def _adjust_thread_count(self):
+        def weakref_cb(_, q=self._work_queue):
+            q.put(None)
+        if len(self._threads) < self._max_workers:
+            t = threading.Thread(
+                target=_fut_thread._worker,
+                args=(
+                    weakref.ref(self, weakref_cb),
+                    self._work_queue,
+                    self._initializer,
+                    self._initargs,
+                ),
+                name=f"{self._thread_name_prefix}_{len(self._threads)}",
+                daemon=True,
+            )
+            t.start()
+            self._threads.add(t)
+            # Intentionally NOT added to _fut_thread._threads_queues:
+            # _python_exit() only joins threads in that mapping, so omitting
+            # here prevents the atexit barrier from blocking process exit.
+
     def shutdown(self, wait=True, *, cancel_futures=False):
+        active = sum(1 for t in self._threads if t.is_alive())
+        if active:
+            logger.warning(
+                "SIGTERM: abandoning %d in-flight daemon SQL thread(s) — "
+                "they will be killed when the process exits",
+                active,
+            )
         super().shutdown(wait=False, cancel_futures=True)
 
 
@@ -778,7 +821,10 @@ async def lifespan(app: FastAPI):
     # loop.shutdown_default_executor() → executor.shutdown(wait=True) during cleanup;
     # the non-blocking override returns immediately, letting daemon threads die naturally.
     asyncio.get_running_loop().set_default_executor(
-        _NonBlockingShutdownExecutor(thread_name_prefix="to-thread")
+        _DaemonThreadPoolExecutor(
+            max_workers=_REQUEST_EXECUTOR_MAX_WORKERS,
+            thread_name_prefix="to-thread",
+        )
     )
 
     # Warehouse setup runs synchronously before accepting requests so the

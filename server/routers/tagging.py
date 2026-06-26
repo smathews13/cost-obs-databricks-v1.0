@@ -918,7 +918,8 @@ async def get_available_tags() -> dict[str, Any]:
         tags = {}
         for row in results:
             tag_key = row.get("tag_key")
-            tag_values = row.get("tag_values") or []
+            raw_values = row.get("tag_values")
+            tag_values = list(raw_values) if raw_values is not None else []
             if tag_key:
                 tags[tag_key] = sorted(tag_values)
 

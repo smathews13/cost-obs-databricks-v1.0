@@ -444,6 +444,7 @@ export interface AppsSummary {
   workspace_count: number;
   days_in_range: number;
   avg_daily_spend: number;
+  avg_cost_per_app?: number;
 }
 
 export interface AppsSkuBreakdown {

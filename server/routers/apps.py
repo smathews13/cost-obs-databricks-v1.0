@@ -595,7 +595,7 @@ async def get_apps_summary(
 def _empty_bundle(params: dict, active_only: bool) -> dict[str, Any]:
     """Return a valid zero-data bundle — used when workspace filter finds no Apps rows."""
     return {
-        "summary": {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "app_count": 0, "days_in_range": 1, "avg_daily_spend": 0},
+        "summary": {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "app_count": 0, "days_in_range": 1, "avg_daily_spend": 0, "avg_daily_apps": 0, "avg_cost_per_app": 0},
         "apps": {"apps": [], "total_spend": 0, "total_app_count": 0, "active_count": 0, "inactive_count": 0,
                  "inactive_summary": {"count": 0, "total_spend": 0, "total_dbus": 0, "percentage": 0},
                  "unregistered_summary": {"count": 0, "total_spend": 0, "total_dbus": 0, "percentage": 0}},
@@ -644,10 +644,25 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
         ORDER BY u.usage_date
         """
 
+        filtered_avg_apps_query = f"""
+        SELECT COALESCE(AVG(daily_apps), 0) as avg_daily_apps
+        FROM (
+          SELECT usage_date, COUNT(DISTINCT u.usage_metadata.app_id) as daily_apps
+          FROM system.billing.usage u
+          WHERE u.usage_date BETWEEN :start_date AND :end_date
+            AND u.usage_quantity > 0
+            AND u.billing_origin_product = 'APPS'
+            {app_filter}
+            {ws_clause}
+          GROUP BY usage_date
+        ) t
+        """
+
         queries = [
             ("summary", lambda: execute_query(_ws(APPS_SUMMARY), params)),
             ("apps", lambda: execute_query(_ws(APPS_BY_APP_FULL), params)),
             ("timeseries", lambda: execute_query(filtered_timeseries, params)),
+            ("filtered_avg_apps", lambda: execute_query(filtered_avg_apps_query, params)),
             ("sku_breakdown", lambda: execute_query(_ws(APPS_BY_APP_SKU), params)),
             ("workspaces", lambda: _query_app_workspaces(params, ws_clause)),
             ("service_principals", lambda: execute_query(_ws(APPS_SERVICE_PRINCIPALS), params)),
@@ -674,7 +689,9 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
         avg_daily_apps = 0
         if summary_data:
             days_in_range = summary_data[0].get("days_in_range") or 1
-            avg_daily_apps = round(float(summary_data[0].get("avg_daily_apps") or 0))
+        filtered_avg_data = results.get("filtered_avg_apps", []) or []
+        if filtered_avg_data:
+            avg_daily_apps = round(float(filtered_avg_data[0].get("avg_daily_apps") or 0))
 
         raw_apps = results.get("apps", []) or []
         sku_rows = results.get("sku_breakdown", []) or []
@@ -685,6 +702,8 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
 
         reg_spend = float(apps_result.get("total_spend") or 0)
         reg_dbus = sum(float(a.get("total_dbus") or 0) for a in apps_result.get("apps", []))
+        avg_daily_spend = reg_spend / days_in_range if days_in_range > 0 else 0
+        avg_cost_per_app = avg_daily_spend / max(avg_daily_apps, 1) if avg_daily_apps > 0 else 0
         summary = {
             "total_dbus": reg_dbus,
             "total_spend": reg_spend,
@@ -692,7 +711,8 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
             "app_count": int(apps_result.get("total_app_count") or 0),
             "avg_daily_apps": avg_daily_apps,
             "days_in_range": days_in_range,
-            "avg_daily_spend": reg_spend / days_in_range if days_in_range > 0 else 0,
+            "avg_daily_spend": avg_daily_spend,
+            "avg_cost_per_app": avg_cost_per_app,
         }
 
         timeseries_data = results.get("timeseries", []) or []
@@ -839,7 +859,7 @@ async def get_apps_kpi_trend(
     app_filter = _build_app_id_filter(registry)
 
     if kpi == "apps_spend":
-        query = f"""
+        query = """
         WITH usage_with_price AS (
           SELECT
             u.usage_date,
@@ -853,7 +873,6 @@ async def get_apps_kpi_trend(
           WHERE u.usage_date BETWEEN :start_date AND :end_date
             AND u.usage_quantity > 0
             AND u.billing_origin_product = 'APPS'
-            {app_filter}
         )
         SELECT usage_date as date, SUM(usage_quantity * price_per_dbu) as value
         FROM usage_with_price
@@ -861,13 +880,12 @@ async def get_apps_kpi_trend(
         ORDER BY usage_date
         """
     elif kpi == "apps_dbus":
-        query = f"""
+        query = """
         SELECT u.usage_date as date, SUM(u.usage_quantity) as value
         FROM system.billing.usage u
         WHERE u.usage_date BETWEEN :start_date AND :end_date
           AND u.usage_quantity > 0
           AND u.billing_origin_product = 'APPS'
-          {app_filter}
         GROUP BY u.usage_date
         ORDER BY u.usage_date
         """

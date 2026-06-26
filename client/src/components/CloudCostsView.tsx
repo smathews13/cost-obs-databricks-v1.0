@@ -645,7 +645,7 @@ export function CloudCostsView({
     }
 
     return { totalCost: estimatedTotal, totalDBUHours, avgActiveClustersPerDay: clustersWithTypes.length, avgCostPerCluster };
-  }, [data, infraTimeseriesData]);
+  }, [data, infraTimeseriesData, billingSummary]);
 
   const filteredClusters = showHistoricalClusters
     ? data.clusters

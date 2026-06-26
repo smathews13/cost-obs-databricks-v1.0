@@ -749,10 +749,11 @@ export function CloudCostsView({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div
-          className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
+          className="relative rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
           onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_cost", label: "Infrastructure Spend" })}
         >
+          <span className="absolute top-2 left-2 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
           <div className="flex items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -760,26 +761,17 @@ export function CloudCostsView({
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500 flex items-center gap-1">
-                Est. Total Cloud Cost
-                <span className="inline-flex items-center group relative">
-                  <svg className="h-3.5 w-3.5 text-gray-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="pointer-events-none absolute bottom-5 left-0 z-[9999] w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
-                    Estimated {cloudDisplayName} VM cost for cluster compute nodes, derived from DBU hours × cloud instance pricing ({cloudDisplayName === "GCP" ? "us-central1" : cloudDisplayName === "Azure" ? "East US" : "us-east-1"} on-demand rates). Separate from Databricks DBU spend shown in the page header.
-                  </span>
-                </span>
-              </p>
+              <p className="text-sm font-medium text-gray-500">Total Cloud Costs</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(cloudSummary.totalCost)}</p>
-              {startDate && endDate && <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
+              {startDate && endDate && <p className="mt-1 text-xs text-gray-500">over {Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1} days</p>}
+              {startDate && endDate && <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
             </div>
           </div>
         </div>
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_dbu_hours", label: "Total DBU Hours" })}
+          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_dbu_hours", label: "Total DBUs" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
@@ -788,16 +780,17 @@ export function CloudCostsView({
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total DBU Hours</p>
+              <p className="text-sm font-medium text-gray-500">Total DBUs</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(cloudSummary.totalDBUHours)}</p>
-              {startDate && endDate && <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
+              <p className="mt-1 text-xs text-gray-500">across {data.clusters.length} clusters</p>
+              {startDate && endDate && <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
             </div>
           </div>
         </div>
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_clusters", label: "Avg Active Clusters / Day" })}
+          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_clusters", label: "Active Clusters" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
@@ -806,17 +799,19 @@ export function CloudCostsView({
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Avg Active Clusters / Day</p>
+              <p className="text-sm font-medium text-gray-500">Active Clusters</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(cloudSummary.avgActiveClustersPerDay)}</p>
-              {startDate && endDate && <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
+              <p className="mt-1 text-xs text-gray-500">daily average</p>
+              {startDate && endDate && <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
             </div>
           </div>
         </div>
         <div
-          className={`rounded-lg bg-white p-6 border shadow-sm transition-all ${startDate && endDate ? "cursor-pointer hover:shadow-md hover:scale-[1.01]" : ""}`}
+          className={`relative rounded-lg bg-white p-6 border shadow-sm transition-all ${startDate && endDate ? "cursor-pointer hover:shadow-md hover:scale-[1.01]" : ""}`}
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "avg_cost_per_cluster", label: "Est. Avg Cluster Cost" })}
+          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "avg_cost_per_cluster", label: "Cluster Cost" })}
         >
+          <span className="absolute top-2 left-2 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
           <div className="flex items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -824,10 +819,11 @@ export function CloudCostsView({
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Est. Avg Cluster Cost</p>
+              <p className="text-sm font-medium text-gray-500">Cluster Cost</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(cloudSummary.avgCostPerCluster)}</p>
+              <p className="mt-1 text-xs text-gray-500">per-cluster average</p>
               {startDate && endDate && (
-                <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
+                <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
               )}
             </div>
           </div>
@@ -1073,8 +1069,9 @@ export function CloudCostsView({
                 <th className="w-28 px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
                   <div className="flex items-center justify-end gap-1">
                     <span className="cursor-pointer hover:text-gray-700" onClick={() => handleSort("estimated_aws_cost")}>
-                      Est. Cost <SortIcon field="estimated_aws_cost" />
+                      Cost <SortIcon field="estimated_aws_cost" />
                     </span>
+                    <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-semibold normal-case tracking-normal" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
                     <div className="group relative">
                       <svg className="h-3.5 w-3.5 cursor-help text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1189,14 +1186,9 @@ export function CloudCostsView({
               <tr>
                 <td colSpan={2} className="px-3 py-3 text-sm font-medium text-gray-700">Total ({sortedClusters.length} clusters)</td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-bold text-gray-900">
-                  <span className="inline-flex items-center justify-end gap-1 group relative">
+                  <span className="inline-flex items-center justify-end gap-1.5">
                     {formatCurrency(data.total_estimated_cost)}
-                    <svg className="h-3.5 w-3.5 text-gray-400 cursor-help flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="pointer-events-none absolute bottom-6 right-0 z-[9999] w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
-                      Estimated {cloudDisplayName} VM cost based on DBU hours × cloud instance pricing ({cloudDisplayName === "GCP" ? "us-central1" : cloudDisplayName === "Azure" ? "East US" : "us-east-1"} on-demand rates). This differs from the Databricks DBU spend shown in the page header.
-                    </span>
+                    <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
                   </span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-medium text-gray-700">{formatNumber(data.total_dbu_hours)}</td>

@@ -100,23 +100,41 @@ _MV_CHECK_INTERVAL = 1800  # 30 minutes
 
 
 def _check_mv_available() -> bool:
-    """Check if materialized views are available (with caching)."""
+    """Check if materialized views are available (with caching).
+
+    Runs the SQL check in a thread with a 10-second timeout so a slow or
+    starting warehouse never blocks a bundle endpoint indefinitely.
+    """
     now = time.time()
     if _mv_cache["available"] is not None and (now - _mv_cache["checked_at"]) < _MV_CHECK_INTERVAL:
         return _mv_cache["available"]
 
-    try:
+    from concurrent.futures import ThreadPoolExecutor as _TPE, wait as _cfwait
+
+    def _check():
         catalog, schema = get_catalog_schema()
         tables = check_materialized_views_exist(catalog, schema)
         core_tables = ["daily_usage_summary", "daily_product_breakdown", "daily_workspace_breakdown"]
-        available = all(tables.get(t, False) for t in core_tables)
+        return all(tables.get(t, False) for t in core_tables)
+
+    executor = _TPE(max_workers=1)
+    future = executor.submit(_check)
+    executor.shutdown(wait=False)
+    done, _ = _cfwait([future], timeout=10.0)
+    if not done:
+        logger.debug("MV availability check timed out after 10s — assuming unavailable")
+        _mv_cache["available"] = False
+        _mv_cache["checked_at"] = now
+        return False
+    try:
+        available = future.result()
         _mv_cache["available"] = available
         _mv_cache["checked_at"] = now
         if available:
             logger.info("Materialized views available - using optimized queries")
         return available
     except Exception as e:
-        logger.debug(f"MV check failed: {e}")
+        logger.debug("MV check failed: %s", e)
         _mv_cache["available"] = False
         _mv_cache["checked_at"] = now
         return False

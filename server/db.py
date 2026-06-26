@@ -497,23 +497,41 @@ _delta_l1: TTLCache = TTLCache(maxsize=50, ttl=300)
 
 
 def delta_cache_get(key: str) -> dict | None:
-    """Read a bundle payload from the Delta response cache. Returns None on miss/error."""
+    """Read a bundle payload from the Delta response cache. Returns None on miss/error.
+
+    The SQL leg runs in a thread with a hard 5-second timeout so it never blocks
+    the calling async endpoint — a slow or starting warehouse just becomes a cache miss.
+    """
     if key in _delta_l1:
         return _delta_l1[key]
     try:
         cat, sch = get_catalog_schema()
         if not cat or not sch:
             return None
-        tok = _user_token.set("")
-        try:
-            rows = execute_query(
-                f"SELECT payload_json FROM `{cat}`.`{sch}`.`app_response_cache` "
-                f"WHERE cache_key = :key AND expires_at > CURRENT_TIMESTAMP() LIMIT 1",
-                {"key": key},
-                no_cache=True,
-            )
-        finally:
-            _user_token.reset(tok)
+        import contextvars
+        from concurrent.futures import wait as _cfwait
+        ctx = contextvars.copy_context()
+
+        def _run():
+            tok = _user_token.set("")
+            try:
+                return execute_query(
+                    f"SELECT payload_json FROM `{cat}`.`{sch}`.`app_response_cache` "
+                    f"WHERE cache_key = :key AND expires_at > CURRENT_TIMESTAMP() LIMIT 1",
+                    {"key": key},
+                    no_cache=True,
+                )
+            finally:
+                _user_token.reset(tok)
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(ctx.run, _run)
+        executor.shutdown(wait=False)
+        done, _ = _cfwait([future], timeout=5.0)
+        if not done:
+            logger.debug("Delta cache SQL read timed out after 5s — treating as cache miss")
+            return None
+        rows = future.result()
         if rows and rows[0].get("payload_json"):
             import gzip, base64 as _b64
             result = json.loads(gzip.decompress(_b64.b64decode(rows[0]["payload_json"])).decode())

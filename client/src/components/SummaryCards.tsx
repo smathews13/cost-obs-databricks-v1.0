@@ -94,7 +94,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
         <Card
           title="Total Spend"
           value={formatCurrency(data?.total_spend ?? 0)}
-          subtitle={data?.days_in_range != null ? `${data.days_in_range} days` : undefined}
+          subtitle={data?.days_in_range != null ? `over ${data.days_in_range} days` : undefined}
           isLoading={isLoading}
           onClick={() => handleCardClick("total_spend", "Total Spend")}
           icon={
@@ -106,7 +106,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
         <Card
           title="Total DBUs"
           value={formatNumber(data?.total_dbus ?? 0)}
-          subtitle={data?.days_in_range != null ? `${data.days_in_range} days` : undefined}
+          subtitle={data?.days_in_range != null ? `over ${data.days_in_range} days` : undefined}
           isLoading={isLoading}
           onClick={() => handleCardClick("total_dbus", "Total DBUs")}
           icon={
@@ -118,7 +118,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
         <Card
           title="Daily Spend"
           value={formatCurrency(data?.avg_daily_spend ?? 0)}
-          subtitle={data?.days_in_range != null ? `${data.days_in_range}-day average` : "Per day average"}
+          subtitle={data?.workspace_count != null ? `across ${data.workspace_count} workspaces` : "daily average"}
           isLoading={isLoading}
           onClick={() => handleCardClick("avg_daily_spend", "Average Daily Spend")}
           icon={
@@ -130,7 +130,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
         <Card
           title="Workspaces"
           value={String(data?.workspace_count ?? 0)}
-          subtitle="Active workspaces"
+          subtitle="active workspaces"
           isLoading={isLoading}
           onClick={() => handleCardClick("workspace_count", "Daily Active Workspaces")}
           icon={

@@ -562,7 +562,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     {summary != null ? formatCurrency(summary.total_spend ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    {summary != null ? `${formatNumber(summary.total_dbus ?? 0)} DBUs` : "—"}
+                    {summary != null ? `${formatNumber(summary.total_dbus ?? 0)} DBUs · over ${startDate && endDate ? Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1 : "?"} days` : "—"}
                   </div>
                   <p className="mt-1 text-xs text-[#FF3621]">Click to see trend →</p>
                 </div>
@@ -581,7 +581,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     {summary != null ? formatNumber(summary.total_queries ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    {summary != null ? `Avg: ${formatCurrency(summary.avg_cost_per_query ?? 0)}/query` : "—"}
+                    {summary != null ? `${formatCurrency(summary.avg_cost_per_query ?? 0)}/query` : "—"}
                   </div>
                   <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>

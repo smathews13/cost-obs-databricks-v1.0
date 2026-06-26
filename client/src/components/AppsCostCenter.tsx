@@ -12,7 +12,7 @@ import {
   Cell,
 } from "recharts";
 import type { AppsDashboardBundle, AppsApp, AppsConnectedArtifact, DateRange } from "@/types/billing";
-import { useAppsDashboardBundle, useSpNames } from "@/hooks/useBillingData";
+import { useAppsDashboardBundle } from "@/hooks/useBillingData";
 import { KPITrendModal } from "./KPITrendModal";
 import { formatIdentity } from "@/utils/identity";
 
@@ -314,8 +314,6 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const artifactsPerPage = 10;
 
   const { data: freshData, isLoading: freshLoading, isError: freshError, error: freshErrorObj, refetch } = useAppsDashboardBundle(dateRange, workspaceIds, true);
-  const { data: spNames } = useSpNames();
-
   const data = freshData ?? initialData;
   const isLoading = freshLoading || initialLoading;
   const isError = freshError && !data;
@@ -1209,7 +1207,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                     const appBackendUrl = hostBase && artifact.app_name ? `${hostBase}/apps/${artifact.app_name}` : null;
 
                     const isSP = artifact.artifact_type === 'SERVICE_PRINCIPAL';
-                    const displayName = isSP ? formatIdentity(artifact.artifact_name, spNames) : na(artifact.artifact_name);
+                    const displayName = isSP ? formatIdentity(artifact.artifact_name) : na(artifact.artifact_name);
 
                     return (
                       <tr key={`${artifact.app_id}-${artifact.artifact_name}-${idx}`} className="hover:bg-gray-50">

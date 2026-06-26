@@ -13,15 +13,13 @@ export function isServicePrincipal(id: string): boolean {
 
 /**
  * Short display label for any identity:
- *  - Service principal UUID → resolved display name if spNames provided, else "SP-xxxxx"
+ *  - Service principal UUID → "SP-xxxxx"
  *  - Email address          → "alice"    (username before @)
  *  - Other                  → value as-is
  */
-export function formatIdentity(id: string, spNames?: Record<string, string>): string {
+export function formatIdentity(id: string): string {
   if (!id) return id;
   const v = id.trim();
-  // Check spNames first — covers both AWS (numeric application_id) and Azure (UUID) SPs
-  if (spNames?.[v]) return spNames[v];
   if (isServicePrincipal(v)) {
     return `SP-${v.replace(/-/g, "").slice(0, 5)}`;
   }

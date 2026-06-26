@@ -83,15 +83,6 @@ function buildUrlWithWs(endpoint: string, dateRange?: DateRange, workspaceIds?: 
   return `${base}${base.includes("?") ? "&" : "?"}workspace_ids=${encodeURIComponent(wsKey)}`;
 }
 
-export function useSpNames() {
-  return useQuery<Record<string, string>>({
-    queryKey: ["user", "sp-names"],
-    queryFn: () => fetchJson("/api/user/sp-names"),
-    staleTime: 60 * 60 * 1000,
-    gcTime: 2 * 60 * 60 * 1000,
-    retry: 1,
-  });
-}
 
 export function useBillingSummary(dateRange?: DateRange) {
   return useQuery<BillingSummary>({

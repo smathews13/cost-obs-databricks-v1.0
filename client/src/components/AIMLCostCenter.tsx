@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSpNames } from "@/hooks/useBillingData";
 import {
   AreaChart,
   Area,
@@ -107,7 +106,6 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
     return () => document.removeEventListener("mousedown", handleClick);
   }, [mlRuntimeFilterOpen]);
 
-  const { data: spNames } = useSpNames();
   // Pre-warm trend queries so modals open instantly
   const queryClient = useQueryClient();
   useEffect(() => {
@@ -705,7 +703,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                             <td className="px-4 py-4">
                               {cluster.owner ? (
                                 <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={cluster.owner}>
-                                  {formatIdentity(cluster.owner, spNames)}
+                                  {formatIdentity(cluster.owner)}
                                 </span>
                               ) : <span className="text-sm text-gray-500">—</span>}
                             </td>

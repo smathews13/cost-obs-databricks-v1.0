@@ -77,50 +77,6 @@ def _get_user_role(email: str) -> str:
     return "consumer"
 
 
-_sp_names_cache: dict = {}
-_sp_names_cache_at: float = 0.0
-_SP_NAMES_TTL = 3600.0
-
-
-@router.get("/sp-names")
-async def get_sp_names():
-    """Return {uuid/application_id → display_name} for all workspace service principals.
-
-    Cached for 1 hour. Used by the frontend to replace raw SP UUIDs with human-readable names.
-    The mapping tries both application_id (str) and external_id in case of Azure AD-linked SPs.
-    """
-    import asyncio as _asyncio
-
-    global _sp_names_cache, _sp_names_cache_at
-    now = time.monotonic()
-    if _sp_names_cache and (now - _sp_names_cache_at) < _SP_NAMES_TTL:
-        return _sp_names_cache
-
-    def _fetch() -> dict:
-        from server.db import get_workspace_client
-        w = get_workspace_client()
-        names: dict = {}
-        for sp in w.service_principals.list():
-            display = sp.display_name or sp.external_id or (f"SP-{str(sp.id)[:8]}" if sp.id else None)
-            if not display:
-                continue
-            if sp.application_id:
-                names[str(sp.application_id)] = display
-            if sp.external_id:
-                names[str(sp.external_id)] = display
-            if sp.id:
-                names[str(sp.id)] = display
-        return names
-
-    try:
-        names = await _asyncio.to_thread(_fetch)
-        _sp_names_cache = names
-        _sp_names_cache_at = time.monotonic()
-        return names
-    except Exception as e:
-        logger.error("Could not fetch SP names: %s", e)
-        return _sp_names_cache or {}
-
 
 @router.get("/me")
 async def get_current_user(request: Request):

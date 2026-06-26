@@ -3,7 +3,6 @@ import type { PipelineObjectsResponse } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
 import { formatIdentity } from "@/utils/identity";
-import { useSpNames } from "@/hooks/useBillingData";
 
 interface PipelineObjectsTableProps {
   data: PipelineObjectsResponse | undefined;
@@ -39,8 +38,6 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
   const itemsPerPage = 10;
-  const { data: spNames } = useSpNames();
-
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -318,7 +315,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
                   <td className="px-3 py-3">
                     {obj.owner ? (
                       <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={obj.owner}>
-                        {formatIdentity(obj.owner, spNames)}
+                        {formatIdentity(obj.owner)}
                       </span>
                     ) : (
                       <span className="text-xs text-gray-500">-</span>

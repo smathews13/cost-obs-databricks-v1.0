@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Cell, LabelList,
 } from "recharts";
-import { useUsersGroupsBundle, useSpNames } from "@/hooks/useBillingData";
+import { useUsersGroupsBundle } from "@/hooks/useBillingData";
 import { KPITrendModal } from "@/components/KPITrendModal";
 
 function InfoTooltip({ text }: { text: string }) {
@@ -60,8 +60,6 @@ function fmt(n: number) {
 
 function UserDetailModal({ user, onClose }: { user: UserSpend; onClose: () => void }) {
   const [detail, setDetail] = useState<{ permission_grants: { type: string; value: string }[] } | null>(null);
-  const { data: spNames } = useSpNames();
-
   useEffect(() => {
     fetch(`/api/users-groups/user-detail/${encodeURIComponent(user.user_email)}`)
       .then(r => r.json())
@@ -75,7 +73,7 @@ function UserDetailModal({ user, onClose }: { user: UserSpend; onClose: () => vo
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-gray-900 text-sm truncate max-w-75">{formatIdentity(user.user_email, spNames)}</h3>
+              <h3 className="font-semibold text-gray-900 text-sm truncate max-w-75">{formatIdentity(user.user_email)}</h3>
             </div>
             <p className="text-xs text-gray-500 mt-0.5">{user.active_days} active days · {user.workspace_count} workspace{user.workspace_count !== 1 ? "s" : ""}</p>
           </div>
@@ -147,7 +145,7 @@ function UserDetailModal({ user, onClose }: { user: UserSpend; onClose: () => vo
 
 // ── Product Drill-down ────────────────────────────────────────────────────────
 
-function ProductDrilldown({ topUsers, spNames }: { topUsers: UserSpend[]; spNames?: Record<string, string> }) {
+function ProductDrilldown({ topUsers }: { topUsers: UserSpend[] }) {
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
   const productTotals: Record<string, number> = {};
@@ -198,7 +196,7 @@ function ProductDrilldown({ topUsers, spNames }: { topUsers: UserSpend[]; spName
                       <div key={u.email} className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="text-gray-500 w-3 shrink-0">{i + 1}.</span>
-                          <span className="text-gray-700 truncate">{formatIdentity(u.email, spNames)}</span>
+                          <span className="text-gray-700 truncate">{formatIdentity(u.email)}</span>
                         </div>
                         <span className="ml-3 font-medium text-gray-800 shrink-0">{fmt(u.spend)}</span>
                       </div>
@@ -268,8 +266,6 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
   }, []);
 
   const { data, isLoading } = useUsersGroupsBundle(dateRange, workspaceIds);
-  const { data: spNames } = useSpNames();
-
   const summary = data?.summary;
   const topUsers = data?.top_users ?? [];
   const uniqueProducts = Array.from(new Set(topUsers.map(u => u.primary_product).filter(Boolean))).sort();
@@ -286,7 +282,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
     });
   }
   const displayUser = (email: string) =>
-    anonymizeUsers && anonMap.has(email) ? anonMap.get(email)! : formatIdentity(email, spNames);
+    anonymizeUsers && anonMap.has(email) ? anonMap.get(email)! : formatIdentity(email);
 
   const filtered = topUsers
     .filter(u => {
@@ -498,7 +494,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
         </div>
 
         {/* Spend by product */}
-        <ProductDrilldown topUsers={topUsers} spNames={spNames} />
+        <ProductDrilldown topUsers={topUsers} />
       </div>
 
       {/* User growth charts — always last 6 months */}

@@ -2,7 +2,6 @@ import { useState, memo } from "react";
 import type { WorkspaceBreakdownResponse } from "@/types/billing";
 import { formatCurrency, formatNumber, workspaceUrl } from "@/utils/formatters";
 import { formatIdentity } from "@/utils/identity";
-import { useSpNames } from "@/hooks/useBillingData";
 
 interface WorkspaceTableProps {
   data: WorkspaceBreakdownResponse | undefined;
@@ -43,7 +42,6 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
-  const { data: spNames } = useSpNames();
   const itemsPerPage = 10;
   if (isLoading) {
     return (
@@ -195,7 +193,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                     {(ws.top_users || []).map((u) => (
                       <div key={u} className="flex flex-col gap-0.5">
                         <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-35 truncate" title={u}>
-                          {formatIdentity(u, spNames)}
+                          {formatIdentity(u)}
                         </span>
                       </div>
                     ))}

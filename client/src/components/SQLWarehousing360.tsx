@@ -3,7 +3,6 @@ import { formatIdentity } from "@/utils/identity";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFeatureAvailability } from "@/hooks/useFeatureAvailability";
-import { useSpNames } from "@/hooks/useBillingData";
 import {
   AreaChart,
   Area,
@@ -139,8 +138,6 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const [warehouseSizeWsFilter, setWarehouseSizeWsFilter] = useState<string>("all");
   const [whSizeDropdownOpen, setWhSizeDropdownOpen] = useState(false);
   const whSizeDropdownRef = useRef<HTMLDivElement>(null);
-
-  const { data: spNames } = useSpNames();
 
   // Warehouse Health — React Query with long stale time (recommendations don't change rapidly)
   const { data: warehouseHealth, isLoading: healthLoading } = useQuery<{
@@ -328,8 +325,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
     return Object.values(byUser)
       .sort((a, b) => b.total_spend - a.total_spend)
       .slice(0, 10)
-      .map(u => ({ ...u, user: formatIdentity(u.user, spNames) }));
-  }, [queryData?.by_user, spNames]);
+      .map(u => ({ ...u, user: formatIdentity(u.user) }));
+  }, [queryData?.by_user]);
 
   const timeseriesData = useMemo(() => {
     if (!queryData?.timeseries?.timeseries) return [];
@@ -1089,7 +1086,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                         </td>
                         <td className="px-4 py-3">
                           <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={query.executed_by}>
-                            {formatIdentity(query.executed_by, spNames)}
+                            {formatIdentity(query.executed_by)}
                           </span>
                         </td>
                         <td className="max-w-md px-4 py-3 text-sm text-gray-500">
@@ -1307,7 +1304,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       <tr key={q.statement_id || idx} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={q.executed_by}>
-                            {formatIdentity(q.executed_by, spNames)}
+                            {formatIdentity(q.executed_by)}
                           </span>
                         </td>
                         <td className="max-w-sm px-4 py-3 text-sm text-gray-500">

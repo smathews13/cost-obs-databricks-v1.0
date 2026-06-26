@@ -176,6 +176,13 @@ export interface InfraInstanceFamily {
   days_active: number;
 }
 
+export interface InfraBillingSummary {
+  total_cost?: number;
+  avg_clusters_per_day?: number;
+  avg_cost_per_cluster?: number;
+  days_in_range?: number;
+}
+
 export interface InfraCostsResponse {
   cloud: string;
   cloud_display_name: string;
@@ -183,6 +190,7 @@ export interface InfraCostsResponse {
   instance_families: InfraInstanceFamily[];
   total_estimated_cost: number;
   total_dbu_hours: number;
+  billing_summary?: InfraBillingSummary;
   start_date: string;
   end_date: string;
   disclaimer?: string;

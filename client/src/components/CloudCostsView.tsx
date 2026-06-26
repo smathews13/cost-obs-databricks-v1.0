@@ -24,6 +24,7 @@ import type {
   GCPActualDashboardBundle,
   InfraCostsResponse,
   InfraCostsTimeseriesResponse,
+  InfraBillingSummary,
 } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
@@ -556,6 +557,8 @@ export function CloudCostsView({
     </div>
   ) : null;
 
+  const billingSummary: InfraBillingSummary | undefined = infraData?.billing_summary;
+
   if (data?.error) {
     return (
       <div className="space-y-6">
@@ -570,8 +573,7 @@ export function CloudCostsView({
   }
 
   if (!data || data.clusters.length === 0) {
-    const bs = (data as any)?.billing_summary as { total_cost?: number; avg_clusters_per_day?: number; avg_cost_per_cluster?: number; days_in_range?: number } | undefined;
-    const hasBillingSummary = bs && (bs.total_cost || 0) > 0;
+    const hasBillingSummary = billingSummary != null && billingSummary.total_cost != null && billingSummary.total_cost > 0;
     return (
       <div className="space-y-6">
         {ModeToggle}
@@ -580,17 +582,17 @@ export function CloudCostsView({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
               <p className="text-sm font-medium text-gray-500">Compute Spend</p>
-              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(bs!.total_cost || 0)}</p>
-              <p className="mt-1 text-xs text-gray-500">{bs!.days_in_range || 0} days (all-purpose + jobs + DLT)</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(billingSummary!.total_cost ?? 0)}</p>
+              <p className="mt-1 text-xs text-gray-500">{billingSummary!.days_in_range ?? 0} days (all-purpose + jobs + DLT)</p>
             </div>
             <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
               <p className="text-sm font-medium text-gray-500">Avg Active Clusters / Day</p>
-              <p className="text-2xl font-semibold text-gray-900">{bs!.avg_clusters_per_day || 0}</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatNumber(billingSummary!.avg_clusters_per_day ?? 0)}</p>
               <p className="mt-1 text-xs text-gray-500">daily average</p>
             </div>
             <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
               <p className="text-sm font-medium text-gray-500">Avg Cost / Cluster</p>
-              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(bs!.avg_cost_per_cluster || 0)}</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(billingSummary!.avg_cost_per_cluster ?? 0)}</p>
               <p className="mt-1 text-xs text-gray-500">per cluster per day</p>
             </div>
           </div>
@@ -618,7 +620,7 @@ export function CloudCostsView({
 
   const cloudSummary = useMemo(() => {
     if (!data) return { totalCost: 0, totalDBUHours: 0, avgActiveClustersPerDay: 0, avgCostPerCluster: 0 };
-    const bs = (data as any)?.billing_summary;
+    const bs = billingSummary;
     const totalDBUHours = data.clusters.reduce((sum, c) => sum + (c.total_dbu_hours || 0), 0);
     const clustersWithTypes = data.clusters.filter(c => c.driver_instance_type || c.worker_instance_type);
     const estimatedTotal = clustersWithTypes.reduce((sum, c) => sum + (c.estimated_aws_cost || 0), 0);
@@ -633,11 +635,11 @@ export function CloudCostsView({
       return 0;
     })();
 
-    if (bs && bs.total_cost > 0) {
+    if (bs && bs.total_cost != null && bs.total_cost > 0) {
       return {
         totalCost: bs.total_cost,
         totalDBUHours,
-        avgActiveClustersPerDay: bs.avg_clusters_per_day,
+        avgActiveClustersPerDay: bs.avg_clusters_per_day ?? 0,
         avgCostPerCluster,
       };
     }

@@ -110,7 +110,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!startDate || !endDate) return;
-    for (const kpi of ["aiml_spend", "aiml_dbus", "aiml_endpoints"]) {
+    for (const kpi of ["aiml_spend", "aiml_dbus", "aiml_endpoints", "aiml_avg_endpoint_cost"]) {
       queryClient.prefetchQuery({
         queryKey: ["kpi-trend", kpi, startDate, endDate, "daily"],
         queryFn: async () => {
@@ -325,7 +325,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Active Endpoints</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.endpoint_count || 0)}</p>
-              <p className="mt-1 text-xs text-gray-500">daily average across {summary.workspace_count} workspaces</p>
+              <p className="mt-1 text-xs text-gray-500">daily average across {summary.workspace_count || 0} workspaces</p>
               <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>

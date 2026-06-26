@@ -314,7 +314,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_endpoints", label: "Daily Active Endpoints"})}
+          onClick={() => startDate && endDate && setSelectedKPI({kpi: "aiml_spend", label: "Endpoint Cost"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -323,9 +323,9 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Avg Active Endpoints / Day</p>
-              <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.endpoint_count)}</p>
-              <p className="mt-1 text-xs text-gray-500">Across {summary.workspace_count} workspace{summary.workspace_count !== 1 ? "s" : ""}</p>
+              <p className="text-sm font-medium text-gray-500">Endpoint Cost</p>
+              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.avg_daily_spend || 0)}</p>
+              <p className="mt-1 text-xs text-gray-500">daily average</p>
               <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>

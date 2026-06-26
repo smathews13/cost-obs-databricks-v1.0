@@ -1368,12 +1368,27 @@ async def get_dashboard_bundle_fast(
             r = _exec_mv(MV_BILLING_BY_WORKSPACE, params, mv_ws)
             return r if r else execute_query(_inject_ws_filter(BILLING_BY_WORKSPACE, ws_clause), params)
 
+        # Also fetch most-recent-day workspace count; MV summary gives period-total DISTINCT
+        # which is always >= any single day and mismatches the daily trend chart.
+        _mv_ws_filter = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
+        _WORKSPACE_COUNT_QUERY_MV = f"""
+        SELECT daily_ws as workspace_count FROM (
+          SELECT usage_date, COUNT(DISTINCT workspace_id) as daily_ws
+          FROM system.billing.usage
+          WHERE usage_date BETWEEN :start_date AND :end_date AND usage_quantity > 0
+          {_mv_ws_filter}
+          GROUP BY usage_date
+          ORDER BY usage_date DESC
+          LIMIT 1
+        )
+        """
         queries = [
             ("summary", _mv_summary),
             ("products", _mv_products),
             ("workspaces", _mv_workspaces),
             ("timeseries", _mv_timeseries),
             ("etl_breakdown", lambda: _exec_mv(MV_ETL_BREAKDOWN, params, mv_ws)),
+            ("workspace_count", lambda: execute_query(_WORKSPACE_COUNT_QUERY_MV, params)),
         ]
     else:
         # Fall back to fast queries without MVs; inject workspace filter when active.
@@ -1417,13 +1432,14 @@ async def get_dashboard_bundle_fast(
             "using_materialized_views": use_mv,
         }
 
-        # Without MVs: override workspace_count with accurate most-recent-day count
-        if not use_mv:
-            wc_results = results.get("workspace_count")
-            if wc_results and len(wc_results) > 0:
-                accurate_count = int(wc_results[0].get("workspace_count") or 0)
-                if accurate_count > 0:
-                    response["summary"]["workspace_count"] = accurate_count
+        # Override workspace_count with most-recent-day count (both MV and non-MV paths).
+        # MV summary computes COUNT(DISTINCT) over the full period which is always larger
+        # than any daily count and mismatches the "Daily Active Workspaces" trend chart.
+        wc_results = results.get("workspace_count")
+        if wc_results and len(wc_results) > 0:
+            accurate_count = int(wc_results[0].get("workspace_count") or 0)
+            if accurate_count > 0:
+                response["summary"]["workspace_count"] = accurate_count
 
         delta_cache_put(_dkey, "billing:dashboard-bundle-fast", response, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
         return response

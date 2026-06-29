@@ -252,6 +252,7 @@ export interface UserSpend {
 export interface UsersGroupsBundle {
   summary: {
     user_count: number;
+    workspace_count: number;
     total_spend: number;
     total_dbus: number;
     avg_spend_per_user: number;

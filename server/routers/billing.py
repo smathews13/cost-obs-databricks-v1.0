@@ -2757,6 +2757,22 @@ async def get_kpi_trend(
         GROUP BY DATE(start_time)
         ORDER BY date
         """
+    elif kpi == "user_spend":
+        query = """
+        SELECT
+          u.usage_date as date,
+          SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) as value
+        FROM system.billing.usage u
+        LEFT JOIN system.billing.list_prices p
+          ON u.sku_name = p.sku_name
+          AND u.cloud = p.cloud
+          AND p.price_end_time IS NULL
+        WHERE u.usage_date BETWEEN :start_date AND :end_date
+          AND u.usage_quantity > 0
+          AND u.identity_metadata.run_as IS NOT NULL
+        GROUP BY u.usage_date
+        ORDER BY u.usage_date
+        """
     elif kpi == "tag_coverage_pct":
         query = """
         WITH usage_with_tags AS (

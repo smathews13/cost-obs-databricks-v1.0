@@ -270,6 +270,12 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
   const topUsers = data?.top_users ?? [];
   const uniqueProducts = Array.from(new Set(topUsers.map(u => u.primary_product).filter(Boolean))).sort();
 
+  const daysDiff = startDate && endDate
+    ? Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+    : 30;
+  const powerUsers = topUsers.filter(u => (u.percentage ?? 0) >= 10);
+  const powerUsersSpend = powerUsers.reduce((acc, u) => acc + (u.total_spend ?? 0), 0);
+
   // Stable anon index map: human users sorted by spend get User 1, User 2, …
   const anonMap = new Map<string, string>();
   if (anonymizeUsers) {
@@ -400,48 +406,50 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
                 <InfoTooltip text="Distinct users (humans and service principals) with any DBU spend in the selected date range, across all products." />
               </p>
               <p className="text-2xl font-semibold text-gray-900">{summary?.user_count?.toLocaleString() ?? "—"}</p>
-              <p className="text-xs text-gray-500">Across all products</p>
+              <p className="text-xs text-gray-500">across {summary?.workspace_count ?? "—"} workspaces</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>
-        {/* Avg spend / user */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        {/* User Spend */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "user_spend", label: "Daily User Spend"})}>
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-[#FF3621]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
             </div>
             <div className="min-w-0">
               <p className="text-sm text-gray-500 flex items-center">
-                Avg spend / user
+                User Spend
                 <InfoTooltip text="Total list-price spend in the date range divided by the number of distinct active users. Includes all products." />
               </p>
               <p className="text-2xl font-semibold text-gray-900">{summary ? fmt(summary.avg_spend_per_user) : "—"}</p>
+              <p className="text-xs text-gray-500">Per-user spend over {daysDiff} days</p>
+              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>
-        {/* Top spender */}
+        {/* Power Users */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-[#FF3621]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
             </div>
             <div className="min-w-0">
-              <p className="text-sm text-gray-500">Top spender</p>
-              <p className="text-2xl font-semibold text-gray-900">{topUsers[0] ? fmt(topUsers[0].total_spend) : "—"}</p>
-              {topUsers[0] && <p className="text-xs text-gray-500 truncate">{displayUser(topUsers[0].user_email)}</p>}
+              <p className="text-sm text-gray-500">Power Users</p>
+              <p className="text-2xl font-semibold text-gray-900">{powerUsers.length}</p>
+              <p className="text-xs text-gray-500">{fmt(powerUsersSpend)} spend over {daysDiff} days</p>
             </div>
           </div>
         </div>
-        {/* Spend growth */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        {/* User Spend Growth */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "user_spend", label: "Daily User Spend"})}>
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-[#FF3621]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
             </div>
             <div className="min-w-0">
               <p className="text-sm text-gray-500 flex items-center">
-                Spend growth
+                User Spend Growth
                 <InfoTooltip text="Compares total user spend in the first half of the selected date range to the second half. Positive = spend increased over the period." />
               </p>
               {summary?.spend_growth_pct != null ? (
@@ -451,7 +459,8 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               ) : (
                 <p className="text-2xl font-semibold text-gray-500">—</p>
               )}
-              <p className="text-xs text-gray-500">First vs second half</p>
+              <p className="text-xs text-gray-500">across {summary?.user_count?.toLocaleString() ?? "—"} total users over {daysDiff} days</p>
+              <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
         </div>
@@ -537,7 +546,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
       {/* User table */}
       <div className="rounded-xl border border-gray-200 bg-white ">
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">All Users by Spend</h2>
+          <h2 className="text-base font-semibold text-gray-900">User Leaderboard</h2>
           <div className="flex flex-wrap items-center gap-2">
             {/* Type filter */}
             <div className="relative" ref={typeFilterRef}>

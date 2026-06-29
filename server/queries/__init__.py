@@ -323,7 +323,7 @@ top_users AS (
 )
 SELECT
   wt.workspace_id,
-  ws.workspace_name,
+  COALESCE(ws.workspace_name, CONCAT('Workspace ', CAST(wt.workspace_id AS STRING))) as workspace_name,
   wt.total_dbus,
   wt.total_spend,
   tp.products as top_products,

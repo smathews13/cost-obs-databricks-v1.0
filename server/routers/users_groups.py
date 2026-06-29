@@ -29,6 +29,7 @@ USERS_SUMMARY = """
 WITH usage_with_price AS (
   SELECT
     u.identity_metadata.run_as AS user_email,
+    u.workspace_id,
     u.usage_quantity * COALESCE(p.pricing.default, 0) AS spend,
     u.usage_quantity AS dbus
   FROM system.billing.usage u
@@ -41,9 +42,10 @@ WITH usage_with_price AS (
     AND u.identity_metadata.run_as IS NOT NULL
 )
 SELECT
-  COUNT(DISTINCT user_email)  AS user_count,
-  SUM(spend)                  AS total_spend,
-  SUM(dbus)                   AS total_dbus,
+  COUNT(DISTINCT user_email)   AS user_count,
+  COUNT(DISTINCT workspace_id) AS workspace_count,
+  SUM(spend)                   AS total_spend,
+  SUM(dbus)                    AS total_dbus,
   SUM(spend) / NULLIF(COUNT(DISTINCT user_email), 0) AS avg_spend_per_user
 FROM usage_with_price
 """
@@ -493,6 +495,7 @@ async def get_users_groups_bundle(
         r = summary_rows[0]
         summary = {
             "user_count": int(r.get("user_count") or 0),
+            "workspace_count": int(r.get("workspace_count") or 0),
             "total_spend": float(r.get("total_spend") or 0),
             "total_dbus": float(r.get("total_dbus") or 0),
             "avg_spend_per_user": float(r.get("avg_spend_per_user") or 0),

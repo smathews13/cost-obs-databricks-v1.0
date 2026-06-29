@@ -383,6 +383,47 @@ ORDER BY total_spend DESC
 LIMIT 500
 """
 
+TAG_STATS = """
+WITH tagged_usage AS (
+  SELECT
+    u.usage_date,
+    u.usage_quantity,
+    u.custom_tags,
+    COALESCE(p.pricing.default, 0) as price_per_dbu
+  FROM system.billing.usage u
+  LEFT JOIN system.billing.list_prices p
+    ON u.sku_name = p.sku_name
+    AND u.cloud = p.cloud
+    AND p.price_end_time IS NULL
+  WHERE u.usage_date BETWEEN :start_date AND :end_date
+    AND u.usage_quantity > 0
+    AND u.custom_tags IS NOT NULL
+    AND size(u.custom_tags) > 0
+),
+exploded_tags AS (
+  SELECT
+    usage_date,
+    usage_quantity,
+    price_per_dbu,
+    tag_key,
+    tag_value
+  FROM tagged_usage
+  LATERAL VIEW EXPLODE(custom_tags) t AS tag_key, tag_value
+),
+daily_agg AS (
+  SELECT
+    usage_date,
+    SUM(usage_quantity * price_per_dbu) AS daily_spend,
+    COUNT(DISTINCT CONCAT(tag_key, ':', tag_value)) AS daily_tag_count
+  FROM exploded_tags
+  GROUP BY usage_date
+)
+SELECT
+  (SELECT COUNT(DISTINCT CONCAT(tag_key, ':', tag_value)) FROM exploded_tags) AS total_tag_count,
+  AVG(CASE WHEN daily_tag_count > 0 THEN daily_spend / daily_tag_count ELSE NULL END) AS avg_cost_per_tag
+FROM daily_agg
+"""
+
 COST_BY_TAG_KEY = """
 WITH tagged_usage AS (
   SELECT
@@ -1013,6 +1054,7 @@ async def get_tagging_dashboard_bundle(
         ("warehouses", lambda: query_with_fallback(_ws(UNTAGGED_WAREHOUSES_ENRICHED), _ws(UNTAGGED_WAREHOUSES), params)),
         ("endpoints", lambda: execute_query(_ws(UNTAGGED_ENDPOINTS), params)),
         ("cost_by_tag", lambda: execute_query(_ws(COST_BY_TAG), params)),
+        ("tag_stats", lambda: execute_query(_ws(TAG_STATS), params)),
         ("tag_keys", lambda: execute_query(_ws(COST_BY_TAG_KEY), params)),
         ("timeseries", lambda: execute_query(_ws(TAG_COVERAGE_TIMESERIES), params)),
     ]
@@ -1103,6 +1145,8 @@ async def get_tagging_dashboard_bundle(
         "timeseries": {"timeseries": timeseries, "categories": ["Tagged", "Untagged"]},
         "start_date": params["start_date"],
         "end_date": params["end_date"],
+        "avg_cost_per_tag": float((results.get("tag_stats") or [{}])[0].get("avg_cost_per_tag") or 0) or None,
+        "total_tag_count": int((results.get("tag_stats") or [{}])[0].get("total_tag_count") or 0) or None,
         "lakeflow_available": lakeflow_ok[0],
         "enrichment_note": None if lakeflow_ok[0] else "Job and pipeline names may be incomplete — Lakeflow enrichment was unavailable. Deleted or inaccessible resources may appear.",
     }

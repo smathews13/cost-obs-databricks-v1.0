@@ -845,12 +845,12 @@ export function CloudCostsView({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {(infraTimeseriesLoading || timeseriesLoading) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 align-middle ml-1">est.</span></h3>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
             <div className="h-80 animate-pulse rounded bg-gray-200" />
           </div>
         ) : (infraTimeseriesData?.timeseries && infraTimeseriesData.timeseries.length > 0) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 align-middle ml-1">est.</span></h3>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
             <ResponsiveContainer width="100%" height={320}>
               <AreaChart data={infraTimeseriesData.timeseries} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <defs>
@@ -873,7 +873,7 @@ export function CloudCostsView({
         ) : (filteredTimeseriesData && filteredTimeseriesData.length > 0) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 align-middle ml-1">est.</span></h3>
+              <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
               {timeseriesFamilies.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -950,7 +950,7 @@ export function CloudCostsView({
       <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Costs by Cluster <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 align-middle ml-1">est.</span></h3>
+            <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Costs by Cluster <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
             <p className="text-sm text-gray-500">
               {sortedClusters.length} cluster{sortedClusters.length !== 1 ? "s" : ""}{selectedFamilies.size > 0 ? ` · ${[...selectedFamilies].join(", ")} only` : ""}{" "}
               <span className="inline-flex items-center gap-1 group relative">

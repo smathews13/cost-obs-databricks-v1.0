@@ -163,6 +163,7 @@ job_usage AS (
     u.usage_date,
     u.workspace_id,
     u.usage_metadata.job_id AS job_id,
+    u.usage_metadata.job_name AS usage_job_name,
     u.sku_name,
     u.usage_quantity,
     COALESCE(p.pricing.default, 0) as price_per_dbu
@@ -178,14 +179,14 @@ job_usage AS (
 )
 SELECT
   ju.job_id,
-  COALESCE(ji.job_name, MAX(ju.job_id)) as job_name,
+  COALESCE(MAX(ji.job_name), MAX(ju.usage_job_name), CAST(MAX(ju.job_id) AS STRING)) as job_name,
   MAX(ju.workspace_id) as workspace_id,
   SUM(ju.usage_quantity) as total_dbus,
   SUM(ju.usage_quantity * ju.price_per_dbu) as total_spend,
   COUNT(DISTINCT ju.usage_date) as days_active
 FROM job_usage ju
-INNER JOIN job_info ji ON CAST(ju.job_id AS STRING) = CAST(ji.job_id AS STRING)
-GROUP BY ju.job_id, ji.job_name
+LEFT JOIN job_info ji ON CAST(ju.job_id AS STRING) = CAST(ji.job_id AS STRING)
+GROUP BY ju.job_id
 ORDER BY total_spend DESC
 LIMIT 500
 """
@@ -242,14 +243,14 @@ pipeline_info AS (
 )
 SELECT
   pu.pipeline_id,
-  pi.pipeline_name,
+  COALESCE(MAX(pi.pipeline_name), CAST(pu.pipeline_id AS STRING)) as pipeline_name,
   MAX(pu.workspace_id) as workspace_id,
   SUM(pu.usage_quantity) as total_dbus,
   SUM(pu.usage_quantity * pu.price_per_dbu) as total_spend,
   COUNT(DISTINCT pu.usage_date) as days_active
 FROM pipeline_usage pu
-INNER JOIN pipeline_info pi ON pu.pipeline_id = pi.pipeline_id
-GROUP BY pu.pipeline_id, pi.pipeline_name
+LEFT JOIN pipeline_info pi ON pu.pipeline_id = pi.pipeline_id
+GROUP BY pu.pipeline_id
 ORDER BY total_spend DESC
 LIMIT 500
 """
@@ -983,6 +984,8 @@ async def get_tagging_dashboard_bundle(
     def _ws(sql: str) -> str:
         return wf.inject_ws_filter(sql, ws_clause)
 
+    lakeflow_ok = [True]
+
     def query_with_fallback(enriched_sql: str, fallback_sql: str, query_params: dict) -> list[dict[str, Any]]:
         """Try enriched query (with system.compute tables), fall back to billing-only."""
         try:
@@ -991,11 +994,22 @@ async def get_tagging_dashboard_bundle(
             logger.warning(f"Enriched query failed ({e}), falling back to billing-only")
             return execute_query(fallback_sql, query_params)
 
+    def lakeflow_query(enriched_sql: str, fallback_sql: str, query_params: dict) -> list[dict[str, Any]]:
+        """Try lakeflow-enriched query with 30s timeout; fall back to billing-only on failure."""
+        try:
+            result = execute_queries_parallel([("q", lambda: execute_query(enriched_sql, query_params))], timeout=30.0)
+            if result.get("q") is not None:
+                return result["q"]
+        except Exception as e:
+            logger.warning(f"Lakeflow query failed/timed out ({type(e).__name__}); falling back to billing-only")
+        lakeflow_ok[0] = False
+        return execute_query(fallback_sql, query_params)
+
     queries = [
         ("summary", lambda: execute_query(_ws(TAGGING_SUMMARY), params)),
         ("clusters", lambda: query_with_fallback(_ws(UNTAGGED_CLUSTERS_ENRICHED), _ws(UNTAGGED_CLUSTERS), params)),
-        ("jobs", lambda: execute_query(_ws(UNTAGGED_JOBS), params)),
-        ("pipelines", lambda: execute_query(_ws(UNTAGGED_PIPELINES), params)),
+        ("jobs", lambda: lakeflow_query(_ws(UNTAGGED_JOBS_ENRICHED), _ws(UNTAGGED_JOBS), params)),
+        ("pipelines", lambda: lakeflow_query(_ws(UNTAGGED_PIPELINES_ENRICHED), _ws(UNTAGGED_PIPELINES), params)),
         ("warehouses", lambda: query_with_fallback(_ws(UNTAGGED_WAREHOUSES_ENRICHED), _ws(UNTAGGED_WAREHOUSES), params)),
         ("endpoints", lambda: execute_query(_ws(UNTAGGED_ENDPOINTS), params)),
         ("cost_by_tag", lambda: execute_query(_ws(COST_BY_TAG), params)),
@@ -1089,6 +1103,8 @@ async def get_tagging_dashboard_bundle(
         "timeseries": {"timeseries": timeseries, "categories": ["Tagged", "Untagged"]},
         "start_date": params["start_date"],
         "end_date": params["end_date"],
+        "lakeflow_available": lakeflow_ok[0],
+        "enrichment_note": None if lakeflow_ok[0] else "Job and pipeline names may be incomplete — Lakeflow enrichment was unavailable. Deleted or inaccessible resources may appear.",
     }
     delta_cache_put(_dkey, "tagging:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
     return _resp

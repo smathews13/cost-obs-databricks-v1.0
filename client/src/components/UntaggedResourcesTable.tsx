@@ -190,7 +190,7 @@ export function UntaggedResourcesTable({
                 <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
                   activeUntaggedTab === tab.key ? "bg-orange-100 text-orange-600" : "bg-gray-100 text-gray-600"
                 }`}>
-                  {tab.count}
+                  {tab.count >= 500 ? "500+" : tab.count}
                 </span>
               )}
             </button>

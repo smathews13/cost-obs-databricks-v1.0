@@ -166,7 +166,10 @@ function ProductDrilldown({ topUsers }: { topUsers: UserSpend[] }) {
 
   return (
     <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-      <h3 className="text-lg font-medium text-gray-900 mb-4">User Spend by Product</h3>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-medium text-gray-900">User Spend by Product</h3>
+        <span className="text-xs font-medium" style={{ color: '#FF3621' }}>Click a row to drill down ↓</span>
+      </div>
       <div className="space-y-2.5 mt-2">
         {sorted.map(([product, spend]) => {
           const pct = total > 0 ? (spend / total) * 100 : 0;
@@ -412,7 +415,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
           </div>
         </div>
         {/* User Spend */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "user_spend", label: "Daily User Spend"})}>
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "avg_spend_per_user", label: "Daily Avg Per-User Spend"})}>
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-[#FF3621]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
@@ -487,7 +490,10 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Top users bar chart */}
         <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Top Users by Spend</h3>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">Top Users by Spend</h3>
+            <span className="text-xs font-medium" style={{ color: '#FF3621' }}>Click a bar to drill down ↓</span>
+          </div>
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={barData} layout="vertical" margin={{ left: 8, right: 24, top: 0, bottom: 0 }}>
               <XAxis type="number" tickFormatter={v => fmt(v)} stroke="#9ca3af" fontSize={12} tickMargin={8} />

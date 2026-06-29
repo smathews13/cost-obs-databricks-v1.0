@@ -1029,7 +1029,10 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                         User {sortField === "executed_by" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                        Query Preview
+                        <span className="flex items-center gap-1">
+                          Query Preview
+                          <InfoTooltip text="If queries show as <Redacted>, this app does not have access to system.query.history. Grant SELECT on this table to the app's service principal." />
+                        </span>
                       </th>
                       <th
                         className="cursor-pointer px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700"
@@ -1143,7 +1146,12 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">User</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Query Preview</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        <span className="flex items-center gap-1">
+                          Query Preview
+                          <InfoTooltip text="If queries show as <Redacted>, this app does not have access to system.query.history. Grant SELECT on this table to the app's service principal." />
+                        </span>
+                      </th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
                         Cost <InfoTooltip text={COST_TOOLTIP_TEXT} />

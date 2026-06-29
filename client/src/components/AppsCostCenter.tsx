@@ -688,7 +688,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({kpi: "apps_avg_cost_per_app", label: "Daily Avg Per-App Spend"})}
+          onClick={() => startDate && endDate && setSelectedKPI({kpi: "apps_avg_cost_per_app", label: "Daily Per-App Spend"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">

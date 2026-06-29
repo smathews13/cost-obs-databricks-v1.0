@@ -1037,11 +1037,11 @@ async def get_tagging_dashboard_bundle(
             return execute_query(fallback_sql, query_params)
 
     def lakeflow_query(enriched_sql: str, fallback_sql: str, query_params: dict, flag: list) -> list[dict[str, Any]]:
-        """Try lakeflow-enriched query with 30s timeout; fall back to billing-only on failure."""
+        """Try lakeflow-enriched query with 45s timeout; fall back to billing-only on failure."""
         try:
-            result = execute_queries_parallel([("q", lambda: execute_query(enriched_sql, query_params))], timeout=30.0)
-            if result.get("q") is not None:
-                return result["q"]
+            result = execute_queries_parallel([("lakeflow_enriched", lambda: execute_query(enriched_sql, query_params))], timeout=45.0)
+            if result.get("lakeflow_enriched") is not None:
+                return result["lakeflow_enriched"]
         except Exception as e:
             logger.warning(f"Lakeflow query failed/timed out ({type(e).__name__}); falling back to billing-only")
         flag[0] = False

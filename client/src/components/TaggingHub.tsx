@@ -91,6 +91,9 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [showHistoricalUntagged, setShowHistoricalUntagged] = useState(false);
+  const [tagPage, setTagPage] = useState(1);
+  const [keyPage, setKeyPage] = useState(1);
+  const TAG_PAGE_SIZE = 10;
   const daysDiff = startDate && endDate
     ? Math.max(1, Math.abs(Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24))) + 1)
     : 30;
@@ -426,7 +429,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => setSelectedKPI({ kpi: "tagged_spend", label: "Tagged Spend" })}
+          onClick={() => setSelectedKPI({ kpi: "tagged_spend", label: "Daily Tagged Spend" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -446,7 +449,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => setSelectedKPI({ kpi: "untagged_spend", label: "Untagged Spend" })}
+          onClick={() => setSelectedKPI({ kpi: "untagged_spend", label: "Daily Untagged Spend" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -466,7 +469,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => setSelectedKPI({ kpi: "cost_per_tag", label: "Daily Cost Per Tag" })}
+          onClick={() => setSelectedKPI({ kpi: "cost_per_tag", label: "Daily Cost Per-Tag" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -475,7 +478,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Cost Per Tag</p>
+              <p className="text-sm font-medium text-gray-500">Cost Per-Tag</p>
               <p className="text-2xl font-semibold text-gray-900">
                 {data?.avg_cost_per_tag != null ? formatCurrency(data.avg_cost_per_tag) : "—"}
               </p>
@@ -696,39 +699,55 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               <button onClick={handleClearTagValueFilters} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
             </div>
           )}
-          {filteredTags.length > 0 ? (
-            <div className="max-h-75 overflow-y-auto">
-              <table className="w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500" style={{ width: '100px' }}>Key</th>
-                    <th className="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Value</th>
-                    <th className="px-2 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Spend</th>
-                    <th className="px-2 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">%</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {filteredTags.slice(0, 20).map((tag, idx) => (
-                    <tr key={idx} className="cursor-pointer hover:bg-gray-50" onClick={() => handleTagClick(tag.tag_key, tag.tag_value)}>
-                      <td className="whitespace-nowrap px-2 py-2 text-xs font-medium text-gray-900" style={{ width: '100px', maxWidth: '100px' }}>
-                        <span className="rounded bg-orange-100 px-1.5 py-0.5 text-orange-800 truncate inline-block max-w-full" title={tag.tag_key}>{tag.tag_key}</span>
-                      </td>
-                      <td className="px-2 py-2 text-xs text-gray-500 max-w-28 truncate" title={tag.tag_value}>{tag.tag_value}</td>
-                      <td className="whitespace-nowrap px-2 py-2 text-right text-xs font-medium text-gray-900">{formatCurrency(tag.total_spend)}</td>
-                      <td className="whitespace-nowrap px-2 py-2 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <div className="h-1.5 w-10 overflow-hidden rounded-full bg-gray-200">
-                            <div className="h-full rounded-full bg-orange-500" style={{ width: `${tag.percentage}%` }} />
-                          </div>
-                          <span className="text-xs text-gray-500">{(tag.percentage ?? 0).toFixed(1)}%</span>
-                        </div>
-                      </td>
+          {filteredTags.length > 0 ? (() => {
+            const tagTotalPages = Math.ceil(filteredTags.length / TAG_PAGE_SIZE);
+            const tagStart = (tagPage - 1) * TAG_PAGE_SIZE;
+            const pagedTags = filteredTags.slice(tagStart, tagStart + TAG_PAGE_SIZE);
+            return (
+              <>
+                <table className="w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500" style={{ width: '100px' }}>Key</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Value</th>
+                      <th className="px-2 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Spend</th>
+                      <th className="px-2 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">%</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {pagedTags.map((tag, idx) => (
+                      <tr key={idx} className="cursor-pointer hover:bg-gray-50" onClick={() => handleTagClick(tag.tag_key, tag.tag_value)}>
+                        <td className="whitespace-nowrap px-2 py-2 text-xs font-medium text-gray-900" style={{ width: '100px', maxWidth: '100px' }}>
+                          <span className="rounded bg-orange-100 px-1.5 py-0.5 text-orange-800 truncate inline-block max-w-full" title={tag.tag_key}>{tag.tag_key}</span>
+                        </td>
+                        <td className="px-2 py-2 text-xs text-gray-500 max-w-28 truncate" title={tag.tag_value}>{tag.tag_value}</td>
+                        <td className="whitespace-nowrap px-2 py-2 text-right text-xs font-medium text-gray-900">{formatCurrency(tag.total_spend)}</td>
+                        <td className="whitespace-nowrap px-2 py-2 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <div className="h-1.5 w-10 overflow-hidden rounded-full bg-gray-200">
+                              <div className="h-full rounded-full bg-orange-500" style={{ width: `${tag.percentage}%` }} />
+                            </div>
+                            <span className="text-xs text-gray-500">{(tag.percentage ?? 0).toFixed(1)}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {tagTotalPages > 1 && (
+                  <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
+                    <p className="text-xs text-gray-500">{tagStart + 1}–{Math.min(tagStart + TAG_PAGE_SIZE, filteredTags.length)} of {filteredTags.length}</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setTagPage(p => Math.max(1, p - 1))} disabled={tagPage === 1}
+                        className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Previous</button>
+                      <button onClick={() => setTagPage(p => Math.min(tagTotalPages, p + 1))} disabled={tagPage === tagTotalPages}
+                        className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })() : (
             <div className="flex h-32 items-center justify-center text-gray-500">
               {selectedTagFilters.length > 0 ? "No tags match the selected filters" : "No tagged resources found"}
             </div>
@@ -820,10 +839,13 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
           )}
           {filteredTagBreakdownData.length > 0 ? (() => {
             const totalKeySpend = filteredTagBreakdownData.reduce((sum, d) => sum + d.total_spend, 0);
+            const keyTotalPages = Math.ceil(filteredTagBreakdownData.length / TAG_PAGE_SIZE);
+            const keyStart = (keyPage - 1) * TAG_PAGE_SIZE;
+            const pagedKeys = filteredTagBreakdownData.slice(keyStart, keyStart + TAG_PAGE_SIZE);
             return (
-              <div className="max-h-75 overflow-y-auto">
+              <>
                 <table className="w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50 sticky top-0">
+                  <thead className="bg-gray-50">
                     <tr>
                       <th className="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Key</th>
                       <th className="px-2 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Spend</th>
@@ -831,7 +853,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
-                    {filteredTagBreakdownData.map((entry, idx) => {
+                    {pagedKeys.map((entry, idx) => {
                       const pct = totalKeySpend > 0 ? (entry.total_spend / totalKeySpend) * 100 : 0;
                       return (
                         <tr key={idx} className="hover:bg-gray-50">
@@ -852,7 +874,18 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                     })}
                   </tbody>
                 </table>
-              </div>
+                {keyTotalPages > 1 && (
+                  <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
+                    <p className="text-xs text-gray-500">{keyStart + 1}–{Math.min(keyStart + TAG_PAGE_SIZE, filteredTagBreakdownData.length)} of {filteredTagBreakdownData.length}</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setKeyPage(p => Math.max(1, p - 1))} disabled={keyPage === 1}
+                        className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Previous</button>
+                      <button onClick={() => setKeyPage(p => Math.min(keyTotalPages, p + 1))} disabled={keyPage === keyTotalPages}
+                        className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
+                    </div>
+                  </div>
+                )}
+              </>
             );
           })() : (
             <div className="flex h-32 items-center justify-center text-gray-500">

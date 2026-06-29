@@ -170,7 +170,7 @@ function ProductDrilldown({ topUsers }: { topUsers: UserSpend[] }) {
         <h3 className="text-lg font-medium text-gray-900">User Spend by Product</h3>
         <span className="text-xs font-medium" style={{ color: '#FF3621' }}>Click a row to drill down ↓</span>
       </div>
-      <div className="space-y-2.5 mt-2">
+      <div className="space-y-2.5">
         {sorted.map(([product, spend]) => {
           const pct = total > 0 ? (spend / total) * 100 : 0;
           const isSelected = selectedProduct === product;

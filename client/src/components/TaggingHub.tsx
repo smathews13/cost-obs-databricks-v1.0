@@ -44,6 +44,7 @@ const COLORS = {
 };
 
 const TAG_COLORS = ["#1B5162", "#06B6D4", "#10B981", "#14B8A6", "#F59E0B", "#3B82F6", "#EC4899", "#EF4444", "#6B7280"];
+const TAG_PAGE_SIZE = 10;
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -93,7 +94,6 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
   const [showHistoricalUntagged, setShowHistoricalUntagged] = useState(false);
   const [tagPage, setTagPage] = useState(1);
   const [keyPage, setKeyPage] = useState(1);
-  const TAG_PAGE_SIZE = 10;
   const daysDiff = startDate && endDate
     ? Math.max(1, Math.abs(Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24))) + 1)
     : 30;
@@ -321,11 +321,13 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
     setCurrentPage(1);
+    setKeyPage(1);
   }, []);
 
   const handleClearTagFilters = useCallback(() => {
     setSelectedTagFilters([]);
     setCurrentPage(1);
+    setKeyPage(1);
   }, []);
 
   const handleToggleTagValueFilter = useCallback((keyValue: string) => {
@@ -333,11 +335,13 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
       prev.includes(keyValue) ? prev.filter(kv => kv !== keyValue) : [...prev, keyValue]
     );
     setCurrentPage(1);
+    setTagPage(1);
   }, []);
 
   const handleClearTagValueFilters = useCallback(() => {
     setSelectedTagValueFilters([]);
     setCurrentPage(1);
+    setTagPage(1);
   }, []);
 
   if (isLoading) {
@@ -749,7 +753,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
             );
           })() : (
             <div className="flex h-32 items-center justify-center text-gray-500">
-              {selectedTagFilters.length > 0 ? "No tags match the selected filters" : "No tagged resources found"}
+              {selectedTagValueFilters.length > 0 ? "No tags match the selected filters" : "No tagged resources found"}
             </div>
           )}
         </div>

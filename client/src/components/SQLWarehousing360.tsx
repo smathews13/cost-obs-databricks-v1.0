@@ -581,7 +581,11 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     {summary != null ? formatNumber(summary.total_queries ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    {summary != null ? `${formatCurrency(summary.avg_cost_per_query ?? 0)}/query` : "—"}
+                    {summary != null ? (() => {
+                      const days = startDate && endDate ? Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1 : null;
+                      const avgPerDay = days ? Math.round((summary.total_queries ?? 0) / days) : null;
+                      return `${avgPerDay != null ? formatNumber(avgPerDay) + " avg/day · " : ""}${formatCurrency(summary.avg_cost_per_query ?? 0)}/query`;
+                    })() : "—"}
                   </div>
                   <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>
@@ -600,7 +604,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     {summary != null ? formatNumber(summary.unique_users ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    {summary != null ? `Across ${formatNumber(summary.unique_warehouses ?? 0)} warehouses` : "—"}
+                    {summary != null ? `Across ${formatNumber(summary.unique_warehouses ?? 0)} SQL warehouses` : "—"}
                   </div>
                   <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>
@@ -681,7 +685,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
             <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">Top Users by Query Spend</h3>
-                <span className="text-xs text-gray-500">Click a bar to drill down</span>
+                <span className="text-xs font-medium" style={{ color: '#FF3621' }}>Click a bar to drill down ↓</span>
               </div>
               {userBarData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>

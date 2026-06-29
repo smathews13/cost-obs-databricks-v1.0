@@ -122,6 +122,11 @@ def _fetch_one_app_resources(w: Any, app_name: str) -> tuple[str, list[dict[str,
                 job = r.job
                 res_name = res_name or getattr(job, "id", "") or ""
                 res_description = res_description or getattr(job, "permission", "") or ""
+            elif getattr(r, "postgres", None):
+                res_type = "LAKEBASE"
+                pg = r.postgres
+                res_name = res_name or getattr(pg, "database", "") or getattr(pg, "branch", "") or ""
+                res_description = res_description or getattr(pg, "permission", "") or ""
             else:
                 res_type = getattr(r, "type", None) or "UNKNOWN"
             app_resources.append({"name": res_name, "type": res_type, "description": res_description})
@@ -691,16 +696,16 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
         # Build workspace lookup per app_id
         workspace_rows = results.get("workspaces", []) or []
         app_workspace_map: dict[str, list[str]] = {}
-        all_workspaces: dict[str, str] = {}
+        all_workspaces: dict[str, str] = {}  # ws_id -> ws_name
         for row in workspace_rows:
             app_id = row.get("app_id", "")
             ws_name = str(row.get("workspace_name", ""))
             ws_id = str(row.get("workspace_id", ""))
             if app_id not in app_workspace_map:
                 app_workspace_map[app_id] = []
-            if ws_name not in app_workspace_map[app_id]:
-                app_workspace_map[app_id].append(ws_name)
-            all_workspaces[ws_name] = ws_id
+            if ws_id not in app_workspace_map[app_id]:
+                app_workspace_map[app_id].append(ws_id)
+            all_workspaces[ws_id] = ws_name
 
         summary_data = results.get("summary", []) or []
         days_in_range = 1
@@ -783,7 +788,7 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
             "apps": apps_result,
             "timeseries": {"timeseries": timeseries, "categories": ["Total"]},
             "connected_artifacts": connected_artifacts,
-            "workspaces": [{"id": str(ws_id), "name": str(ws_name)} for ws_name, ws_id in sorted(all_workspaces.items(), key=lambda x: x[0])],
+            "workspaces": [{"id": ws_id, "name": ws_name} for ws_id, ws_name in sorted(all_workspaces.items(), key=lambda x: x[1])],
             "active_only": active_only,
             "start_date": params["start_date"],
             "end_date": params["end_date"],

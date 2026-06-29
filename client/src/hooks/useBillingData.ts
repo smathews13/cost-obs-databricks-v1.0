@@ -386,7 +386,6 @@ export function useAIMLDashboardBundle(dateRange?: DateRange, workspaceIds?: str
   const result = useQuery<AIMLDashboardBundle | null>({
     queryKey: ["aiml", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
     queryFn: () => fetchWithPoll<AIMLDashboardBundle>(buildUrlWithWs("/api/aiml/dashboard-bundle", dateRange, workspaceIds)),
-    staleTime: 5 * 60 * 1000,
     enabled,
     refetchInterval: (q) => q.state.data === null ? POLL_INTERVAL_MS : false,
   });
@@ -405,7 +404,6 @@ export function useAppsDashboardBundle(dateRange?: DateRange, workspaceIds?: str
   const result = useQuery<AppsDashboardBundle | null>({
     queryKey: ["apps", "dashboard-bundle", dateRange, workspaceIds?.join(",") ?? null],
     queryFn: () => fetchWithPoll<AppsDashboardBundle>(buildUrlWithWs("/api/apps/dashboard-bundle", dateRange, workspaceIds)),
-    staleTime: 5 * 60 * 1000,
     enabled,
     refetchInterval: (q) => q.state.data === null ? POLL_INTERVAL_MS : false,
   });

@@ -169,9 +169,9 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
 
   const endpointsData = useMemo(() => {
     if (!data?.endpoints?.endpoints) return [];
-    // Aggregate by endpoint
     const byEndpoint: Record<string, { endpoint_name: string; total_spend: number; total_dbus: number; days_active: number }> = {};
     for (const e of data.endpoints.endpoints) {
+      if (!e.endpoint_name || e.endpoint_name === 'UNKNOWN') continue;
       if (!byEndpoint[e.endpoint_name]) {
         byEndpoint[e.endpoint_name] = { endpoint_name: e.endpoint_name, total_spend: 0, total_dbus: 0, days_active: e.days_active };
       }
@@ -180,6 +180,8 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
     }
     return Object.values(byEndpoint).sort((a, b) => b.total_spend - a.total_spend);
   }, [data?.endpoints]);
+
+  useEffect(() => { setEndpointsPage(1); }, [endpointsData.length]);
 
   if (isLoading) {
     return (
@@ -402,7 +404,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
 
         {/* Category Breakdown Pie Chart */}
         <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-          <h3 className="mb-4 text-lg font-semibold text-gray-900">Cost by Category</h3>
+          <h3 className="mb-4 text-lg font-semibold text-gray-900">Cost by AI Spend Category</h3>
           {pieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
@@ -414,13 +416,15 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   outerRadius={90}
                   paddingAngle={2}
                   dataKey="value"
+                  label={({ percentage }: any) => percentage >= 5 ? `${Math.round(percentage)}%` : ''}
+                  labelLine={false}
                 >
                   {pieData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} formatter={(value, entry: any) => `${value} (${Math.round(entry.payload?.percentage ?? 0)}%)`} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -434,13 +438,13 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
         {/* Top Endpoints Table */}
         <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
           <div className="mb-4 flex items-center gap-2">
-            <h3 className="text-lg font-semibold text-gray-900">Top Serverless Endpoints</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Top Model Serving Endpoints</h3>
             <div className="group relative">
               <svg className="h-4 w-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div className="absolute left-0 top-6 z-50 hidden w-72 rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-600 shadow-lg group-hover:block">
-                <p className="font-medium text-gray-900 mb-1">Serverless Endpoints</p>
+                <p className="font-medium text-gray-900 mb-1">Model Serving Endpoints</p>
                 <p>Endpoints deployed via Databricks Model Serving using serverless compute. These are pay-per-request inference endpoints that auto-scale to zero. Costs include both steady-state compute and scale-from-zero launch overhead.</p>
               </div>
             </div>
@@ -463,10 +467,16 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
-                    {endpointsData.slice((endpointsPage - 1) * PAGE_SIZE, endpointsPage * PAGE_SIZE).map((endpoint, idx) => (
+                    {endpointsData.slice((endpointsPage - 1) * PAGE_SIZE, endpointsPage * PAGE_SIZE).map((endpoint, idx) => {
+                      const epUrl = getEndpointUrl(host, endpoint.endpoint_name, null);
+                      return (
                       <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                        <td className="px-3 py-2 text-sm font-medium text-gray-900 truncate max-w-[200px]" title={endpoint.endpoint_name || "UNKNOWN"}>
-                          {endpoint.endpoint_name || "UNKNOWN"}
+                        <td className="px-3 py-2 text-sm font-medium truncate max-w-[200px]" title={endpoint.endpoint_name}>
+                          {epUrl ? (
+                            <a href={epUrl} target="_blank" rel="noopener noreferrer" className="text-[#FF3621] hover:underline">
+                              {endpoint.endpoint_name}
+                            </a>
+                          ) : endpoint.endpoint_name}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-500">
                           {formatNumber(endpoint.total_dbus)}
@@ -475,7 +485,8 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                           {formatCurrency(endpoint.total_spend)}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -529,12 +540,16 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {data.models.models.slice((modelsPage - 1) * PAGE_SIZE, modelsPage * PAGE_SIZE).map((model, idx) => {
+                      const TYPE_LABELS: Record<string, string> = {
+                        "Foundation Model API": "FMAPI Call",
+                      };
                       const typeColors: Record<string, string> = {
                         "Feature Store": "bg-teal-50 text-teal-700",
                         "Model Training": "bg-blue-50 text-blue-700",
                         "Foundation Model API": "bg-amber-50 text-amber-700",
                       };
                       const colorClass = typeColors[model.model_type] || "bg-gray-50 text-gray-700";
+                      const typeLabel = TYPE_LABELS[model.model_type] || model.model_type;
                       return (
                         <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                           <td className="px-3 py-2 text-sm font-medium text-gray-900 truncate max-w-45" title={model.model_name}>
@@ -542,7 +557,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-sm">
                             <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${colorClass}`}>
-                              {model.model_type}
+                              {typeLabel}
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
@@ -846,9 +861,22 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                                 </div>
                               </td>
                               <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
-                                <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                                  {(agent as any).agent_type || "Agent"}
-                                </span>
+                                {(() => {
+                                  const t = (agent as any).agent_type || "Agent";
+                                  const cls: Record<string, string> = {
+                                    "Knowledge Assistant": "bg-teal-50 text-teal-700",
+                                    "Supervisor Agent": "bg-amber-50 text-amber-700",
+                                    "Genie Space": "bg-sky-50 text-sky-700",
+                                    "AI Classify": "bg-emerald-50 text-emerald-700",
+                                    "AI Extract": "bg-orange-50 text-orange-700",
+                                    "Agent": "bg-blue-50 text-blue-700",
+                                  };
+                                  return (
+                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls[t] || "bg-gray-100 text-gray-600"}`}>
+                                      {t}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                               <td className="whitespace-nowrap px-4 py-4 text-right text-sm text-gray-500">
                                 {formatNumber(agent.total_dbus)}
@@ -887,6 +915,20 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                                       <p className="text-lg font-semibold text-gray-900">{agent.workspace_count}</p>
                                     </div>
                                   </div>
+                                  {((agent as any).served_entity_name || (agent as any).billing_origin_product) && (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      {(agent as any).served_entity_name && (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">
+                                          <span className="font-medium">Model:</span> {(agent as any).served_entity_name}
+                                        </span>
+                                      )}
+                                      {(agent as any).billing_origin_product && (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">
+                                          <span className="font-medium">Product:</span> {(agent as any).billing_origin_product}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                   {endpointUrl && (
                                     <div className="mt-3">
                                       <a href={endpointUrl} target="_blank" rel="noopener noreferrer"

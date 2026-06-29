@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AreaChart,
@@ -290,6 +291,29 @@ function AppHostingComparison({
   );
 }
 
+function InfoTooltip({ text }: { text: string }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <span
+      className="ml-1.5 inline-flex cursor-help"
+      onMouseEnter={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseMove={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setPos(null)}
+    >
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-500">i</span>
+      {pos && createPortal(
+        <div
+          className="pointer-events-none fixed z-[9999] w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal leading-relaxed text-white shadow-lg"
+          style={{ top: pos.y - 12, transform: "translateY(-100%)", left: Math.min(pos.x + 14, window.innerWidth - 296) }}
+        >
+          {text}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+}
+
 export function AppsCostCenter({ data: initialData, isLoading: initialLoading, host, startDate, endDate, dateRange, enableHostingComparison, workspaceIds, workspaceNameMap }: AppsCostCenterProps) {
   const MINIMIZE_KEY = "cost-obs-minimize-apps-info";
 
@@ -309,6 +333,9 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const [appsPage, setAppsPage] = useState(1);
   const APPS_PAGE_SIZE = 40;
   const [artifactTypeFilter, setArtifactTypeFilter] = useState<string | null>(null);
+  const [artifactAppFilter, setArtifactAppFilter] = useState<string | null>(null);
+  const [artifactAppFilterOpen, setArtifactAppFilterOpen] = useState(false);
+  const [artifactAppFilterSearch, setArtifactAppFilterSearch] = useState("");
   const [artifactSearch, setArtifactSearch] = useState("");
   const [artifactPage, setArtifactPage] = useState(1);
   const artifactsPerPage = 10;
@@ -329,6 +356,18 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [wsFilterOpen]);
+
+  // Close artifact app filter dropdown on outside click
+  useEffect(() => {
+    if (!artifactAppFilterOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-artifact-app-dropdown]")) {
+        setArtifactAppFilterOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [artifactAppFilterOpen]);
 
   const handleToggleWorkspace = useCallback((ws: string) => {
     setSelectedWorkspaces(prev =>
@@ -382,13 +421,12 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
     return map;
   }, [data?.apps, data?.timeseries]);
 
-  // Resolve workspace names: prefer backend name, then billing data map, then raw ID
+  // Resolve workspace names: prefer billing-wide name map (most complete), then backend name, then raw ID
   const resolveWsName = useCallback((wsId: string) => {
-    // Check backend workspace objects first
+    if (workspaceNameMap?.[wsId]) return workspaceNameMap[wsId];
     const backendWs = data?.workspaces?.find(w => w.id === wsId);
     if (backendWs?.name && backendWs.name !== wsId) return backendWs.name;
-    // Fall back to billing data name map
-    return workspaceNameMap?.[wsId] || wsId;
+    return wsId;
   }, [data?.workspaces, workspaceNameMap]);
 
   // Available workspaces for filtering (resolved to names)
@@ -396,7 +434,8 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
     if (!data?.workspaces) return [];
     return data.workspaces.map(ws => ({
       id: ws.id,
-      name: (ws.name && ws.name !== ws.id) ? ws.name : (workspaceNameMap?.[ws.id] || ws.id),
+      // prefer billing-wide name map (most complete), then backend-resolved name, then ID
+      name: workspaceNameMap?.[ws.id] || (ws.name !== ws.id ? ws.name : null) || ws.id,
     })).sort((a, b) => a.name.localeCompare(b.name));
   }, [data?.workspaces, workspaceNameMap]);
 
@@ -640,7 +679,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Active Apps</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.avg_daily_apps ?? summary.app_count)}</p>
-              <p className="mt-1 text-xs text-gray-500">across {summary.workspace_count} workspaces</p>
+              <p className="mt-1 text-xs text-gray-500">avg. over {summary.workspace_count} workspaces</p>
               {startDate && endDate && <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>}
             </div>
           </div>
@@ -684,7 +723,10 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
         {/* App Status Breakdown — Pie Chart */}
         {pieData.length > 0 && (
           <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">App Status Breakdown</h3>
+            <h3 className="mb-4 flex items-center text-lg font-semibold text-gray-900">
+              App Status Breakdown
+              <InfoTooltip text="Active = apps with compute usage in the last 7 days of the selected range (cumulative count). The Active Apps KPI card above shows the daily average — fewer apps run every single day than appear active over any 7-day window, so the two numbers will differ." />
+            </h3>
             <div className="flex flex-col items-center gap-6 md:flex-row md:items-start">
               <ResponsiveContainer width="100%" height={250} className="max-w-xs">
                 <PieChart>
@@ -1119,12 +1161,16 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
         )}
       </div>
 
-      {/* Connected Artifacts */}
+      {/* Connected Resources & Artifacts */}
       {data?.connected_artifacts && data.connected_artifacts.length > 0 && (() => {
         const artifactTypes = [...new Set(data.connected_artifacts.map((a: AppsConnectedArtifact) => a.artifact_type))].filter((t: string) => t && t !== 'UNKNOWN' && t !== 'Unknown').sort();
+        const allAppNames = [...new Set(data.connected_artifacts.map((a: AppsConnectedArtifact) => a.app_name).filter(Boolean))].sort() as string[];
         let filteredArtifacts = artifactTypeFilter
           ? data.connected_artifacts.filter((a: AppsConnectedArtifact) => a.artifact_type === artifactTypeFilter)
           : data.connected_artifacts;
+        if (artifactAppFilter) {
+          filteredArtifacts = filteredArtifacts.filter((a: AppsConnectedArtifact) => a.app_name === artifactAppFilter);
+        }
         if (artifactSearch) {
           const q = artifactSearch.toLowerCase();
           filteredArtifacts = filteredArtifacts.filter((a: AppsConnectedArtifact) =>
@@ -1134,17 +1180,18 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             a.artifact_description?.toLowerCase().includes(q)
           );
         }
+        const filteredAppNames = allAppNames.filter(n => !artifactAppFilterSearch || n.toLowerCase().includes(artifactAppFilterSearch.toLowerCase()));
         const totalArtifactPages = Math.ceil(filteredArtifacts.length / artifactsPerPage);
         const safePage = Math.min(artifactPage, totalArtifactPages || 1);
         const paginatedArtifacts = filteredArtifacts.slice((safePage - 1) * artifactsPerPage, safePage * artifactsPerPage);
 
         return (
           <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Connected Artifacts</h3>
-            <p className="mb-3 text-xs text-gray-500">Model serving endpoints, SQL warehouses, and other Databricks resources used by deployed apps.</p>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">Connected Resources &amp; Artifacts</h3>
+            <p className="mb-3 text-xs text-gray-500">Model serving endpoints, SQL warehouses, Lakebase databases, and other Databricks resources used by deployed apps.</p>
 
-            {/* Filter buttons */}
-            <div className="mb-4 flex flex-wrap gap-2">
+            {/* Type filter chips + App filter dropdown */}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <button
                 onClick={() => { setArtifactTypeFilter(null); setArtifactPage(1); }}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
@@ -1170,6 +1217,56 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   </button>
                 );
               })}
+
+              {/* App filter dropdown */}
+              <div className="relative ml-auto" data-artifact-app-dropdown>
+                <button
+                  onClick={() => { setArtifactAppFilterOpen(v => !v); setArtifactAppFilterSearch(""); }}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    artifactAppFilter ? 'text-white border-transparent' : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                  }`}
+                  style={artifactAppFilter ? { backgroundColor: '#FF3621', borderColor: '#FF3621' } : undefined}
+                >
+                  {artifactAppFilter ? artifactAppFilter : 'Filter by app'}
+                  <svg className={`h-3 w-3 transition-transform ${artifactAppFilterOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {artifactAppFilterOpen && (
+                  <div className="absolute right-0 top-full z-[9999] mt-1 w-64 rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <div className="p-2">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={artifactAppFilterSearch}
+                        onChange={e => setArtifactAppFilterSearch(e.target.value)}
+                        placeholder="Search apps..."
+                        className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                      />
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      <button
+                        onClick={() => { setArtifactAppFilter(null); setArtifactAppFilterOpen(false); setArtifactPage(1); }}
+                        className={`w-full px-3 py-2 text-left text-xs transition-colors ${!artifactAppFilter ? 'bg-orange-50 font-medium text-[#FF3621]' : 'text-gray-700 hover:bg-gray-50'}`}
+                      >
+                        All apps
+                      </button>
+                      {filteredAppNames.map(name => (
+                        <button
+                          key={name}
+                          onClick={() => { setArtifactAppFilter(name); setArtifactAppFilterOpen(false); setArtifactPage(1); }}
+                          className={`w-full truncate px-3 py-2 text-left text-xs transition-colors ${artifactAppFilter === name ? 'bg-orange-50 font-medium text-[#FF3621]' : 'text-gray-700 hover:bg-gray-50'}`}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                      {filteredAppNames.length === 0 && (
+                        <p className="px-3 py-2 text-xs text-gray-400">No apps found</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Search */}
@@ -1248,6 +1345,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                             artifact.artifact_type === 'SECRET' ? 'bg-yellow-100 text-yellow-700' :
                             artifact.artifact_type === 'JOB' ? 'bg-green-100 text-green-700' :
                             artifact.artifact_type === 'SERVICE_PRINCIPAL' ? 'bg-orange-100 text-orange-700' :
+                            artifact.artifact_type === 'LAKEBASE' ? 'bg-cyan-50 text-cyan-700' :
                             'bg-gray-100 text-gray-700'
                           }`}>
                             {displayType.replace(/_/g, ' ')}

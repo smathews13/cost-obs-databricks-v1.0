@@ -14,6 +14,7 @@ from datetime import date, timedelta
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -1016,21 +1017,36 @@ app.include_router(warehouse_health.router, prefix="/api/sql/warehouse-health", 
 app.include_router(debug.router, prefix="/api/debug", tags=["debug"])
 
 # Serve static files in production.
-# index.html gets Cache-Control: no-cache so browsers always fetch the latest
-# after a deploy (prevents "Failed to fetch dynamically imported module" errors
-# when Vite content-hashed chunk filenames change between deploys).
-# JS/CSS assets under /assets/ are served as-is — their filenames are content-
-# hashed so they can be cached indefinitely by the browser.
+# index.html must never be cached — it embeds content-hashed JS/CSS bundle
+# filenames that change on every deploy. Browsers that cache the old index.html
+# will try to load bundle files that no longer exist, breaking the app.
+#
+# BaseHTTPMiddleware doesn't reliably intercept responses from mounted StaticFiles
+# sub-apps in all Starlette versions. Instead, explicit FileResponse routes are
+# used for index.html so Cache-Control: no-cache is guaranteed.
+# Content-hashed assets under /assets/ are served by StaticFiles and CAN be
+# cached indefinitely (their filenames change when content changes).
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 if os.path.exists(static_dir):
+    _index_path = os.path.join(static_dir, "index.html")
+    _no_cache = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
-    class NoCacheHTMLMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request: Request, call_next):
-            response = await call_next(request)
-            content_type = response.headers.get("content-type", "")
-            if "text/html" in content_type:
-                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            return response
+    # Hashed assets — content-addressed, safe to cache indefinitely
+    _assets_dir = os.path.join(static_dir, "assets")
+    if os.path.exists(_assets_dir):
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
 
-    app.add_middleware(NoCacheHTMLMiddleware)
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    # SPA catch-all: serve real static files (svg, png, css) directly;
+    # everything else returns index.html with no-cache so deploys are
+    # picked up on the next normal page load without a hard refresh.
+    @app.get("/", include_in_schema=False)
+    async def _serve_root():
+        return FileResponse(_index_path, headers=_no_cache)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _serve_spa(full_path: str):
+        static_root = os.path.realpath(static_dir)
+        candidate = os.path.realpath(os.path.join(static_dir, full_path))
+        if candidate.startswith(static_root + os.sep) and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(_index_path, headers=_no_cache)

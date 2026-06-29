@@ -677,7 +677,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Active Apps</p>
+              <p className="text-sm font-medium text-gray-500 flex items-center gap-1">Active Apps<InfoTooltip text="An app is counted as active on any day it generates compute usage. This shows the daily average — how many apps run on a typical day in the selected period. Apps that are deployed but idle (no compute) are not counted." /></p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.avg_daily_apps ?? summary.app_count)}</p>
               <p className="mt-1 text-xs text-gray-500">avg. over {summary.workspace_count} workspaces</p>
               {startDate && endDate && <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>}
@@ -1187,7 +1187,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
 
         return (
           <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Connected Resources &amp; Artifacts</h3>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">Connected Resources</h3>
             <p className="mb-3 text-xs text-gray-500">Model serving endpoints, SQL warehouses, Lakebase databases, and other Databricks resources used by deployed apps.</p>
 
             {/* Type filter chips + App filter dropdown */}
@@ -1279,7 +1279,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                 type="text"
                 value={artifactSearch}
                 onChange={(e) => { setArtifactSearch(e.target.value); setArtifactPage(1); }}
-                placeholder="Search artifacts..."
+                placeholder="Search resources..."
                 className="w-full rounded-md border border-gray-300 py-2 pl-10 pr-3 text-sm text-gray-700 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
               />
             </div>
@@ -1288,9 +1288,9 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               <table className="min-w-full">
                 <thead className="bg-gray-50">
                   <tr className="border-b border-gray-200">
-                    <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">App</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Artifact Name</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Artifact Type</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Resource</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Resource Name</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Resource Type</th>
                     <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Details</th>
                   </tr>
                 </thead>

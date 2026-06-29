@@ -12,6 +12,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import type { PieLabelRenderProps, LegendPayload } from "recharts";
 import type { AIMLDashboardBundle } from "@/types/billing";
 import { KPITrendModal } from "./KPITrendModal";
 import { formatIdentity } from "@/utils/identity";
@@ -70,6 +71,7 @@ function getClusterUrl(host: string | null | undefined, clusterId: string, works
 export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, workspaceIds, workspaceNameMap }: AIMLCostCenterProps) {
   const [endpointsPage, setEndpointsPage] = useState(1);
   const [modelsPage, setModelsPage] = useState(1);
+  const [modelsTypeFilter, setModelsTypeFilter] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<import("@/types/billing").AIMLAgentBrick | null>(null);
   const [showHistoricalAgents, setShowHistoricalAgents] = useState(false);
   const [agentTypeFilter, setAgentTypeFilter] = useState<string>("all");
@@ -152,7 +154,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
       }
     }
     return map;
-  }, [data?.categories, data?.timeseries]);
+  }, [data]);
 
   const pieData = useMemo(() => {
     if (!data?.categories?.categories) return [];
@@ -165,7 +167,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
         fill: categoryColorMap[name] || FALLBACK_COLORS[0],
       };
     });
-  }, [data?.categories, categoryColorMap]);
+  }, [data, categoryColorMap]);
 
   const endpointsData = useMemo(() => {
     if (!data?.endpoints?.endpoints) return [];
@@ -179,9 +181,14 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
       byEndpoint[e.endpoint_name].total_dbus += e.total_dbus;
     }
     return Object.values(byEndpoint).sort((a, b) => b.total_spend - a.total_spend);
-  }, [data?.endpoints]);
+  }, [data]);
 
-  useEffect(() => { setEndpointsPage(1); }, [endpointsData.length]);
+  useEffect(() => {
+    if (endpointsPage !== 1) {
+      setEndpointsPage(1);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpointsData.length]);
 
   if (isLoading) {
     return (
@@ -327,7 +334,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Active Endpoints</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(summary.endpoint_count || 0)}</p>
-              <p className="mt-1 text-xs text-gray-500">across {summary.workspace_count || 0} workspaces</p>
+              <p className="mt-1 text-xs text-gray-500">avg. across {summary.workspace_count || 0} workspaces</p>
               <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
@@ -356,7 +363,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
 
       {selectedKPI && startDate && endDate && (
         <KPITrendModal
-          kpi={selectedKPI.kpi as any}
+          kpi={selectedKPI.kpi}
           kpiLabel={selectedKPI.label}
           isOpen={!!selectedKPI}
           onClose={() => setSelectedKPI(null)}
@@ -416,7 +423,10 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   outerRadius={90}
                   paddingAngle={2}
                   dataKey="value"
-                  label={({ percentage }: any) => percentage >= 5 ? `${Math.round(percentage)}%` : ''}
+                  label={(props: PieLabelRenderProps) => {
+                    const pct = (props as PieLabelRenderProps & { percentage?: number }).percentage ?? 0;
+                    return pct >= 5 ? `${Math.round(pct)}%` : '';
+                  }}
                   labelLine={false}
                 >
                   {pieData.map((entry, index) => (
@@ -424,7 +434,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   ))}
                 </Pie>
                 <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                <Legend wrapperStyle={{ fontSize: 12 }} formatter={(value, entry: any) => `${value} (${Math.round(entry.payload?.percentage ?? 0)}%)`} />
+                <Legend wrapperStyle={{ fontSize: 12 }} formatter={(value, entry: LegendPayload & { payload?: { percentage?: number } }) => `${value} (${Math.round(entry.payload?.percentage ?? 0)}%)`} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -523,63 +533,79 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
           </div>
           {data.models?.models && data.models.models.length > 0 ? (
             <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                        Model
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                        Type
-                      </th>
-                      <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-                        Spend
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
-                    {data.models.models.slice((modelsPage - 1) * PAGE_SIZE, modelsPage * PAGE_SIZE).map((model, idx) => {
-                      const TYPE_LABELS: Record<string, string> = {
-                        "Foundation Model API": "FMAPI Call",
-                      };
-                      const typeColors: Record<string, string> = {
-                        "Feature Store": "bg-teal-50 text-teal-700",
-                        "Model Training": "bg-blue-50 text-blue-700",
-                        "Foundation Model API": "bg-amber-50 text-amber-700",
-                      };
-                      const colorClass = typeColors[model.model_type] || "bg-gray-50 text-gray-700";
-                      const typeLabel = TYPE_LABELS[model.model_type] || model.model_type;
-                      return (
-                        <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                          <td className="px-3 py-2 text-sm font-medium text-gray-900 truncate max-w-45" title={model.model_name}>
-                            {model.model_name}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm">
-                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${colorClass}`}>
-                              {typeLabel}
-                            </span>
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
-                            {formatCurrency(model.total_spend)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {(data.models?.models?.length || 0) > PAGE_SIZE && (
-                <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
-                  <p className="text-xs text-gray-500">
-                    {(modelsPage - 1) * PAGE_SIZE + 1}–{Math.min(modelsPage * PAGE_SIZE, data.models?.models?.length || 0)} of {data.models?.models?.length || 0}
-                  </p>
-                  <div className="flex gap-1">
-                    <button onClick={() => setModelsPage(p => Math.max(1, p - 1))} disabled={modelsPage === 1} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Prev</button>
-                    <button onClick={() => setModelsPage(p => Math.min(Math.ceil((data.models?.models?.length || 0) / PAGE_SIZE), p + 1))} disabled={modelsPage >= Math.ceil((data.models?.models?.length || 0) / PAGE_SIZE)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
-                  </div>
-                </div>
-              )}
+              {(() => {
+                const TYPE_LABELS: Record<string, string> = { "Foundation Model API": "FMAPI Call" };
+                const typeColors: Record<string, string> = {
+                  "Feature Store": "bg-teal-50 text-teal-700",
+                  "Model Training": "bg-blue-50 text-blue-700",
+                  "Foundation Model API": "bg-amber-50 text-amber-700",
+                };
+                const distinctTypes = Array.from(new Set(data.models.models.map(m => m.model_type))).filter(Boolean);
+                const filteredModels = modelsTypeFilter
+                  ? data.models.models.filter(m => m.model_type === modelsTypeFilter)
+                  : data.models.models;
+                const pageModels = filteredModels.slice((modelsPage - 1) * PAGE_SIZE, modelsPage * PAGE_SIZE);
+                return (
+                  <>
+                    {distinctTypes.length > 1 && (
+                      <div className="mb-3 flex flex-wrap gap-1.5">
+                        <button
+                          onClick={() => { setModelsTypeFilter(null); setModelsPage(1); }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${modelsTypeFilter === null ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
+                        >
+                          All
+                        </button>
+                        {distinctTypes.map(t => (
+                          <button
+                            key={t}
+                            onClick={() => { setModelsTypeFilter(t); setModelsPage(1); }}
+                            className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${modelsTypeFilter === t ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
+                          >
+                            {TYPE_LABELS[t] || t}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Model</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Spend</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 bg-white">
+                          {pageModels.map((model, idx) => {
+                            const colorClass = typeColors[model.model_type] || "bg-gray-50 text-gray-700";
+                            const typeLabel = TYPE_LABELS[model.model_type] || model.model_type;
+                            return (
+                              <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                                <td className="px-3 py-2 text-sm font-medium text-gray-900 truncate max-w-45" title={model.model_name}>{model.model_name}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-sm">
+                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${colorClass}`}>{typeLabel}</span>
+                                </td>
+                                <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">{formatCurrency(model.total_spend)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredModels.length > PAGE_SIZE && (
+                      <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
+                        <p className="text-xs text-gray-500">
+                          {(modelsPage - 1) * PAGE_SIZE + 1}–{Math.min(modelsPage * PAGE_SIZE, filteredModels.length)} of {filteredModels.length}
+                        </p>
+                        <div className="flex gap-1">
+                          <button onClick={() => setModelsPage(p => Math.max(1, p - 1))} disabled={modelsPage === 1} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Prev</button>
+                          <button onClick={() => setModelsPage(p => Math.min(Math.ceil(filteredModels.length / PAGE_SIZE), p + 1))} disabled={modelsPage >= Math.ceil(filteredModels.length / PAGE_SIZE)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </>
           ) : (
             <div className="flex h-32 items-center justify-center text-gray-500">No model data available</div>
@@ -692,7 +718,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     </thead>
                     <tbody className="divide-y divide-gray-200 bg-white">
                       {paginatedMlClusters.map((cluster, idx) => {
-                        const clusterUrl = getClusterUrl(host, cluster.cluster_id, (cluster as any).workspace_id);
+                        const clusterUrl = getClusterUrl(host, cluster.cluster_id, cluster.workspace_id ?? null);
                         return (
                           <tr key={idx} className={idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"}>
                             <td className="px-4 py-4 text-sm">
@@ -758,10 +784,10 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
           const allAgents = data.agent_bricks?.agents || [];
           const isHistoricalAgent = (a: typeof allAgents[0]) => a.agent_name === "Unknown" || a.agent_name === a.endpoint_id;
           const historicalAgentCount = allAgents.filter(isHistoricalAgent).length;
-          const agentTypes = Array.from(new Set(allAgents.map(a => (a as any).agent_type || "Agent")));
+          const agentTypes = Array.from(new Set(allAgents.map(a => a.agent_type || "Agent")));
           const filteredAgents = allAgents
             .filter(a => showHistoricalAgents || !isHistoricalAgent(a))
-            .filter(a => agentTypeFilter === "all" || ((a as any).agent_type || "Agent") === agentTypeFilter)
+            .filter(a => agentTypeFilter === "all" || (a.agent_type || "Agent") === agentTypeFilter)
             .filter(a => !agentSearch || a.agent_name.toLowerCase().includes(agentSearch.toLowerCase()) || (a.endpoint_id || "").toLowerCase().includes(agentSearch.toLowerCase()));
           const agentTotalPages = Math.ceil(filteredAgents.length / PAGE_SIZE);
           const agentStart = (agentsPage - 1) * PAGE_SIZE;
@@ -808,7 +834,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       style={agentTypeFilter === "all" ? { backgroundColor: '#FF3621' } : undefined}
                     >All ({allAgents.filter(a => showHistoricalAgents || !isHistoricalAgent(a)).length})</button>
                     {agentTypes.map(t => {
-                      const count = allAgents.filter(a => ((a as any).agent_type || "Agent") === t && (showHistoricalAgents || !isHistoricalAgent(a))).length;
+                      const count = allAgents.filter(a => (a.agent_type || "Agent") === t && (showHistoricalAgents || !isHistoricalAgent(a))).length;
                       return (
                         <button
                           key={t}
@@ -854,15 +880,15 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                                     {isHistoricalAgent(agent) && (
                                       <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">Historical</span>
                                     )}
-                                    {(agent as any).served_entity_name && (
-                                      <span className="max-w-[200px] truncate text-xs text-gray-500">{(agent as any).served_entity_name}</span>
+                                    {agent.served_entity_name && (
+                                      <span className="max-w-[200px] truncate text-xs text-gray-500">{agent.served_entity_name}</span>
                                     )}
                                   </div>
                                 </div>
                               </td>
                               <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
                                 {(() => {
-                                  const t = (agent as any).agent_type || "Agent";
+                                  const t = agent.agent_type || "Agent";
                                   const cls: Record<string, string> = {
                                     "Knowledge Assistant": "bg-teal-50 text-teal-700",
                                     "Supervisor Agent": "bg-amber-50 text-amber-700",
@@ -915,16 +941,16 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                                       <p className="text-lg font-semibold text-gray-900">{agent.workspace_count}</p>
                                     </div>
                                   </div>
-                                  {((agent as any).served_entity_name || (agent as any).billing_origin_product) && (
+                                  {(agent.served_entity_name || agent.billing_origin_product) && (
                                     <div className="mt-3 flex flex-wrap gap-2">
-                                      {(agent as any).served_entity_name && (
+                                      {agent.served_entity_name && (
                                         <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">
-                                          <span className="font-medium">Model:</span> {(agent as any).served_entity_name}
+                                          <span className="font-medium">Model:</span> {agent.served_entity_name}
                                         </span>
                                       )}
-                                      {(agent as any).billing_origin_product && (
+                                      {agent.billing_origin_product && (
                                         <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">
-                                          <span className="font-medium">Product:</span> {(agent as any).billing_origin_product}
+                                          <span className="font-medium">Product:</span> {agent.billing_origin_product}
                                         </span>
                                       )}
                                     </div>

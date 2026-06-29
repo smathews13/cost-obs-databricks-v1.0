@@ -505,7 +505,7 @@ WHERE 1=0
 """
 
 AIML_AGENT_BRICKS_ENRICHED = """
-WITH serving_endpoints AS (
+WITH serving_endpoints_by_id AS (
   SELECT
     endpoint_id as serving_endpoint_id,
     MAX(endpoint_name) as endpoint_name,
@@ -513,10 +513,25 @@ WITH serving_endpoints AS (
   FROM system.serving.served_entities
   WHERE endpoint_id IS NOT NULL
   GROUP BY endpoint_id
+),
+serving_endpoints_by_name AS (
+  -- Fallback join path: KA agents may have null endpoint_id in billing metadata
+  -- but always have endpoint_name. This ensures served_entity_name is reachable.
+  SELECT
+    endpoint_name as serving_endpoint_name,
+    MAX(served_entity_name) as served_entity_name
+  FROM system.serving.served_entities
+  WHERE endpoint_name IS NOT NULL
+  GROUP BY endpoint_name
 )
 SELECT
   COALESCE(
-    se.endpoint_name,
+    -- Prefer the human-readable served entity name (e.g. KA display name, model name)
+    -- over the auto-generated UUID endpoint name (ka-xxxxx-endpoint).
+    -- Try both join paths since endpoint_id can be null for some AGENT_BRICKS rows.
+    NULLIF(sei.served_entity_name, ''),
+    NULLIF(sen.served_entity_name, ''),
+    sei.endpoint_name,
     u.usage_metadata.endpoint_name,
     u.usage_metadata.endpoint_id,
     'Unknown'
@@ -524,19 +539,20 @@ SELECT
   MAX(u.usage_metadata.endpoint_id) as endpoint_id,
   MAX(u.workspace_id) as workspace_id,
   MAX(u.billing_origin_product) as billing_origin_product,
-  MAX(se.served_entity_name) as served_entity_name,
+  MAX(COALESCE(sei.served_entity_name, sen.served_entity_name)) as served_entity_name,
+  MAX(COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name)) as endpoint_name,
   MAX(CASE
     WHEN u.billing_origin_product = 'SUPERVISOR_AGENT'
-      OR LOWER(COALESCE(se.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%supervisor%'
-      OR LOWER(COALESCE(se.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%multi-agent%'
-      OR LOWER(COALESCE(se.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%orchestrator%'
+      OR LOWER(COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%supervisor%'
+      OR LOWER(COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%multi-agent%'
+      OR LOWER(COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%orchestrator%'
       THEN 'Supervisor Agent'
     WHEN u.billing_origin_product = 'KNOWLEDGE_AGENT'
       OR (u.billing_origin_product = 'AGENT_BRICKS'
           AND u.product_features.agent_bricks.problem_type = 'AGENT_BRICKS_KNOWLEDGE_ASSISTANT')
-      OR COALESCE(se.endpoint_name, u.usage_metadata.endpoint_name, '') LIKE 'ka-%'
-      OR COALESCE(se.endpoint_name, u.usage_metadata.endpoint_name, '') LIKE 'kie-%'
-      OR LOWER(COALESCE(se.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%knowledge%assistant%'
+      OR COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name, '') LIKE 'ka-%'
+      OR COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name, '') LIKE 'kie-%'
+      OR LOWER(COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%knowledge%assistant%'
       THEN 'Knowledge Assistant'
     WHEN u.billing_origin_product = 'AGENT_BRICKS'
       AND u.product_features.agent_bricks.problem_type = 'AGENT_BRICKS_AI_CLASSIFY'
@@ -544,7 +560,7 @@ SELECT
     WHEN u.billing_origin_product = 'AGENT_BRICKS'
       AND u.product_features.agent_bricks.problem_type = 'AGENT_BRICKS_AI_EXTRACT'
       THEN 'AI Extract'
-    WHEN LOWER(COALESCE(se.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%genie%'
+    WHEN LOWER(COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name, '')) LIKE '%genie%'
       THEN 'Genie Space'
     ELSE 'Agent'
   END) as agent_type,
@@ -560,12 +576,15 @@ LEFT JOIN system.billing.list_prices p
   ON u.sku_name = p.sku_name
   AND u.cloud = p.cloud
   AND p.price_end_time IS NULL
-LEFT JOIN serving_endpoints se
-  ON u.usage_metadata.endpoint_id = se.serving_endpoint_id
+LEFT JOIN serving_endpoints_by_id sei
+  ON u.usage_metadata.endpoint_id = sei.serving_endpoint_id
+LEFT JOIN serving_endpoints_by_name sen
+  ON sei.serving_endpoint_id IS NULL
+  AND u.usage_metadata.endpoint_name = sen.serving_endpoint_name
 WHERE u.usage_date BETWEEN :start_date AND :end_date
   AND u.usage_quantity > 0
   AND u.billing_origin_product IN ('AGENT_BRICKS', 'SUPERVISOR_AGENT', 'KNOWLEDGE_AGENT')
-GROUP BY COALESCE(se.endpoint_name, u.usage_metadata.endpoint_name, u.usage_metadata.endpoint_id, 'Unknown')
+GROUP BY COALESCE(sei.endpoint_name, u.usage_metadata.endpoint_name, u.usage_metadata.endpoint_id, 'Unknown')
 ORDER BY total_spend DESC
 """
 

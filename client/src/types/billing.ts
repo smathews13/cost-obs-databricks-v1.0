@@ -398,6 +398,7 @@ export interface AIMLCluster {
   total_dbus: number;
   total_spend: number;
   days_active: number;
+  workspace_id?: string | null;
 }
 
 export interface AIMLClustersResponse {
@@ -416,6 +417,8 @@ export interface AIMLAgentBrick {
   first_seen: string | null;
   last_seen: string | null;
   avg_daily_spend: number;
+  served_entity_name?: string | null;
+  billing_origin_product?: string | null;
 }
 
 export interface AIMLAgentBricksResponse {

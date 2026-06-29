@@ -118,7 +118,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
         <Card
           title="Daily Spend"
           value={formatCurrency(data?.avg_daily_spend ?? 0)}
-          subtitle={data?.workspace_count != null ? `across ${data.workspace_count} workspaces` : "daily average"}
+          subtitle={data?.workspace_count != null ? `avg. across ${data.workspace_count} workspaces` : "daily average"}
           isLoading={isLoading}
           onClick={() => handleCardClick("avg_daily_spend", "Average Daily Spend")}
           icon={

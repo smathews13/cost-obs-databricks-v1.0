@@ -749,9 +749,14 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
             key=lambda x: x["date"],
         )
 
-        # Use stale resources; refresh in background daemon thread
-        resources_by_app = _app_resources_cache
-        threading.Thread(target=_get_app_resources, daemon=True, name="apps-resources-bg").start()
+        # First call: block until resources are populated so the initial page load
+        # shows Connected Resources immediately (not an empty table).
+        # Subsequent calls: return the stale cache and refresh in background.
+        if not _app_resources_cache:
+            resources_by_app = _get_app_resources()
+        else:
+            resources_by_app = _app_resources_cache
+            threading.Thread(target=_get_app_resources, daemon=True, name="apps-resources-bg").start()
         connected_artifacts: list[dict[str, Any]] = []
         for uid, entry in registry.items():
             app_name = entry.get("name", uid)

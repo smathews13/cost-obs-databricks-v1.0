@@ -118,14 +118,18 @@ def _config_table(name: str) -> str:
 
 
 _ensured_tables: set[str] = set()
+_ensure_lock = __import__("threading").Lock()
 
 
 def _ensure_config_table(ddl: str) -> None:
     if ddl in _ensured_tables:
         return
-    from server.db import execute_write
-    execute_write(ddl, None)
-    _ensured_tables.add(ddl)
+    with _ensure_lock:
+        if ddl in _ensured_tables:
+            return
+        from server.db import execute_write
+        execute_write(ddl, None)
+        _ensured_tables.add(ddl)
 
 
 def _ensure_contract_table() -> None:
@@ -281,7 +285,12 @@ def _load_connections_from_table() -> list[dict]:
     from server.db import execute_query
     _ensure_connections_table()
     table = _config_table("app_cloud_connections")
-    rows = execute_query(f"SELECT * FROM {table} ORDER BY created_at", None, no_cache=True)
+    try:
+        rows = execute_query(f"SELECT * FROM {table} ORDER BY created_at", None, no_cache=True)
+    except Exception as e:
+        if "TABLE_OR_VIEW_NOT_FOUND" in str(e):
+            _ensured_tables.clear()
+        raise
     result = []
     for r in rows:
         conn: dict = {

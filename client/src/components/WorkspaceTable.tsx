@@ -95,7 +95,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
           Spend by Workspace
         </h3>
         <div className="flex items-center gap-3">
-          {historicalCount > 0 && (
+          {historicalCount > 0 && !allHistorical && (
             <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
               <input
                 type="checkbox"

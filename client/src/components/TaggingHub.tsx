@@ -59,6 +59,9 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [showHistoricalUntagged, setShowHistoricalUntagged] = useState(false);
+  const daysDiff = startDate && endDate
+    ? Math.max(1, Math.abs(Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24))) + 1)
+    : 30;
 
   // Tag key filter state (for Spend by Key chart)
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
@@ -402,7 +405,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Tagged Spend</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.tagged_spend)}</p>
-              <p className="text-sm text-gray-500">{(summary.tagged_percentage ?? 0).toFixed(1)}% of total</p>
+              <p className="text-sm text-gray-500">{(summary.tagged_percentage ?? 0).toFixed(1)}% of {daysDiff}-day spend</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
@@ -422,7 +425,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Untagged Spend</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.untagged_spend)}</p>
-              <p className="text-sm text-gray-500">{(summary.untagged_percentage ?? 0).toFixed(1)}% of total</p>
+              <p className="text-sm text-gray-500">{(summary.untagged_percentage ?? 0).toFixed(1)}% of {daysDiff}-day spend</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
@@ -444,7 +447,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               <p className="text-2xl font-semibold text-gray-900">
                 {formatCurrency((summary.tagged_spend ?? 0) / Math.max(data?.cost_by_tag?.tags?.length ?? 1, 1))}
               </p>
-              <p className="text-sm text-gray-500">{(summary.tagged_percentage ?? 0).toFixed(1)}% tag coverage</p>
+              <p className="text-sm text-gray-500">{data?.cost_by_tag?.tags?.length ?? 0} tags over {daysDiff} days</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>

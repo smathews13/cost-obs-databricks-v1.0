@@ -526,7 +526,13 @@ async def get_pipeline_objects(
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 
     try:
-        results = _enrich_pipeline_results(await asyncio.to_thread(execute_query, _inject_ws_filter(PIPELINE_OBJECTS, ws_clause), params))
+        raw = await asyncio.to_thread(execute_query, _inject_ws_filter(PIPELINE_OBJECTS, ws_clause), params)
+        raw_copy = [dict(r) for r in (raw or [])]
+        try:
+            results = await asyncio.wait_for(asyncio.to_thread(_enrich_pipeline_results, raw_copy), timeout=20.0)
+        except asyncio.TimeoutError:
+            logger.warning("Pipeline name enrichment timed out; serving raw results")
+            results = raw
 
         objects = []
         total_spend = 0

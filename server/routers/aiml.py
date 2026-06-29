@@ -324,6 +324,9 @@ model_usage AS (
         THEN CONCAT('Job #', CAST(u.usage_metadata.job_id AS STRING))
         ELSE NULL END,
       CAST(u.usage_metadata.cluster_id AS STRING),
+      CASE WHEN u.sku_name LIKE '%FEATURE%' THEN 'Feature Store Run'
+           WHEN u.sku_name LIKE '%TRAINING%' THEN 'Serverless Fine-tuning'
+           ELSE NULL END,
       'Unknown'
     ) as model_name
   FROM system.billing.usage u
@@ -379,6 +382,9 @@ WITH model_usage AS (
         THEN CONCAT('Job #', CAST(u.usage_metadata.job_id AS STRING))
         ELSE NULL END,
       CAST(u.usage_metadata.cluster_id AS STRING),
+      CASE WHEN u.sku_name LIKE '%FEATURE%' THEN 'Feature Store Run'
+           WHEN u.sku_name LIKE '%TRAINING%' THEN 'Serverless Fine-tuning'
+           ELSE NULL END,
       'Unknown'
     ) as model_name,
     CASE
@@ -1023,7 +1029,7 @@ def _compute_aiml_bundle(params: dict, id_list: list | None, ws_clause: str, dke
             days = max(len(ts_dates), 1)
             total_dbus = sum(float(r.get("total_dbus") or 0) for r in ts_raw)
             total_spend = sum(float(r.get("total_spend") or 0) for r in ts_raw)
-            endpoint_count = len(ep_raw)
+            endpoint_count = len({r.get("endpoint_name") for r in ep_raw if r.get("endpoint_name") and r.get("endpoint_name") != "UNKNOWN"})
             summary = {
                 "total_dbus": total_dbus,
                 "total_spend": total_spend,

@@ -1185,10 +1185,7 @@ export function CloudCostsView({
               <tr>
                 <td colSpan={2} className="px-3 py-3 text-sm font-medium text-gray-700">Total ({sortedClusters.length} clusters)</td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-bold text-gray-900">
-                  <span className="inline-flex items-center justify-end gap-1.5">
-                    {formatCurrency(data.total_estimated_cost)}
-                    <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
-                  </span>
+                  {formatCurrency(data.total_estimated_cost)}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-medium text-gray-700">{formatNumber(data.total_dbu_hours)}</td>
                 <td colSpan={2}></td>

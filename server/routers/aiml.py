@@ -320,6 +320,9 @@ model_usage AS (
     COALESCE(
       u.usage_metadata.endpoint_name,
       cn.cluster_name,
+      CASE WHEN u.usage_metadata.job_id IS NOT NULL
+        THEN CONCAT('Job #', CAST(u.usage_metadata.job_id AS STRING))
+        ELSE NULL END,
       CAST(u.usage_metadata.cluster_id AS STRING),
       'Unknown'
     ) as model_name
@@ -372,6 +375,9 @@ WITH model_usage AS (
     COALESCE(p.pricing.default, 0) as price_per_dbu,
     COALESCE(
       u.usage_metadata.endpoint_name,
+      CASE WHEN u.usage_metadata.job_id IS NOT NULL
+        THEN CONCAT('Job #', CAST(u.usage_metadata.job_id AS STRING))
+        ELSE NULL END,
       CAST(u.usage_metadata.cluster_id AS STRING),
       'Unknown'
     ) as model_name,

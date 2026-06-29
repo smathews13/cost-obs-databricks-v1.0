@@ -1419,7 +1419,7 @@ async def get_dashboard_bundle_fast(
         ]
 
     try:
-        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=45.0)
+        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=90.0)
 
         # Format responses
         response = {
@@ -2185,7 +2185,7 @@ async def get_kpis_bundle(
     parallel_queries.append(("user_count", lambda: execute_query(USER_COUNT_QUERY, params)))
 
     try:
-        query_results = await asyncio.to_thread(execute_queries_parallel, parallel_queries, timeout=45.0)
+        query_results = await asyncio.to_thread(execute_queries_parallel, parallel_queries, timeout=90.0)
     except Exception as e:
         logger.error("kpis-bundle query execution failed: %s", e)
         return {"kpis": {

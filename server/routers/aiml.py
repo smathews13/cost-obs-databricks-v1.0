@@ -998,7 +998,7 @@ def _compute_aiml_bundle(params: dict, id_list: list | None, ws_clause: str, dke
             ("agent_bricks", lambda: query_with_fallback(_ws(AIML_AGENT_BRICKS_ENRICHED), _ws(AIML_AGENT_BRICKS_FALLBACK), params, label="agent_bricks")),
         ]
 
-        results = execute_queries_parallel(queries, timeout=45.0)
+        results = execute_queries_parallel(queries, timeout=90.0)
 
         # Format summary
         summary_data = results.get("summary", [])

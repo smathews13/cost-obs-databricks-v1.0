@@ -471,7 +471,7 @@ async def get_users_groups_bundle(
         ("user_growth", lambda: execute_query(_ws(USERS_GROWTH), growth_date_params)),
     ]
     try:
-        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=45.0)
+        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=90.0)
     except Exception as e:
         logger.error("users dashboard-bundle failed: %s", e)
         return {

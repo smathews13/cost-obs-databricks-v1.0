@@ -452,7 +452,7 @@ async def get_origin_bundle(
             ("summary", _run_summary),
             ("timeseries", _run_timeseries),
             ("by_warehouse", _run_by_warehouse),
-        ], timeout=45.0)
+        ], timeout=90.0)
     except Exception as e:
         logger.error("query_origin bundle failed: %s", e)
         return {

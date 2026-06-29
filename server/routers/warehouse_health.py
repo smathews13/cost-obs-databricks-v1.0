@@ -197,7 +197,7 @@ def _run_health_queries() -> dict[str, Any]:
         ("idle", lambda: execute_query(_SQL_IDLE)),
         ("over_scaled", lambda: execute_query(_SQL_OVER_SCALED)),
         ("oversized", lambda: execute_query(_SQL_OVERSIZED)),
-    ], timeout=45.0)
+    ], timeout=90.0)
 
     recommendations: list[dict] = []
     seen_wids: set[str] = set()

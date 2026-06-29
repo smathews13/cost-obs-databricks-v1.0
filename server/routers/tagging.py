@@ -1004,7 +1004,7 @@ async def get_tagging_dashboard_bundle(
     ]
 
     try:
-        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=45.0)
+        results = await asyncio.to_thread(execute_queries_parallel, queries, timeout=90.0)
     except Exception as e:
         logger.error("tagging dashboard-bundle failed: %s", e)
         empty_untagged = {"items": [], "total_spend": 0, "count": 0}

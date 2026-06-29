@@ -117,9 +117,15 @@ def _config_table(name: str) -> str:
     return f"`{catalog}`.`{schema}`.`{name}`"
 
 
+_ensured_tables: set[str] = set()
+
+
 def _ensure_config_table(ddl: str) -> None:
+    if ddl in _ensured_tables:
+        return
     from server.db import execute_write
     execute_write(ddl, None)
+    _ensured_tables.add(ddl)
 
 
 def _ensure_contract_table() -> None:
@@ -273,6 +279,7 @@ class CloudConnectionCreate(BaseModel):
 
 def _load_connections_from_table() -> list[dict]:
     from server.db import execute_query
+    _ensure_connections_table()
     table = _config_table("app_cloud_connections")
     rows = execute_query(f"SELECT * FROM {table} ORDER BY created_at", None, no_cache=True)
     result = []

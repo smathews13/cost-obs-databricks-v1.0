@@ -994,8 +994,8 @@ async def get_tagging_dashboard_bundle(
     queries = [
         ("summary", lambda: execute_query(_ws(TAGGING_SUMMARY), params)),
         ("clusters", lambda: query_with_fallback(_ws(UNTAGGED_CLUSTERS_ENRICHED), _ws(UNTAGGED_CLUSTERS), params)),
-        ("jobs", lambda: query_with_fallback(_ws(UNTAGGED_JOBS_ENRICHED), _ws(UNTAGGED_JOBS), params)),
-        ("pipelines", lambda: query_with_fallback(_ws(UNTAGGED_PIPELINES_ENRICHED), _ws(UNTAGGED_PIPELINES), params)),
+        ("jobs", lambda: execute_query(_ws(UNTAGGED_JOBS), params)),
+        ("pipelines", lambda: execute_query(_ws(UNTAGGED_PIPELINES), params)),
         ("warehouses", lambda: query_with_fallback(_ws(UNTAGGED_WAREHOUSES_ENRICHED), _ws(UNTAGGED_WAREHOUSES), params)),
         ("endpoints", lambda: execute_query(_ws(UNTAGGED_ENDPOINTS), params)),
         ("cost_by_tag", lambda: execute_query(_ws(COST_BY_TAG), params)),

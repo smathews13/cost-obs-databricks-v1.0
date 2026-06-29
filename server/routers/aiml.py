@@ -1016,7 +1016,23 @@ def _compute_aiml_bundle(params: dict, id_list: list | None, ws_clause: str, dke
                 "avg_cost_per_endpoint": float(row.get("avg_cost_per_endpoint") or 0),
             }
         else:
-            summary = {"total_dbus": 0, "total_spend": 0, "workspace_count": 0, "endpoint_count": 0, "avg_cost_per_endpoint": 0}
+            # summary query timed out — compute totals from timeseries + endpoints results
+            ts_raw = results.get("timeseries") or []
+            ep_raw = results.get("endpoints") or []
+            ts_dates = {str(r.get("usage_date")) for r in ts_raw}
+            days = max(len(ts_dates), 1)
+            total_dbus = sum(float(r.get("total_dbus") or 0) for r in ts_raw)
+            total_spend = sum(float(r.get("total_spend") or 0) for r in ts_raw)
+            endpoint_count = len(ep_raw)
+            summary = {
+                "total_dbus": total_dbus,
+                "total_spend": total_spend,
+                "workspace_count": 0,
+                "endpoint_count": endpoint_count,
+                "days_in_range": days,
+                "avg_daily_spend": total_spend / days if days > 0 else 0,
+                "avg_cost_per_endpoint": total_spend / endpoint_count if endpoint_count > 0 else 0,
+            }
 
         # Format providers
         providers_data = results.get("providers", []) or []

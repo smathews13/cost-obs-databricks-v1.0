@@ -245,45 +245,70 @@ async def get_warehouse_health() -> dict[str, Any]:
     return payload
 
 
-_SQL_IDLE_TIME = """
-WITH events_windowed AS (
+_idle_time_cache: dict | None = None
+_idle_time_cache_ts: float = 0.0
+_IDLE_TIME_CACHE_TTL = 30 * 60
+
+
+def _build_idle_time_sql(ws_clause: str, ws_clause_wh: str) -> str:
+    return f"""
+WITH all_events AS (
+  -- Look back 7 days before the window start to catch warehouses already running at boundary
+  SELECT
+    warehouse_id,
+    event_time,
+    cluster_count
+  FROM system.compute.warehouse_events
+  WHERE event_time < CAST(:end_ts AS TIMESTAMP)
+    AND event_time >= TIMESTAMPADD(DAY, -7, CAST(:start_ts AS TIMESTAMP))
+),
+events_with_next AS (
   SELECT
     warehouse_id,
     event_time,
     cluster_count,
     LEAD(event_time) OVER (PARTITION BY warehouse_id ORDER BY event_time) AS next_event_time
-  FROM system.compute.warehouse_events
-  WHERE event_time >= :start_ts AND event_time < :end_ts
+  FROM all_events
 ),
 running_windows AS (
   SELECT
     warehouse_id,
-    event_time AS window_start,
-    LEAST(COALESCE(next_event_time, CAST(:end_ts AS TIMESTAMP)), CAST(:end_ts AS TIMESTAMP)) AS window_end
-  FROM events_windowed
+    GREATEST(event_time, CAST(:start_ts AS TIMESTAMP)) AS window_start,
+    LEAST(
+      COALESCE(next_event_time, CAST(:end_ts AS TIMESTAMP)),
+      CAST(:end_ts AS TIMESTAMP)
+    ) AS window_end
+  FROM events_with_next
   WHERE cluster_count > 0
+    AND COALESCE(next_event_time, CAST(:end_ts AS TIMESTAMP)) > CAST(:start_ts AS TIMESTAMP)
+    AND event_time < CAST(:end_ts AS TIMESTAMP)
 ),
 warehouse_uptime AS (
   SELECT
     warehouse_id,
     SUM((UNIX_TIMESTAMP(window_end) - UNIX_TIMESTAMP(window_start)) / 60.0) AS total_running_minutes
   FROM running_windows
+  WHERE window_start < window_end
   GROUP BY warehouse_id
 ),
 query_time AS (
   SELECT
     compute.warehouse_id AS warehouse_id,
-    SUM(GREATEST((UNIX_TIMESTAMP(COALESCE(end_time, CURRENT_TIMESTAMP()))
-        - UNIX_TIMESTAMP(start_time)) / 60.0, 0)) AS total_query_minutes
+    SUM(GREATEST(
+      (UNIX_TIMESTAMP(COALESCE(end_time, CURRENT_TIMESTAMP())) - UNIX_TIMESTAMP(start_time)) / 60.0,
+      0
+    )) AS total_query_minutes
   FROM system.query.history
-  WHERE start_time >= :start_ts AND start_time < :end_ts
+  WHERE start_time >= CAST(:start_ts AS TIMESTAMP)
+    AND start_time < CAST(:end_ts AS TIMESTAMP)
     AND compute.warehouse_id IS NOT NULL
     AND status IN ('FINISHED', 'RUNNING', 'FETCHING', 'CANCELED', 'FAILED')
   GROUP BY compute.warehouse_id
 ),
 wh_info AS (
-  SELECT warehouse_id, warehouse_name, warehouse_size, workspace_id
+  SELECT warehouse_id, warehouse_name, warehouse_size, workspace_id, warehouse_type
   FROM system.compute.warehouses
+  WHERE 1=1 {ws_clause_wh}
   QUALIFY ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY change_time DESC) = 1
 ),
 wh_cost AS (
@@ -296,12 +321,14 @@ wh_cost AS (
   WHERE usage_date BETWEEN :start_date AND :end_date
     AND usage_metadata.warehouse_id IS NOT NULL
     AND usage_quantity > 0
+    {ws_clause}
   GROUP BY usage_metadata.warehouse_id
 )
 SELECT
   u.warehouse_id,
   COALESCE(i.warehouse_name, u.warehouse_id) AS warehouse_name,
   COALESCE(i.warehouse_size, 'Unknown') AS warehouse_size,
+  COALESCE(i.warehouse_type, 'CLASSIC') AS warehouse_type,
   i.workspace_id,
   ROUND(u.total_running_minutes) AS total_running_minutes,
   ROUND(COALESCE(q.total_query_minutes, 0)) AS total_query_minutes,
@@ -322,34 +349,52 @@ SELECT
   END AS estimated_idle_spend
 FROM warehouse_uptime u
 LEFT JOIN query_time q ON u.warehouse_id = q.warehouse_id
-LEFT JOIN wh_info i ON u.warehouse_id = i.warehouse_id
+JOIN wh_info i ON u.warehouse_id = i.warehouse_id
 LEFT JOIN wh_cost c ON u.warehouse_id = c.warehouse_id
 WHERE u.total_running_minutes >= 10
 ORDER BY estimated_idle_spend DESC
 LIMIT 25
 """
 
-_idle_time_cache: dict | None = None
-_idle_time_cache_ts: float = 0.0
-_IDLE_TIME_CACHE_TTL = 30 * 60
+
+def _build_serverless_check_sql(ws_clause_wh: str) -> str:
+    return f"""
+WITH latest_warehouses AS (
+  SELECT warehouse_id, warehouse_type
+  FROM system.compute.warehouses
+  WHERE change_time >= TIMESTAMPADD(DAY, -90, CURRENT_TIMESTAMP())
+  {ws_clause_wh}
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY change_time DESC) = 1
+)
+SELECT COUNT(*) AS serverless_count
+FROM latest_warehouses
+WHERE warehouse_type = 'SERVERLESS'
+"""
 
 
 @router.get("/idle-time")
 async def get_warehouse_idle_time(
     start_date: str | None = None,
     end_date: str | None = None,
+    workspace_ids: str | None = None,
 ) -> dict[str, Any]:
-    """Idle time breakdown per warehouse: uptime from warehouse_events minus active query time."""
+    """Idle time per warehouse: uptime from warehouse_events (with 7-day lookback) minus active query time."""
     global _idle_time_cache, _idle_time_cache_ts
-    from server.db import get_default_start_date, get_default_end_date
+    from server.routers.billing import get_default_start_date, get_default_end_date
+    from server import workspace_filter as wf
 
     sd = start_date or get_default_start_date()
     ed = end_date or get_default_end_date()
-    cache_key = f"{sd}:{ed}"
+    id_list = [i.strip() for i in workspace_ids.split(",") if i.strip()] if workspace_ids else None
+    cache_key = f"{sd}:{ed}:{','.join(id_list) if id_list else ''}"
+
     if (_idle_time_cache is not None
             and (time.time() - _idle_time_cache_ts) < _IDLE_TIME_CACHE_TTL
             and _idle_time_cache.get("_cache_key") == cache_key):
         return {k: v for k, v in _idle_time_cache.items() if k != "_cache_key"}
+
+    ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
+    ws_clause_wh = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
 
     from datetime import date as _date, timedelta as _timedelta
     _ed_dt = _date.fromisoformat(ed)
@@ -359,11 +404,13 @@ async def get_warehouse_idle_time(
         "start_date": sd,
         "end_date": ed,
     }
+
+    sql = _build_idle_time_sql(ws_clause, ws_clause_wh)
     try:
-        rows = await asyncio.to_thread(execute_query, _SQL_IDLE_TIME, params)
+        rows = await asyncio.to_thread(execute_query, sql, params)
     except Exception as e:
         logger.warning("warehouse idle-time query failed: %s", e)
-        return {"available": False, "error": str(e), "warehouses": [],
+        return {"available": False, "error": str(e), "warehouses": [], "serverless_detected": False,
                 "generated_at": datetime.now(timezone.utc).isoformat()}
 
     warehouses = []
@@ -372,6 +419,7 @@ async def get_warehouse_idle_time(
             "warehouse_id": row.get("warehouse_id"),
             "warehouse_name": row.get("warehouse_name"),
             "warehouse_size": row.get("warehouse_size"),
+            "warehouse_type": row.get("warehouse_type") or "CLASSIC",
             "workspace_id": str(row.get("workspace_id") or ""),
             "total_running_minutes": int(row.get("total_running_minutes") or 0),
             "total_query_minutes": int(row.get("total_query_minutes") or 0),
@@ -381,9 +429,20 @@ async def get_warehouse_idle_time(
             "estimated_idle_spend": float(row.get("estimated_idle_spend") or 0),
         })
 
+    # If no classic warehouses found, check whether serverless warehouses exist (can't generate lifecycle events)
+    serverless_detected = False
+    if not warehouses:
+        try:
+            check_sql = _build_serverless_check_sql(ws_clause_wh)
+            check_rows = await asyncio.to_thread(execute_query, check_sql)
+            serverless_detected = bool(check_rows and int(check_rows[0].get("serverless_count") or 0) > 0)
+        except Exception:
+            pass
+
     payload = {
         "available": True,
         "warehouses": warehouses,
+        "serverless_detected": serverless_detected,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     _idle_time_cache = {**payload, "_cache_key": cache_key}

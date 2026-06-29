@@ -2833,6 +2833,46 @@ async def get_kpi_trend(
         GROUP BY usage_date
         ORDER BY usage_date
         """
+    elif kpi == "power_user_spend":
+        # ws_clause is embedded inline via f-string; null it out so _inject_ws_filter below is a no-op
+        query = f"""
+        WITH user_totals AS (
+          SELECT
+            u.identity_metadata.run_as AS user_email,
+            SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS total_spend
+          FROM system.billing.usage u
+          LEFT JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name
+            AND u.cloud = p.cloud
+            AND p.price_end_time IS NULL
+          WHERE u.usage_date BETWEEN :start_date AND :end_date
+            AND u.usage_quantity > 0
+            AND u.identity_metadata.run_as IS NOT NULL
+            {ws_clause}
+          GROUP BY u.identity_metadata.run_as
+        ),
+        period_total AS (SELECT SUM(total_spend) AS grand_total FROM user_totals),
+        power_users AS (
+          SELECT ut.user_email
+          FROM user_totals ut, period_total pt
+          WHERE ut.total_spend / NULLIF(pt.grand_total, 0) >= 0.10
+        )
+        SELECT
+          u.usage_date AS date,
+          SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS value
+        FROM system.billing.usage u
+        LEFT JOIN system.billing.list_prices p
+          ON u.sku_name = p.sku_name
+          AND u.cloud = p.cloud
+          AND p.price_end_time IS NULL
+        JOIN power_users pu ON u.identity_metadata.run_as = pu.user_email
+        WHERE u.usage_date BETWEEN :start_date AND :end_date
+          AND u.usage_quantity > 0
+          {ws_clause}
+        GROUP BY u.usage_date
+        ORDER BY u.usage_date
+        """
+        ws_clause = ""  # already embedded above; prevent double-injection
     else:
         return {"error": f"Unknown KPI: {kpi}"}
 

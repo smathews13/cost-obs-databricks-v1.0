@@ -1,4 +1,5 @@
 import { useState, useEffect, memo } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { PlatformKPIsResponse, SpendAnomaliesResponse } from "@/types/billing";
 import { SpendAnomalies } from "@/components/SpendAnomalies";
@@ -16,6 +17,29 @@ interface PlatformKPIsViewProps {
   endDate?: string;
   workspaceIds?: string[];
   workspaceNameMap?: Record<string, string>;
+}
+
+function InfoTooltip({ text }: { text: string }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <span
+      className="ml-1.5 inline-flex cursor-help"
+      onMouseEnter={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseMove={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setPos(null)}
+    >
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-500">i</span>
+      {pos && createPortal(
+        <div
+          className="pointer-events-none fixed z-[9999] w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal leading-relaxed text-white shadow-lg"
+          style={{ top: pos.y - 12, transform: "translateY(-100%)", left: Math.min(pos.x + 14, window.innerWidth - 272) }}
+        >
+          {text}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
 }
 
 interface KPICardProps {
@@ -67,7 +91,10 @@ const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, ico
           {icon}
         </div>
         <div className="ml-4 flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-500">{title}</p>
+          <p className="text-sm font-medium text-gray-500 flex items-center">
+            {title}
+            {infoTooltip && <InfoTooltip text={infoTooltip} />}
+          </p>
           {isLoading ? (
             <div className="mt-2 h-6 w-6">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
@@ -75,26 +102,8 @@ const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, ico
           ) : (
             <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
           )}
-          {!isLoading && subtitle && !infoTooltip && (
+          {!isLoading && subtitle && (
             <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p>
-          )}
-          {!isLoading && infoTooltip && (
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <div className="group relative inline-flex">
-                <div className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-500 cursor-help">
-                  i
-                </div>
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-normal opacity-0 transition-opacity group-hover:opacity-100">
-                  <div className="w-56 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg">
-                    {infoTooltip}
-                    <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
-                  </div>
-                </div>
-              </div>
-              {subtitle && (
-                <span className="text-sm text-gray-500">{subtitle}</span>
-              )}
-            </div>
           )}
           {onClick && (
             <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>

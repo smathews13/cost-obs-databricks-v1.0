@@ -18,6 +18,15 @@ import {
 import type { TaggingDashboardBundle } from "@/types/billing";
 import { KPITrendModal } from "./KPITrendModal";
 
+interface TagObject {
+  object_id?: string | null;
+  object_name: string;
+  object_type: string;
+  total_dbus: number;
+  total_spend: number;
+  days_active: number;
+}
+
 interface TaggingHubProps {
   data: TaggingDashboardBundle | undefined;
   isLoading: boolean;
@@ -98,7 +107,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
 
   // Tag drilldown state
   const [selectedTag, setSelectedTag] = useState<{tag_key: string; tag_value: string} | null>(null);
-  const [tagObjectsCache, setTagObjectsCache] = useState<Record<string, any[]>>({});
+  const [tagObjectsCache, setTagObjectsCache] = useState<Record<string, TagObject[]>>({});
   const [tagObjectsLoading, setTagObjectsLoading] = useState(false);
   const tagObjects = selectedTag ? (tagObjectsCache[`${selectedTag.tag_key}::${selectedTag.tag_value}`] || []) : [];
 
@@ -183,7 +192,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
       { name: "Tagged", value: data.summary.tagged_spend, fill: COLORS.tagged },
       { name: "Untagged", value: data.summary.untagged_spend, fill: COLORS.untagged },
     ];
-  }, [data?.summary]);
+  }, [data]);
 
   const tagBreakdownData = useMemo(() => {
     if (!data?.cost_by_tag?.tags) return [];
@@ -203,7 +212,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         total_spend: spend,
         fill: TAG_COLORS[idx % TAG_COLORS.length],
       }));
-  }, [data?.cost_by_tag]);
+  }, [data]);
 
   const untaggedCounts = useMemo(() => {
     if (!data?.untagged) return { clusters: 0, jobs: 0, pipelines: 0, warehouses: 0, endpoints: 0 };
@@ -214,7 +223,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
       warehouses: data.untagged.warehouses?.count || 0,
       endpoints: data.untagged.endpoints?.count || 0,
     };
-  }, [data?.untagged]);
+  }, [data]);
 
   // Compute suggested tags based on what's already used in the environment
   const suggestedTags = useMemo(() => {
@@ -241,7 +250,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         usageCount: info.count,
         examples: info.examples,
       }));
-  }, [data?.cost_by_tag]);
+  }, [data]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -267,7 +276,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
       keys.add(tag.tag_key);
     }
     return Array.from(keys).sort();
-  }, [data?.cost_by_tag]);
+  }, [data]);
 
   // All unique tag key:value pairs for the tag filter dropdown
   const availableTagValues = useMemo(() => {
@@ -275,7 +284,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
     return data.cost_by_tag.tags
       .map(tag => `${tag.tag_key}:${tag.tag_value}`)
       .sort();
-  }, [data?.cost_by_tag]);
+  }, [data]);
 
   // Filtered tag data based on selected tag value filters
   const filteredTags = useMemo(() => {
@@ -284,7 +293,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
     return data.cost_by_tag.tags.filter(tag =>
       selectedTagValueFilters.includes(`${tag.tag_key}:${tag.tag_value}`)
     );
-  }, [data?.cost_by_tag, selectedTagValueFilters]);
+  }, [data, selectedTagValueFilters]);
 
   // Filtered tag breakdown (Spend by Key chart) based on selected filters
   const filteredTagBreakdownData = useMemo(() => {
@@ -470,7 +479,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               <p className="text-2xl font-semibold text-gray-900">
                 {data?.avg_cost_per_tag != null ? formatCurrency(data.avg_cost_per_tag) : "—"}
               </p>
-              <p className="text-sm text-gray-500">{data?.total_tag_count != null ? data.total_tag_count.toLocaleString() : "—"} tags over {daysDiff} days</p>
+              <p className="text-sm text-gray-500">avg. over {daysDiff} days</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
@@ -493,6 +502,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                 <InfoTooltip text="Distinct tag key-value pairs applied across all resources over the full date range. The trend drilldown shows per-day counts — a tag on a long-running resource is counted each day it appears, so daily totals are lower than this cumulative figure." />
               </p>
               <p className="text-2xl font-semibold text-gray-900">{data?.total_tag_count?.toLocaleString() ?? "—"}</p>
+              <p className="text-sm text-gray-500">unique key:value pairs</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>
@@ -502,7 +512,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
       {/* KPI Trend Modal */}
       {selectedKPI && startDate && endDate && (
         <KPITrendModal
-          kpi={selectedKPI.kpi as any}
+          kpi={selectedKPI.kpi}
           kpiLabel={selectedKPI.label}
           isOpen={!!selectedKPI}
           onClose={() => setSelectedKPI(null)}

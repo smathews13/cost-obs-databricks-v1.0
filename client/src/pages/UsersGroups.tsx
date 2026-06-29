@@ -395,7 +395,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {/* Active users */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_users", label: "Daily Active Users", variant: "platform"})}>
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "total_users", label: "Daily Unique Active Users", variant: "platform"})}>
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-[#FF3621]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
@@ -429,13 +429,16 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
           </div>
         </div>
         {/* Power Users */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "user_spend", label: "Power User Daily Spend"})}>
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all" onClick={() => startDate && endDate && setSelectedKPI({kpi: "power_user_spend", label: "Power User Daily Spend"})}>
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-[#FF3621]">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
             </div>
             <div className="min-w-0">
-              <p className="text-sm text-gray-500">Power Users</p>
+              <p className="text-sm text-gray-500 flex items-center">
+                Power Users
+                <InfoTooltip text="Users whose spend accounts for ≥10% of total spend in the selected period. These high-impact users drive the majority of platform costs." />
+              </p>
               <p className="text-2xl font-semibold text-gray-900">{powerUsers.length}</p>
               <p className="text-xs text-gray-500">{fmt(powerUsersSpend)} spend over {daysDiff} days</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>

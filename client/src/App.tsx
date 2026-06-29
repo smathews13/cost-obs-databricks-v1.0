@@ -1188,7 +1188,7 @@ function Dashboard() {
               </div>
             </div>
             <WarehouseRightsizingView host={accountInfo?.host} />
-            <WarehouseIdleTimeView host={accountInfo?.host} startDate={dateRange.startDate} endDate={dateRange.endDate} />
+            <WarehouseIdleTimeView host={accountInfo?.host} startDate={dateRange.startDate} endDate={dateRange.endDate} workspaceIds={_wsIds} />
           </div>
           </TabErrorBoundary>
         ) : activeTab === "kpis" ? (

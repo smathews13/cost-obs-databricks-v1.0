@@ -139,34 +139,6 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const [whSizeDropdownOpen, setWhSizeDropdownOpen] = useState(false);
   const whSizeDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Warehouse Health — React Query with long stale time (recommendations don't change rapidly)
-  const { data: warehouseHealth, isLoading: healthLoading } = useQuery<{
-    available: boolean;
-    recommendations: Array<{
-      warehouse_id: string;
-      warehouse_name: string | null;
-      warehouse_size: string | null;
-      workspace_id: string;
-      recommendation_type: string;
-      recommendation_text: string;
-      max_clusters_observed?: number;
-      max_concurrent?: number;
-      avg_queue_ms?: number;
-      median_duration_seconds?: number;
-      last_event_time?: string;
-      query_count?: number;
-    }>;
-    warehouses_analyzed: number;
-  }>({
-    queryKey: ["warehouse-health"],
-    queryFn: () => fetch("/api/sql/warehouse-health").then(r => r.json()),
-    staleTime: 30 * 60 * 1000,
-    retry: false,
-  });
-  const [healthIssueFilter, setHealthIssueFilter] = useState<string>("");
-  const [healthPage, setHealthPage] = useState(1);
-  const HEALTH_PAGE_SIZE = 10;
-
   // Close warehouse size dropdown on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -1140,128 +1112,6 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
         </>
       )}
 
-      {/* ── Warehouse Rightsizing Recommendations ───────────────────────────── */}
-      <div className="rounded-lg border border-gray-200 bg-white p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-gray-900">Warehouse Rightsizing</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Idle, over-scaled, and oversized warehouse recommendations</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {warehouseHealth && (
-              <span className="text-xs text-gray-500">{warehouseHealth.warehouses_analyzed} warehouse{warehouseHealth.warehouses_analyzed !== 1 ? "s" : ""} analyzed</span>
-            )}
-            {/* Issue type filter */}
-            {warehouseHealth?.recommendations?.length ? (
-              <select
-                value={healthIssueFilter}
-                onChange={(e) => { setHealthIssueFilter(e.target.value); setHealthPage(1); }}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-              >
-                <option value="">All Issues</option>
-                <option value="IDLE_RUNNING">Idle Running</option>
-                <option value="OVER_SCALED">Over-Scaled</option>
-                <option value="OVERSIZED">Oversized</option>
-              </select>
-            ) : null}
-          </div>
-        </div>
-
-        {healthLoading ? (
-          <div className="flex h-24 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200" style={{ borderTopColor: "#FF3621" }} />
-          </div>
-        ) : !warehouseHealth?.available || !warehouseHealth.recommendations.length ? (
-          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-500">
-            {warehouseHealth?.available === false
-              ? "Warehouse health data unavailable. Requires system.compute.warehouse_events access."
-              : "No rightsizing recommendations — all warehouses appear appropriately sized."}
-          </div>
-        ) : (() => {
-          const badgeColor: Record<string, string> = {
-            IDLE_RUNNING: "bg-red-100 text-red-700",
-            OVER_SCALED: "bg-amber-100 text-amber-700",
-            OVERSIZED: "bg-orange-100 text-orange-700",
-          };
-          const badgeLabel: Record<string, string> = {
-            IDLE_RUNNING: "Idle Running",
-            OVER_SCALED: "Over-Scaled",
-            OVERSIZED: "Oversized",
-          };
-          const filtered = healthIssueFilter
-            ? warehouseHealth.recommendations.filter((r) => r.recommendation_type === healthIssueFilter)
-            : warehouseHealth.recommendations;
-          const totalPages = Math.max(1, Math.ceil(filtered.length / HEALTH_PAGE_SIZE));
-          const safePage = Math.min(healthPage, totalPages);
-          const pageRecs = filtered.slice((safePage - 1) * HEALTH_PAGE_SIZE, safePage * HEALTH_PAGE_SIZE);
-          return (
-            <>
-              <div className="overflow-x-auto rounded-lg border border-gray-200">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Warehouse</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Size</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Issue</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Recommendation</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
-                    {pageRecs.map((rec, i) => (
-                      <tr key={`${rec.warehouse_id}-${rec.recommendation_type}-${i}`} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-gray-900">
-                          {host ? (
-                            <a
-                              href={`${host}/sql/warehouses/${rec.warehouse_id}/edit`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:underline"
-                            >
-                              {rec.warehouse_name || rec.warehouse_id}
-                            </a>
-                          ) : (
-                            rec.warehouse_name || rec.warehouse_id
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500">{rec.warehouse_size || "—"}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${badgeColor[rec.recommendation_type] || "bg-gray-100 text-gray-700"}`}>
-                            {badgeLabel[rec.recommendation_type] || rec.recommendation_type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs max-w-sm">{rec.recommendation_text}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {totalPages > 1 && (
-                <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                  <span>{filtered.length} recommendation{filtered.length !== 1 ? "s" : ""}{healthIssueFilter ? ` (filtered)` : ""}</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setHealthPage((p) => Math.max(1, p - 1))}
-                      disabled={safePage <= 1}
-                      className="rounded px-2 py-1 disabled:opacity-40 hover:bg-gray-100"
-                    >
-                      ‹ Prev
-                    </button>
-                    <span className="px-2">Page {safePage} of {totalPages}</span>
-                    <button
-                      onClick={() => setHealthPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={safePage >= totalPages}
-                      className="rounded px-2 py-1 disabled:opacity-40 hover:bg-gray-100"
-                    >
-                      Next ›
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          );
-        })()}
-      </div>
-
       {/* Source Drilldown Modal — rendered via portal to avoid stacking context issues */}
       {selectedSource && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={() => setSelectedSource(null)}>
@@ -1456,6 +1306,151 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
         </div>,
         document.body
       )}
+    </div>
+  );
+}
+
+export function WarehouseRightsizingView({ host }: { host?: string | null }) {
+  const { data: warehouseHealth, isLoading: healthLoading } = useQuery<{
+    available: boolean;
+    recommendations: Array<{
+      warehouse_id: string;
+      warehouse_name: string | null;
+      warehouse_size: string | null;
+      workspace_id: string;
+      recommendation_type: string;
+      recommendation_text: string;
+    }>;
+    warehouses_analyzed: number;
+  }>({
+    queryKey: ["warehouse-health"],
+    queryFn: () => fetch("/api/sql/warehouse-health").then(r => r.json()),
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+  const [healthIssueFilter, setHealthIssueFilter] = useState<string>("");
+  const [healthPage, setHealthPage] = useState(1);
+  const HEALTH_PAGE_SIZE = 10;
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">Warehouse Rightsizing</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Idle, over-scaled, and oversized warehouse recommendations</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {warehouseHealth && (
+            <span className="text-xs text-gray-500">{warehouseHealth.warehouses_analyzed} warehouse{warehouseHealth.warehouses_analyzed !== 1 ? "s" : ""} analyzed</span>
+          )}
+          {warehouseHealth?.recommendations?.length ? (
+            <select
+              value={healthIssueFilter}
+              onChange={(e) => { setHealthIssueFilter(e.target.value); setHealthPage(1); }}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+            >
+              <option value="">All Issues</option>
+              <option value="IDLE_RUNNING">Idle Running</option>
+              <option value="OVER_SCALED">Over-Scaled</option>
+              <option value="OVERSIZED">Oversized</option>
+            </select>
+          ) : null}
+        </div>
+      </div>
+
+      {healthLoading ? (
+        <div className="flex h-24 items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200" style={{ borderTopColor: "#FF3621" }} />
+        </div>
+      ) : !warehouseHealth?.available || !warehouseHealth.recommendations.length ? (
+        <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-500">
+          {warehouseHealth?.available === false
+            ? "Warehouse health data unavailable. Requires system.compute.warehouse_events access."
+            : "No rightsizing recommendations — all warehouses appear appropriately sized."}
+        </div>
+      ) : (() => {
+        const badgeColor: Record<string, string> = {
+          IDLE_RUNNING: "bg-red-100 text-red-700",
+          OVER_SCALED: "bg-amber-100 text-amber-700",
+          OVERSIZED: "bg-orange-100 text-orange-700",
+        };
+        const badgeLabel: Record<string, string> = {
+          IDLE_RUNNING: "Idle Running",
+          OVER_SCALED: "Over-Scaled",
+          OVERSIZED: "Oversized",
+        };
+        const filtered = healthIssueFilter
+          ? warehouseHealth.recommendations.filter((r) => r.recommendation_type === healthIssueFilter)
+          : warehouseHealth.recommendations;
+        const totalPages = Math.max(1, Math.ceil(filtered.length / HEALTH_PAGE_SIZE));
+        const safePage = Math.min(healthPage, totalPages);
+        const pageRecs = filtered.slice((safePage - 1) * HEALTH_PAGE_SIZE, safePage * HEALTH_PAGE_SIZE);
+        return (
+          <>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Warehouse</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Size</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Issue</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Recommendation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {pageRecs.map((rec, i) => (
+                    <tr key={`${rec.warehouse_id}-${rec.recommendation_type}-${i}`} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        {host ? (
+                          <a
+                            href={`${host}/sql/warehouses/${rec.warehouse_id}/edit`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {rec.warehouse_name || rec.warehouse_id}
+                          </a>
+                        ) : (
+                          rec.warehouse_name || rec.warehouse_id
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{rec.warehouse_size || "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${badgeColor[rec.recommendation_type] || "bg-gray-100 text-gray-700"}`}>
+                          {badgeLabel[rec.recommendation_type] || rec.recommendation_type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs max-w-sm">{rec.recommendation_text}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {totalPages > 1 && (
+              <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                <span>{filtered.length} recommendation{filtered.length !== 1 ? "s" : ""}{healthIssueFilter ? ` (filtered)` : ""}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setHealthPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    className="rounded px-2 py-1 disabled:opacity-40 hover:bg-gray-100"
+                  >
+                    ‹ Prev
+                  </button>
+                  <span className="px-2">Page {safePage} of {totalPages}</span>
+                  <button
+                    onClick={() => setHealthPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    className="rounded px-2 py-1 disabled:opacity-40 hover:bg-gray-100"
+                  >
+                    Next ›
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }

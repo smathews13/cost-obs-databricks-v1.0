@@ -845,12 +845,12 @@ export function CloudCostsView({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {(infraTimeseriesLoading || timeseriesLoading) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time</h3>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 align-middle ml-1">est.</span></h3>
             <div className="h-80 animate-pulse rounded bg-gray-200" />
           </div>
         ) : (infraTimeseriesData?.timeseries && infraTimeseriesData.timeseries.length > 0) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time</h3>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 align-middle ml-1">est.</span></h3>
             <ResponsiveContainer width="100%" height={320}>
               <AreaChart data={infraTimeseriesData.timeseries} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <defs>
@@ -873,7 +873,7 @@ export function CloudCostsView({
         ) : (filteredTimeseriesData && filteredTimeseriesData.length > 0) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 align-middle ml-1">est.</span></h3>
               {timeseriesFamilies.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -950,7 +950,7 @@ export function CloudCostsView({
       <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Estimated {cloudDisplayName} Costs by Cluster</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Costs by Cluster <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200 align-middle ml-1">est.</span></h3>
             <p className="text-sm text-gray-500">
               {sortedClusters.length} cluster{sortedClusters.length !== 1 ? "s" : ""}{selectedFamilies.size > 0 ? ` · ${[...selectedFamilies].join(", ")} only` : ""}{" "}
               <span className="inline-flex items-center gap-1 group relative">
@@ -1071,7 +1071,6 @@ export function CloudCostsView({
                     <span className="cursor-pointer hover:text-gray-700" onClick={() => handleSort("estimated_aws_cost")}>
                       Cost <SortIcon field="estimated_aws_cost" />
                     </span>
-                    <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-semibold normal-case tracking-normal" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
                     <div className="group relative">
                       <svg className="h-3.5 w-3.5 cursor-help text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

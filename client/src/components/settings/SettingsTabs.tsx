@@ -12,6 +12,7 @@ const TAB_LABELS: Record<keyof TabVisibility, { label: string; color: string }> 
   forecasting: { label: "Forecasting", color: "#FF3621" },
   kpis: { label: "Platform KPIs & Trends", color: "#FF3621" },
   infra: { label: "Cloud Costs", color: "#FF3621" },
+  optimizer: { label: "Optimize", color: "#FF3621" },
 };
 
 interface SettingsTabsProps {

@@ -9,6 +9,7 @@ import { SetupWizard } from "./SetupWizard";
 export interface TabVisibility {
   dbu: boolean;
   infra: boolean;
+  optimizer: boolean;
   kpis: boolean;
   aiml: boolean;
   sql: boolean;
@@ -23,6 +24,7 @@ export interface TabVisibility {
 const DEFAULT_VISIBILITY: TabVisibility = {
   dbu: true,
   infra: true,
+  optimizer: true,
   kpis: true,
   aiml: true,
   sql: true,

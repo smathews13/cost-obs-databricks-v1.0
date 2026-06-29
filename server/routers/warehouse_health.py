@@ -259,7 +259,7 @@ running_windows AS (
   SELECT
     warehouse_id,
     event_time AS window_start,
-    COALESCE(next_event_time, CURRENT_TIMESTAMP()) AS window_end
+    LEAST(COALESCE(next_event_time, CAST(:end_ts AS TIMESTAMP)), CAST(:end_ts AS TIMESTAMP)) AS window_end
   FROM events_windowed
   WHERE cluster_count > 0
 ),
@@ -349,11 +349,13 @@ async def get_warehouse_idle_time(
     if (_idle_time_cache is not None
             and (time.time() - _idle_time_cache_ts) < _IDLE_TIME_CACHE_TTL
             and _idle_time_cache.get("_cache_key") == cache_key):
-        return _idle_time_cache
+        return {k: v for k, v in _idle_time_cache.items() if k != "_cache_key"}
 
+    from datetime import date as _date, timedelta as _timedelta
+    _ed_dt = _date.fromisoformat(ed)
     params = {
         "start_ts": f"{sd} 00:00:00",
-        "end_ts": f"{ed} 23:59:59",
+        "end_ts": (_ed_dt + _timedelta(days=1)).strftime("%Y-%m-%d 00:00:00"),
         "start_date": sd,
         "end_date": ed,
     }
@@ -382,10 +384,9 @@ async def get_warehouse_idle_time(
     payload = {
         "available": True,
         "warehouses": warehouses,
-        "_cache_key": cache_key,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-    _idle_time_cache = payload
+    _idle_time_cache = {**payload, "_cache_key": cache_key}
     _idle_time_cache_ts = time.time()
     return payload
 

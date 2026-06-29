@@ -346,6 +346,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             title="Total Jobs"
             value={formatNumber(data.total_jobs)}
             subtitle={`from ${formatNumber(data.unique_job_owners)} unique owners`}
+            infoTooltip="Distinct jobs with billing usage across the full selected period. The daily trend shows unique jobs active each day, which is typically lower — the same job counts once per day vs. once for the entire period."
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
             unavailableReason={jobsUnavailable}
@@ -389,7 +390,8 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Active Clusters"
             value={formatNumber(data.active_notebooks)}
-            subtitle="Unique clusters with usage"
+            subtitle="Unique clusters, period total"
+            infoTooltip="Distinct clusters with billing usage across the full selected period. The daily trend shows unique clusters active each day, which is typically lower — the same cluster counts once per day vs. once for the entire period."
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
             unavailableReason={clustersUnavailable}
@@ -409,7 +411,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <KPICard
             title="Active Workspaces"
-            value={formatNumber(data.avg_daily_workspaces || data.active_workspaces)}
+            value={formatNumber(data.avg_daily_workspaces != null && data.avg_daily_workspaces !== 0 ? data.avg_daily_workspaces : data.active_workspaces)}
             subtitle="Avg workspaces active per day"
             infoTooltip="Average number of distinct workspaces with billable usage per day in the selected period. Matches the daily trend average."
             color="bg-orange-100"
@@ -442,10 +444,10 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
 
           <KPICard
             title="Total Unique Active Users"
-            value={formatNumber(data.unique_query_users + data.unique_job_owners)}
-            subtitle="Unique active users"
+            value={formatNumber(data.unique_query_users)}
+            subtitle={`${formatNumber(data.unique_job_owners)} job owners separately`}
             isLoading={isLoading || isFetching}
-            infoTooltip="Distinct users who ran queries or jobs in the selected period. Counts unique query executors and unique job owners."
+            infoTooltip="Distinct SQL query executors in the selected period (matches the daily trend). Job owners shown separately — some users may appear in both groups."
             color="bg-orange-100"
             onClick={startDate && endDate ? () => handleKPIClick("total_users", "Daily Active Users") : undefined}
             icon={

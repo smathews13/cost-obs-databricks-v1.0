@@ -4,10 +4,11 @@ This module creates and manages pre-aggregated Delta tables that dramatically
 improve query performance by avoiding expensive joins on system.query.history.
 
 Tables created:
-- cost_obs.daily_usage_summary: Daily aggregated usage and spend
+- cost_obs.daily_usage_summary: Daily aggregated usage and spend (incl. user_attributed_spend)
 - cost_obs.daily_product_breakdown: Daily spend by product category
 - cost_obs.daily_workspace_breakdown: Daily spend by workspace
 - cost_obs.sql_tool_attribution: Pre-computed Genie vs DBSQL split
+- cost_obs.daily_tag_summary: Daily exploded tag aggregations (tag_key, tag_value grain)
 
 These tables should be refreshed daily via a scheduled job.
 """
@@ -37,6 +38,7 @@ WITH usage_with_price AS (
     u.sku_name,
     u.billing_origin_product,
     u.usage_quantity,
+    u.identity_metadata.run_as AS run_as,
     COALESCE(p.pricing.default, 0) as price_per_dbu,
     COALESCE(p.pricing.effective_list.default, p.pricing.default, 0) as effective_price_per_dbu
   FROM system.billing.usage u
@@ -52,7 +54,8 @@ SELECT
   workspace_id,
   SUM(usage_quantity) as total_dbus,
   SUM(usage_quantity * price_per_dbu) as total_spend,
-  SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend
+  SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend,
+  SUM(CASE WHEN run_as IS NOT NULL THEN usage_quantity * price_per_dbu ELSE 0 END) as user_attributed_spend
 FROM usage_with_price
 GROUP BY usage_date, workspace_id
 ORDER BY usage_date, workspace_id
@@ -813,6 +816,99 @@ GROUP BY qq.statement_id
 """
 
 
+# Daily tag summary — eliminates repeated EXPLODE scans in tagging bundle and KPI trends
+CREATE_DAILY_TAG_SUMMARY = """
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`daily_tag_summary` CLUSTER BY (usage_date, tag_key) AS
+WITH tagged_usage AS (
+  SELECT
+    u.usage_date,
+    u.workspace_id,
+    u.usage_quantity,
+    COALESCE(p.pricing.default, 0) AS price_per_dbu
+  FROM system.billing.usage u
+  LEFT JOIN system.billing.list_prices p
+    ON u.sku_name = p.sku_name
+    AND u.cloud = p.cloud
+    AND p.price_end_time IS NULL
+  WHERE u.usage_date >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+    AND u.usage_quantity > 0
+    AND u.custom_tags IS NOT NULL
+    AND size(u.custom_tags) > 0
+),
+exploded AS (
+  SELECT
+    usage_date,
+    workspace_id,
+    usage_quantity,
+    price_per_dbu,
+    tag_key,
+    tag_value
+  FROM tagged_usage
+  LATERAL VIEW EXPLODE(custom_tags) t AS tag_key, tag_value
+)
+SELECT
+  usage_date,
+  workspace_id,
+  tag_key,
+  tag_value,
+  SUM(usage_quantity)                    AS total_dbus,
+  SUM(usage_quantity * price_per_dbu)    AS total_spend,
+  COUNT(*)                               AS usage_row_count
+FROM exploded
+GROUP BY usage_date, workspace_id, tag_key, tag_value
+ORDER BY usage_date, tag_key, tag_value
+"""
+
+MERGE_DAILY_TAG_SUMMARY = """
+MERGE INTO `{catalog}`.`{schema}`.`daily_tag_summary` AS tgt
+USING (
+  WITH tagged_usage AS (
+    SELECT
+      u.usage_date,
+      u.workspace_id,
+      u.usage_quantity,
+      COALESCE(p.pricing.default, 0) AS price_per_dbu
+    FROM system.billing.usage u
+    LEFT JOIN system.billing.list_prices p
+      ON u.sku_name = p.sku_name
+      AND u.cloud = p.cloud
+      AND p.price_end_time IS NULL
+    WHERE u.usage_date >= DATE('{reprocess_start}')
+      AND u.usage_date <= CURRENT_DATE()
+      AND u.usage_quantity > 0
+      AND u.custom_tags IS NOT NULL
+      AND size(u.custom_tags) > 0
+  ),
+  exploded AS (
+    SELECT
+      usage_date,
+      workspace_id,
+      usage_quantity,
+      price_per_dbu,
+      tag_key,
+      tag_value
+    FROM tagged_usage
+    LATERAL VIEW EXPLODE(custom_tags) t AS tag_key, tag_value
+  )
+  SELECT
+    usage_date,
+    workspace_id,
+    tag_key,
+    tag_value,
+    SUM(usage_quantity)                    AS total_dbus,
+    SUM(usage_quantity * price_per_dbu)    AS total_spend,
+    COUNT(*)                               AS usage_row_count
+  FROM exploded
+  GROUP BY usage_date, workspace_id, tag_key, tag_value
+) AS src
+ON tgt.usage_date = src.usage_date
+  AND tgt.workspace_id = src.workspace_id
+  AND tgt.tag_key = src.tag_key
+  AND tgt.tag_value = src.tag_value
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED BY TARGET THEN INSERT *
+"""
+
 # Step 3: Refresh-state tracking table
 CREATE_MV_REFRESH_STATE = """
 CREATE TABLE IF NOT EXISTS `{catalog}`.`{schema}`.`app_mv_refresh_state` (
@@ -863,6 +959,12 @@ _TABLE_REFRESH_CONFIG: dict[str, dict] = {
         "source_date_col": "query_date",
         "overlap_days": 1,
     },
+    "daily_tag_summary": {
+        "reprocess_days": 14,
+        "pk": ["usage_date", "workspace_id", "tag_key", "tag_value"],
+        "source_date_col": "usage_date",
+        "overlap_days": 0,
+    },
 }
 
 _OPTIMIZE_EVERY_N_REFRESHES = 12
@@ -879,6 +981,7 @@ USING (
       u.sku_name,
       u.billing_origin_product,
       u.usage_quantity,
+      u.identity_metadata.run_as AS run_as,
       COALESCE(p.pricing.default, 0) as price_per_dbu,
       COALESCE(p.pricing.effective_list.default, p.pricing.default, 0) as effective_price_per_dbu
     FROM system.billing.usage u
@@ -895,7 +998,8 @@ USING (
     workspace_id,
     SUM(usage_quantity) as total_dbus,
     SUM(usage_quantity * price_per_dbu) as total_spend,
-    SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend
+    SUM(usage_quantity * effective_price_per_dbu) as effective_list_spend,
+    SUM(CASE WHEN run_as IS NOT NULL THEN usage_quantity * price_per_dbu ELSE 0 END) as user_attributed_spend
   FROM usage_with_price
   GROUP BY usage_date, workspace_id
 ) AS src
@@ -1434,6 +1538,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
         ("sql_tool_attribution", CREATE_SQL_TOOL_ATTRIBUTION),
         ("daily_query_stats", CREATE_QUERY_STATS),
         ("dbsql_cost_per_query", CREATE_DBSQL_COST_PER_QUERY),
+        ("daily_tag_summary", CREATE_DAILY_TAG_SUMMARY),
     ]
 
     # Create all tables in parallel — none depend on each other
@@ -1482,6 +1587,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
                     "sql_tool_attribution": MERGE_SQL_TOOL_ATTRIBUTION,
                     "daily_query_stats": MERGE_QUERY_STATS,
                     "dbsql_cost_per_query": MERGE_DBSQL_COST_PER_QUERY,
+                    "daily_tag_summary": MERGE_DAILY_TAG_SUMMARY,
                 }
                 merge_sql = merge_sql_map.get(table_name)
 
@@ -1581,6 +1687,7 @@ _MV_TABLES = [
     "sql_tool_attribution",
     "daily_query_stats",
     "dbsql_cost_per_query",
+    "daily_tag_summary",
 ]
 
 

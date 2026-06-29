@@ -447,7 +447,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               <p className="text-2xl font-semibold text-gray-900">
                 {data?.avg_cost_per_tag != null ? formatCurrency(data.avg_cost_per_tag) : "—"}
               </p>
-              <p className="text-sm text-gray-500">{(data?.total_tag_count ?? 0).toLocaleString()} tags over {daysDiff} days</p>
+              <p className="text-sm text-gray-500">{data?.total_tag_count != null ? data.total_tag_count.toLocaleString() : "—"} tags over {daysDiff} days</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>
           </div>

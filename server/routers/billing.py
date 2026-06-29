@@ -2758,7 +2758,26 @@ async def get_kpi_trend(
         ORDER BY date
         """
     elif kpi == "user_spend":
-        query = """
+        if use_mv:
+            catalog, schema = get_catalog_schema()
+            query = f"SELECT usage_date as date, SUM(user_attributed_spend) as value FROM `{catalog}`.`{schema}`.`daily_usage_summary` WHERE usage_date BETWEEN :start_date AND :end_date GROUP BY usage_date ORDER BY usage_date"
+            mv_fallback_query = """
+        SELECT
+          u.usage_date as date,
+          SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) as value
+        FROM system.billing.usage u
+        LEFT JOIN system.billing.list_prices p
+          ON u.sku_name = p.sku_name
+          AND u.cloud = p.cloud
+          AND p.price_end_time IS NULL
+        WHERE u.usage_date BETWEEN :start_date AND :end_date
+          AND u.usage_quantity > 0
+          AND u.identity_metadata.run_as IS NOT NULL
+        GROUP BY u.usage_date
+        ORDER BY u.usage_date
+        """
+        else:
+            query = """
         SELECT
           u.usage_date as date,
           SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) as value

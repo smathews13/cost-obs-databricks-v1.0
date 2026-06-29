@@ -1025,7 +1025,8 @@ async def get_tagging_dashboard_bundle(
     def _ws(sql: str) -> str:
         return wf.inject_ws_filter(sql, ws_clause)
 
-    lakeflow_ok = [True]
+    jobs_ok = [True]
+    pipelines_ok = [True]
 
     def query_with_fallback(enriched_sql: str, fallback_sql: str, query_params: dict) -> list[dict[str, Any]]:
         """Try enriched query (with system.compute tables), fall back to billing-only."""
@@ -1035,7 +1036,7 @@ async def get_tagging_dashboard_bundle(
             logger.warning(f"Enriched query failed ({e}), falling back to billing-only")
             return execute_query(fallback_sql, query_params)
 
-    def lakeflow_query(enriched_sql: str, fallback_sql: str, query_params: dict) -> list[dict[str, Any]]:
+    def lakeflow_query(enriched_sql: str, fallback_sql: str, query_params: dict, flag: list) -> list[dict[str, Any]]:
         """Try lakeflow-enriched query with 30s timeout; fall back to billing-only on failure."""
         try:
             result = execute_queries_parallel([("q", lambda: execute_query(enriched_sql, query_params))], timeout=30.0)
@@ -1043,14 +1044,14 @@ async def get_tagging_dashboard_bundle(
                 return result["q"]
         except Exception as e:
             logger.warning(f"Lakeflow query failed/timed out ({type(e).__name__}); falling back to billing-only")
-        lakeflow_ok[0] = False
+        flag[0] = False
         return execute_query(fallback_sql, query_params)
 
     queries = [
         ("summary", lambda: execute_query(_ws(TAGGING_SUMMARY), params)),
         ("clusters", lambda: query_with_fallback(_ws(UNTAGGED_CLUSTERS_ENRICHED), _ws(UNTAGGED_CLUSTERS), params)),
-        ("jobs", lambda: lakeflow_query(_ws(UNTAGGED_JOBS_ENRICHED), _ws(UNTAGGED_JOBS), params)),
-        ("pipelines", lambda: lakeflow_query(_ws(UNTAGGED_PIPELINES_ENRICHED), _ws(UNTAGGED_PIPELINES), params)),
+        ("jobs", lambda: lakeflow_query(_ws(UNTAGGED_JOBS_ENRICHED), _ws(UNTAGGED_JOBS), params, jobs_ok)),
+        ("pipelines", lambda: lakeflow_query(_ws(UNTAGGED_PIPELINES_ENRICHED), _ws(UNTAGGED_PIPELINES), params, pipelines_ok)),
         ("warehouses", lambda: query_with_fallback(_ws(UNTAGGED_WAREHOUSES_ENRICHED), _ws(UNTAGGED_WAREHOUSES), params)),
         ("endpoints", lambda: execute_query(_ws(UNTAGGED_ENDPOINTS), params)),
         ("cost_by_tag", lambda: execute_query(_ws(COST_BY_TAG), params)),
@@ -1145,10 +1146,15 @@ async def get_tagging_dashboard_bundle(
         "timeseries": {"timeseries": timeseries, "categories": ["Tagged", "Untagged"]},
         "start_date": params["start_date"],
         "end_date": params["end_date"],
-        "avg_cost_per_tag": float((results.get("tag_stats") or [{}])[0].get("avg_cost_per_tag") or 0) or None,
-        "total_tag_count": int((results.get("tag_stats") or [{}])[0].get("total_tag_count") or 0) or None,
-        "lakeflow_available": lakeflow_ok[0],
-        "enrichment_note": None if lakeflow_ok[0] else "Job and pipeline names may be incomplete — Lakeflow enrichment was unavailable. Deleted or inaccessible resources may appear.",
+        "avg_cost_per_tag": (lambda v: float(v) if v is not None else None)((results.get("tag_stats") or [{}])[0].get("avg_cost_per_tag")),
+        "total_tag_count": (lambda v: int(v) if v is not None else None)((results.get("tag_stats") or [{}])[0].get("total_tag_count")),
+        "lakeflow_available": jobs_ok[0] and pipelines_ok[0],
+        "enrichment_note": (
+            None if (jobs_ok[0] and pipelines_ok[0]) else
+            "Job names may be incomplete — Lakeflow enrichment was unavailable." if (not jobs_ok[0] and pipelines_ok[0]) else
+            "Pipeline names may be incomplete — Lakeflow enrichment was unavailable." if (jobs_ok[0] and not pipelines_ok[0]) else
+            "Job and pipeline names may be incomplete — Lakeflow enrichment was unavailable."
+        ),
     }
     delta_cache_put(_dkey, "tagging:dashboard-bundle", _resp, ttl_seconds=cache_ttls.BUNDLE_FILTERED if id_list else cache_ttls.BUNDLE)
     return _resp

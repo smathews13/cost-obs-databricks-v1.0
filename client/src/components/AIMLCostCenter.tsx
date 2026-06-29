@@ -854,8 +854,8 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                                     {isHistoricalAgent(agent) && (
                                       <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">Historical</span>
                                     )}
-                                    {agent.endpoint_id && agent.endpoint_id !== agent.agent_name && (
-                                      <span className="max-w-[200px] truncate text-xs text-gray-500">{agent.endpoint_id}</span>
+                                    {((agent as any).served_entity_name || (agent.endpoint_id && agent.endpoint_id !== agent.agent_name)) && (
+                                      <span className="max-w-[200px] truncate text-xs text-gray-500">{(agent as any).served_entity_name || agent.endpoint_id}</span>
                                     )}
                                   </div>
                                 </div>

@@ -299,6 +299,11 @@ WITH cluster_names AS (
   FROM system.compute.clusters
   GROUP BY cluster_id
 ),
+job_names AS (
+  SELECT job_id, MAX(name) as job_name
+  FROM system.lakeflow.jobs
+  GROUP BY job_id
+),
 model_usage AS (
   SELECT
     u.usage_date,
@@ -320,6 +325,7 @@ model_usage AS (
     COALESCE(
       u.usage_metadata.endpoint_name,
       cn.cluster_name,
+      jn.job_name,
       CAST(u.usage_metadata.cluster_id AS STRING),
       'Unknown'
     ) as model_name
@@ -330,6 +336,8 @@ model_usage AS (
     AND p.price_end_time IS NULL
   LEFT JOIN cluster_names cn
     ON u.usage_metadata.cluster_id = cn.cluster_id
+  LEFT JOIN job_names jn
+    ON u.usage_metadata.job_id = jn.job_id
   WHERE u.usage_date BETWEEN :start_date AND :end_date
     AND u.usage_quantity > 0
     AND (

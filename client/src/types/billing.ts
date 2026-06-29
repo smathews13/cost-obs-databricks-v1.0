@@ -252,12 +252,16 @@ export interface PlatformKPIsResponse {
   total_jobs: number;
   total_job_runs: number;
   successful_runs: number;
+  total_job_run_hours?: number;
   unique_job_owners: number;
   active_workspaces: number;
   avg_daily_workspaces?: number;
+  total_workspace_count?: number;
   active_notebooks: number;
   models_served: number;
   total_serving_dbus: number;
+  avg_daily_models?: number;
+  avg_daily_query_users?: number;
   start_date: string;
   end_date: string;
   error?: string;

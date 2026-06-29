@@ -32,6 +32,9 @@ from server.queries import (
     PIPELINE_OBJECTS,
     BILLING_KPIS_FAST,
     AVG_DAILY_WORKSPACES,
+    AVG_DAILY_QUERY_USERS_MV,
+    TOTAL_WORKSPACES_ALLTIME,
+    AVG_DAILY_MODELS,
     LAKEFLOW_JOB_STATS,
     PLATFORM_KPIS,
     PLATFORM_KPIS_FAST,
@@ -2089,6 +2092,7 @@ async def get_platform_kpis(
         "total_jobs": 0,
         "total_job_runs": 0,
         "successful_runs": 0,
+        "total_job_run_hours": 0,
         "unique_job_owners": 0,
         "active_workspaces": 0,
         "active_notebooks": 0,
@@ -2197,6 +2201,8 @@ async def get_kpis_bundle(
     if use_mv:
         avg_daily_ws_sql = _get_mv_query(AVG_DAILY_WORKSPACES, mv_ws)
         parallel_queries.append(("avg_daily_ws", lambda: execute_query(avg_daily_ws_sql, params)))
+        avg_daily_users_sql = _get_mv_query(AVG_DAILY_QUERY_USERS_MV, mv_ws)
+        parallel_queries.append(("avg_daily_query_users", lambda: execute_query(avg_daily_users_sql, params)))
 
     # delta_query_stats is a Delta-direct fallback; skip it when MV is available to avoid redundant scan
     if use_mv:
@@ -2206,6 +2212,10 @@ async def get_kpis_bundle(
 
     # Supplemental user count from materialized table — failures handled inside execute_query
     parallel_queries.append(("user_count", lambda: execute_query(USER_COUNT_QUERY, params)))
+    # Workspace count (all-time) and avg daily model endpoints — fast billing scans
+    parallel_queries.append(("total_workspaces", lambda: execute_query(TOTAL_WORKSPACES_ALLTIME, {})))
+    avg_daily_models_sql = _inject_ws_filter(AVG_DAILY_MODELS, billing_ws_clause)
+    parallel_queries.append(("avg_daily_models", lambda: execute_query(avg_daily_models_sql, params)))
 
     try:
         query_results = await asyncio.to_thread(execute_queries_parallel, parallel_queries, timeout=90.0)
@@ -2214,9 +2224,10 @@ async def get_kpis_bundle(
         return {"kpis": {
             "total_queries": 0, "unique_query_users": 0,
             "total_rows_read": 0, "total_bytes_read": 0, "total_compute_seconds": 0,
-            "total_jobs": 0, "total_job_runs": 0, "successful_runs": 0,
+            "total_jobs": 0, "total_job_runs": 0, "successful_runs": 0, "total_job_run_hours": 0,
             "unique_job_owners": 0, "active_workspaces": 0, "avg_daily_workspaces": 0, "active_notebooks": 0,
-            "models_served": 0, "total_serving_dbus": 0,
+            "models_served": 0, "total_serving_dbus": 0, "avg_daily_models": 0,
+            "avg_daily_query_users": 0, "total_workspace_count": 0,
             "start_date": params["start_date"], "end_date": params["end_date"],
             "error": str(e),
         }, "anomalies": {"anomalies": [], "start_date": params["start_date"], "end_date": params["end_date"]}}
@@ -2225,9 +2236,10 @@ async def get_kpis_bundle(
     kpis_response = {
         "total_queries": 0, "unique_query_users": 0,
         "total_rows_read": 0, "total_bytes_read": 0, "total_compute_seconds": 0,
-        "total_jobs": 0, "total_job_runs": 0, "successful_runs": 0,
+        "total_jobs": 0, "total_job_runs": 0, "successful_runs": 0, "total_job_run_hours": 0,
         "unique_job_owners": 0, "active_workspaces": 0, "avg_daily_workspaces": 0, "active_notebooks": 0,
-        "models_served": 0, "total_serving_dbus": 0,
+        "models_served": 0, "total_serving_dbus": 0, "avg_daily_models": 0,
+        "avg_daily_query_users": 0, "total_workspace_count": 0,
         "start_date": params["start_date"], "end_date": params["end_date"],
     }
 
@@ -2267,10 +2279,25 @@ async def get_kpis_bundle(
         if val is not None:
             kpis_response["avg_daily_workspaces"] = int(val)
 
-    # Lakeflow-backed KPI: successful_runs (may be missing if lakeflow is inaccessible)
+    # Lakeflow-backed KPIs: successful_runs, total_job_run_hours (may be missing if lakeflow is inaccessible)
     lakeflow_results = query_results.get("lakeflow_kpis")
     if lakeflow_results and len(lakeflow_results) > 0:
         kpis_response["successful_runs"] = int(lakeflow_results[0].get("successful_runs") or 0)
+        kpis_response["total_job_run_hours"] = int(lakeflow_results[0].get("total_run_hours") or 0)
+
+    avg_daily_users_results = query_results.get("avg_daily_query_users")
+    if avg_daily_users_results and len(avg_daily_users_results) > 0:
+        val = avg_daily_users_results[0].get("avg_daily_query_users")
+        if val is not None:
+            kpis_response["avg_daily_query_users"] = int(val)
+
+    total_ws_results = query_results.get("total_workspaces")
+    if total_ws_results and len(total_ws_results) > 0:
+        kpis_response["total_workspace_count"] = int(total_ws_results[0].get("total_workspaces") or 0)
+
+    avg_daily_models_results = query_results.get("avg_daily_models")
+    if avg_daily_models_results and len(avg_daily_models_results) > 0:
+        kpis_response["avg_daily_models"] = int(avg_daily_models_results[0].get("avg_daily_models") or 0)
 
     # Override unique_query_users with accurate cross-range distinct count from prpr table
     uc_results = query_results.get("user_count")

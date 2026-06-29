@@ -1294,12 +1294,43 @@ FROM (
 )
 """
 
+AVG_DAILY_QUERY_USERS_MV = """
+SELECT ROUND(AVG(daily_users)) as avg_daily_query_users
+FROM (
+  SELECT usage_date, SUM(unique_query_users) as daily_users
+  FROM `{catalog}`.`{schema}`.`daily_query_stats`
+  WHERE usage_date BETWEEN :start_date AND :end_date
+    {ws_filter}
+  GROUP BY usage_date
+)
+"""
+
+TOTAL_WORKSPACES_ALLTIME = """
+SELECT COUNT(DISTINCT workspace_id) as total_workspaces
+FROM system.billing.usage
+"""
+
+AVG_DAILY_MODELS = """
+SELECT COALESCE(ROUND(AVG(daily_models)), 0) as avg_daily_models
+FROM (
+  SELECT usage_date, COUNT(DISTINCT usage_metadata.endpoint_name) as daily_models
+  FROM system.billing.usage
+  WHERE usage_date >= :start_date
+    AND usage_date <= :end_date
+    AND usage_quantity > 0
+    AND sku_name LIKE '%INFERENCE%'
+  GROUP BY usage_date
+)
+"""
+
 # Lakeflow job run stats — may fail if system.lakeflow is not accessible.
 LAKEFLOW_JOB_STATS = """
 SELECT
   COUNT(*) as total_runs,
-  COUNT(CASE WHEN result_state = 'SUCCEEDED' THEN 1 END) as successful_runs
+  COUNT(CASE WHEN result_state = 'SUCCEEDED' THEN 1 END) as successful_runs,
+  COALESCE(SUM((unix_timestamp(period_end_time) - unix_timestamp(period_start_time)) / 3600.0), 0) as total_run_hours
 FROM system.lakeflow.job_run_timeline
 WHERE period_start_time >= :start_date
   AND period_start_time < DATE_ADD(CAST(:end_date AS DATE), 1)
+  AND period_end_time IS NOT NULL
 """

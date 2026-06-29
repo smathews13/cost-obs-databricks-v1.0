@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useKPITrend, usePlatformKPITrend, useAppsKPITrend } from "@/hooks/useKPITrend";
-import { formatCurrency, formatNumber, formatBytes, formatComputeSecondsCompact } from "@/utils/formatters";
+import { formatCurrency, formatNumber, formatBytesNoDecimal, formatRowCount, formatComputeSecondsCompact } from "@/utils/formatters";
 
 interface KPITrendModalProps {
   kpi: string;
@@ -38,7 +38,8 @@ function defaultBillingFormat(value: number, kpi: string): string {
 }
 
 function defaultPlatformFormat(value: number, kpi: string): string {
-  if (kpi === "total_bytes_read") return formatBytes(value);
+  if (kpi === "total_bytes_read") return formatBytesNoDecimal(value);
+  if (kpi === "total_rows_read") return formatRowCount(value);
   if (kpi === "total_compute_seconds") return formatComputeSecondsCompact(value);
   if (kpi === "avg_query_duration") return `${value.toFixed(1)}s`;
   return formatNumber(value);

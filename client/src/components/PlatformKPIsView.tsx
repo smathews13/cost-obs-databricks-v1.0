@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { PlatformKPIsResponse, SpendAnomaliesResponse } from "@/types/billing";
 import { SpendAnomalies } from "@/components/SpendAnomalies";
 import { KPITrendModal } from "@/components/KPITrendModal";
-import { formatNumber, formatBytes, formatDurationSeconds } from "@/utils/formatters";
+import { formatNumber, formatBytesNoDecimal, formatRowCount, formatDurationSeconds } from "@/utils/formatters";
 import { useFeatureAvailability } from "@/hooks/useFeatureAvailability";
 
 interface PlatformKPIsViewProps {
@@ -204,6 +204,22 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
   // If successful_runs is 0 but we have job runs, it means we don't have the result state data
   const hasSuccessRateData = data.successful_runs > 0;
 
+  const periodDays = startDate && endDate
+    ? Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1
+    : 0;
+
+  const successRatePct = hasSuccessRateData && data.total_job_runs > 0
+    ? ((data.successful_runs / data.total_job_runs) * 100).toFixed(1)
+    : null;
+
+  const stickinessPct = data.avg_daily_query_users && data.unique_query_users > 0
+    ? Math.min(100, Math.round((data.avg_daily_query_users / data.unique_query_users) * 100))
+    : null;
+
+  const workspacePct = data.total_workspace_count && data.total_workspace_count > 0
+    ? Math.round(((data.avg_daily_workspaces ?? data.active_workspaces) / data.total_workspace_count) * 100)
+    : null;
+
   const handleKPIClick = (kpi: "total_queries" | "total_rows_read" | "total_bytes_read" | "total_compute_seconds" | "total_jobs" | "total_job_runs" | "successful_runs" | "active_notebooks" | "active_workspaces" | "models_served" | "total_users" | "avg_query_duration" | "unique_warehouses", label: string) => {
     setSelectedKPI({ kpi, label });
   };
@@ -260,7 +276,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
                   <ul className="list-inside list-disc space-y-1">
                     <li><strong>Query & Data Processing</strong>: SQL query execution, data scanned, and compute time across all warehouses</li>
                     <li><strong>Jobs & Workflows</strong>: Automated job executions, success rates, and notebook usage</li>
-                    <li><strong>Platform Utilization</strong>: Active workspaces, model serving endpoints, and overall user adoption</li>
+                    <li><strong>Platform Utilization</strong>: Active workspaces, model serving endpoints, user adoption, and usage stickiness (DAU/MAU)</li>
                     <li>Click any metric card to view historical trends and patterns</li>
                   </ul>
                 </div>
@@ -292,7 +308,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             isLoading={isLoading || isFetching}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
-            onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_queries", "Total Queries Executed") : undefined}
+            onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_queries", "Daily Queries Executed") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -302,7 +318,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
 
           <KPICard
             title="Rows Processed"
-            value={formatNumber(data.total_rows_read)}
+            value={formatRowCount(data.total_rows_read)}
             subtitle="Total data scanned"
             isLoading={isLoading || isFetching}
             color="bg-orange-100"
@@ -317,7 +333,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
 
           <KPICard
             title="Data Processed"
-            value={formatBytes(data.total_bytes_read)}
+            value={formatBytesNoDecimal(data.total_bytes_read)}
             subtitle="Total throughput"
             isLoading={isLoading || isFetching}
             color="bg-orange-100"
@@ -337,7 +353,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             isLoading={isLoading || isFetching}
             color="bg-orange-100"
             unavailableReason={queryHistUnavailable}
-            onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_compute_seconds", "Compute Time") : undefined}
+            onClick={!queryHistUnavailable && startDate && endDate ? () => handleKPIClick("total_compute_seconds", "Daily Active Processing Time") : undefined}
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -354,7 +370,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Total Jobs"
             value={formatNumber(data.total_jobs)}
-            subtitle={`from ${formatNumber(data.unique_job_owners)} unique owners`}
+            subtitle={`${formatNumber(data.unique_job_owners)} unique owners`}
             infoTooltip="Distinct jobs with billing usage across the full selected period. The daily trend shows unique jobs active each day, which is typically lower — the same job counts once per day vs. once for the entire period."
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
@@ -370,7 +386,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Job Runs"
             value={formatNumber(data.total_job_runs)}
-            subtitle="Total executions"
+            subtitle={(data.total_job_run_hours ?? 0) > 0 ? `${formatNumber(data.total_job_run_hours ?? 0)} hrs total run time` : "Total executions"}
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
             unavailableReason={jobsUnavailable}
@@ -385,7 +401,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Successful Runs"
             value={hasSuccessRateData ? formatNumber(data.successful_runs) : "N/A"}
-            subtitle={hasSuccessRateData ? `of ${formatNumber(data.total_job_runs)} total runs` : "Result states unavailable"}
+            subtitle={successRatePct !== null ? `${successRatePct}% success rate` : "Result states unavailable"}
             color={hasSuccessRateData ? "bg-orange-100" : "bg-gray-100"}
             isLoading={isLoading || isFetching}
             onClick={startDate && endDate && hasSuccessRateData ? () => handleKPIClick("successful_runs", "Successful Runs") : undefined}
@@ -397,9 +413,9 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           />
 
           <KPICard
-            title="Active Clusters"
+            title="Total Unique Clusters"
             value={formatNumber(data.active_notebooks)}
-            subtitle="Unique clusters, period total"
+            subtitle={periodDays > 0 ? `active across ${periodDays} day${periodDays === 1 ? "" : "s"}` : "Unique clusters, period total"}
             infoTooltip="Distinct clusters with billing usage across the full selected period. The daily trend shows unique clusters active each day, which is typically lower — the same cluster counts once per day vs. once for the entire period."
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
@@ -417,11 +433,11 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
       {/* Platform Utilization */}
       <div>
         <h3 className="mb-4 text-lg font-semibold text-gray-900">Platform Utilization</h3>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <KPICard
             title="Active Workspaces"
             value={formatNumber(data.avg_daily_workspaces != null && data.avg_daily_workspaces !== 0 ? data.avg_daily_workspaces : data.active_workspaces)}
-            subtitle="Avg workspaces active per day"
+            subtitle={workspacePct !== null ? `${workspacePct}% active of ${formatNumber(data.total_workspace_count ?? 0)} total` : "Avg workspaces active per day"}
             infoTooltip="Average number of distinct workspaces with billable usage per day in the selected period. Matches the daily trend average."
             color="bg-orange-100"
             isLoading={isLoading || isFetching}
@@ -437,7 +453,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             <KPICard
               title="Models Served"
               value={formatNumber(data.models_served)}
-              subtitle={`${formatNumber(data.total_serving_dbus)} DBUs`}
+              subtitle={(data.avg_daily_models ?? 0) > 0 ? `${formatNumber(data.avg_daily_models ?? 0)} served daily` : `${formatNumber(data.total_serving_dbus)} DBUs`}
               infoTooltip="Distinct model-serving endpoints active at any point during the period. The daily trend shows unique endpoints per day, which is typically lower — the same endpoint counts once per day vs. once for the entire period."
               color="bg-orange-100"
               isLoading={isLoading || isFetching}
@@ -454,7 +470,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Total Unique Active Users"
             value={formatNumber(data.unique_query_users)}
-            subtitle={`${formatNumber(data.unique_job_owners)} job owners separately`}
+            subtitle={(data.avg_daily_query_users ?? 0) > 0 ? `${formatNumber(data.avg_daily_query_users ?? 0)} daily active users` : `${formatNumber(data.unique_job_owners)} job owners separately`}
             isLoading={isLoading || isFetching}
             infoTooltip="Distinct SQL query executors in the selected period (matches the daily trend). Job owners shown separately — some users may appear in both groups."
             color="bg-orange-100"
@@ -462,6 +478,20 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
             icon={
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            }
+          />
+
+          <KPICard
+            title="Usage Stickiness"
+            value={stickinessPct !== null ? `${stickinessPct}%` : "N/A"}
+            subtitle="DAU / total users ratio"
+            infoTooltip="Avg daily active users divided by total unique users in the period. Higher = more habitual usage. 20%+ is strong engagement; 10% suggests occasional usage."
+            color={stickinessPct !== null ? "bg-orange-100" : "bg-gray-100"}
+            isLoading={isLoading || isFetching}
+            icon={
+              <svg className={`h-6 w-6 ${stickinessPct !== null ? "text-[#FF3621]" : "text-gray-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             }
           />

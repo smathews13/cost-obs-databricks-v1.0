@@ -66,6 +66,9 @@ export function formatPercent(value: number, decimals: number = 1): string {
  * @returns Formatted string with appropriate unit (e.g., "1.5 GB")
  */
 export function formatBytes(bytes: number): string {
+  if (bytes >= 1_000_000_000_000_000) {
+    return `${(bytes / 1_000_000_000_000_000).toFixed(1)} PB`;
+  }
   if (bytes >= 1_000_000_000_000) {
     return `${(bytes / 1_000_000_000_000).toFixed(1)} TB`;
   }
@@ -79,6 +82,52 @@ export function formatBytes(bytes: number): string {
     return `${(bytes / 1_000).toFixed(1)} KB`;
   }
   return `${bytes} B`;
+}
+
+/**
+ * Format bytes with no decimal places; scales up to PB for large volumes.
+ * Used for KPI cards and trend modals where precision is less important than readability.
+ */
+export function formatBytesNoDecimal(bytes: number): string {
+  if (bytes >= 1_000_000_000_000_000) {
+    return `${(bytes / 1_000_000_000_000_000).toFixed(0)} PB`;
+  }
+  if (bytes >= 1_000_000_000_000) {
+    return `${(bytes / 1_000_000_000_000).toFixed(0)} TB`;
+  }
+  if (bytes >= 1_000_000_000) {
+    return `${(bytes / 1_000_000_000).toFixed(0)} GB`;
+  }
+  if (bytes >= 1_000_000) {
+    return `${(bytes / 1_000_000).toFixed(0)} MB`;
+  }
+  if (bytes >= 1_000) {
+    return `${(bytes / 1_000).toFixed(0)} KB`;
+  }
+  return `${bytes.toFixed(0)} B`;
+}
+
+/**
+ * Format a large row count with no decimal places, scaling up through T (trillion)
+ * and P (quadrillion) tiers for petascale datasets.
+ */
+export function formatRowCount(rows: number): string {
+  if (rows >= 1_000_000_000_000_000) {
+    return `${(rows / 1_000_000_000_000_000).toFixed(0)}P`;
+  }
+  if (rows >= 1_000_000_000_000) {
+    return `${(rows / 1_000_000_000_000).toFixed(0)}T`;
+  }
+  if (rows >= 1_000_000_000) {
+    return `${(rows / 1_000_000_000).toFixed(0)}B`;
+  }
+  if (rows >= 1_000_000) {
+    return `${(rows / 1_000_000).toFixed(0)}M`;
+  }
+  if (rows >= 1_000) {
+    return `${(rows / 1_000).toFixed(0)}K`;
+  }
+  return rows.toFixed(0);
 }
 
 /**

@@ -604,7 +604,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     {summary != null ? formatNumber(summary.unique_users ?? 0) : "—"}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    {summary != null ? `Across ${formatNumber(summary.unique_warehouses ?? 0)} SQL warehouses` : "—"}
+                    {summary != null ? `across ${formatNumber(summary.unique_warehouses ?? 0)} SQL warehouses` : "—"}
                   </div>
                   <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>
                 </div>

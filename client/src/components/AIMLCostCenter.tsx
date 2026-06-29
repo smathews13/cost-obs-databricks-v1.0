@@ -468,7 +468,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {endpointsData.slice((endpointsPage - 1) * PAGE_SIZE, endpointsPage * PAGE_SIZE).map((endpoint, idx) => {
-                      const epUrl = getEndpointUrl(host, endpoint.endpoint_name, null);
+                      const epUrl = host ? `https://${host}/ml/endpoints${workspaceIds?.[0] ? `?o=${workspaceIds[0]}` : ""}` : null;
                       return (
                       <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                         <td className="px-3 py-2 text-sm font-medium truncate max-w-[200px]" title={endpoint.endpoint_name}>

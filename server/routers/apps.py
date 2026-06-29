@@ -122,10 +122,10 @@ def _fetch_one_app_resources(w: Any, app_name: str) -> tuple[str, list[dict[str,
                 job = r.job
                 res_name = res_name or getattr(job, "id", "") or ""
                 res_description = res_description or getattr(job, "permission", "") or ""
-            elif getattr(r, "postgres", None):
+            elif getattr(r, "database", None):
                 res_type = "LAKEBASE"
-                pg = r.postgres
-                res_name = res_name or getattr(pg, "database", "") or getattr(pg, "branch", "") or ""
+                pg = r.database
+                res_name = res_name or getattr(pg, "database_name", "") or getattr(pg, "instance_name", "") or ""
                 res_description = res_description or getattr(pg, "permission", "") or ""
             else:
                 res_type = getattr(r, "type", None) or "UNKNOWN"
@@ -655,7 +655,6 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
           WHERE u.usage_date BETWEEN :start_date AND :end_date
             AND u.usage_quantity > 0
             AND u.billing_origin_product = 'APPS'
-            {app_filter}
             {ws_clause}
           GROUP BY usage_date
         ) t
@@ -674,7 +673,6 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
           WHERE u.usage_date BETWEEN :start_date AND :end_date
             AND u.usage_quantity > 0
             AND u.billing_origin_product = 'APPS'
-            {app_filter}
             {ws_clause}
           GROUP BY u.usage_date
         ) t

@@ -688,7 +688,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({kpi: "apps_avg_cost_per_app", label: "Daily Avg App Spend"})}
+          onClick={() => startDate && endDate && setSelectedKPI({kpi: "apps_avg_cost_per_app", label: "Daily Avg Per-App Spend"})}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
@@ -697,7 +697,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">App Spend</p>
+              <p className="text-sm font-medium text-gray-500">Per-App Spend</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(summary.avg_cost_per_app ?? 0)}</p>
               <p className="mt-1 text-xs text-gray-500">daily average</p>
               {startDate && endDate && <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend &rarr;</p>}
@@ -1192,34 +1192,8 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
 
             {/* Type filter chips + App filter dropdown */}
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => { setArtifactTypeFilter(null); setArtifactPage(1); }}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  !artifactTypeFilter ? 'text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                style={!artifactTypeFilter ? { backgroundColor: '#FF3621' } : undefined}
-              >
-                All ({data.connected_artifacts.length})
-              </button>
-              {artifactTypes.map((type: string) => {
-                const count = data.connected_artifacts.filter((a: AppsConnectedArtifact) => a.artifact_type === type).length;
-                const isActive = artifactTypeFilter === type;
-                return (
-                  <button
-                    key={type}
-                    onClick={() => { setArtifactTypeFilter(isActive ? null : type); setArtifactPage(1); }}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      isActive ? 'text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                    style={isActive ? { backgroundColor: '#FF3621' } : undefined}
-                  >
-                    {type.replace(/_/g, ' ')} ({count})
-                  </button>
-                );
-              })}
-
-              {/* App filter dropdown */}
-              <div className="relative ml-auto" data-artifact-app-dropdown>
+              {/* App filter dropdown — first so it's front and center */}
+              <div className="relative" data-artifact-app-dropdown>
                 <button
                   onClick={() => { setArtifactAppFilterOpen(v => !v); setArtifactAppFilterSearch(""); }}
                   className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
@@ -1267,6 +1241,33 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   </div>
                 )}
               </div>
+
+              {/* Type filter pills */}
+              <button
+                onClick={() => { setArtifactTypeFilter(null); setArtifactPage(1); }}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  !artifactTypeFilter ? 'text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                style={!artifactTypeFilter ? { backgroundColor: '#FF3621' } : undefined}
+              >
+                All ({data.connected_artifacts.length})
+              </button>
+              {artifactTypes.map((type: string) => {
+                const count = data.connected_artifacts.filter((a: AppsConnectedArtifact) => a.artifact_type === type).length;
+                const isActive = artifactTypeFilter === type;
+                return (
+                  <button
+                    key={type}
+                    onClick={() => { setArtifactTypeFilter(isActive ? null : type); setArtifactPage(1); }}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      isActive ? 'text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                    style={isActive ? { backgroundColor: '#FF3621' } : undefined}
+                  >
+                    {type.replace(/_/g, ' ')} ({count})
+                  </button>
+                );
+              })}
             </div>
 
             {/* Search */}

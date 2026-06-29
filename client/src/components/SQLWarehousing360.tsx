@@ -1454,3 +1454,123 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
     </div>
   );
 }
+
+const fmt$ = (v: number) =>
+  v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${v.toFixed(0)}`;
+
+const fmtHours = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+};
+
+export function WarehouseIdleTimeView({
+  host,
+  startDate,
+  endDate,
+}: {
+  host?: string | null;
+  startDate?: string;
+  endDate?: string;
+}) {
+  const params = new URLSearchParams();
+  if (startDate) params.set("start_date", startDate);
+  if (endDate) params.set("end_date", endDate);
+
+  const { data, isLoading } = useQuery<{
+    available: boolean;
+    warehouses: Array<{
+      warehouse_id: string;
+      warehouse_name: string;
+      warehouse_size: string;
+      workspace_id: string;
+      total_running_minutes: number;
+      total_query_minutes: number;
+      idle_minutes: number;
+      idle_pct: number;
+      total_spend: number;
+      estimated_idle_spend: number;
+    }>;
+  }>({
+    queryKey: ["warehouse-idle-time", startDate, endDate],
+    queryFn: () =>
+      fetch(`/api/sql/warehouse-health/idle-time?${params}`).then(r => r.json()),
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-gray-900">Top Warehouses by Idle Time</h3>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Idle time = warehouse uptime (from lifecycle events) minus active query time. Estimated idle spend is prorated from total billed spend.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex h-24 items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200" style={{ borderTopColor: "#FF3621" }} />
+        </div>
+      ) : !data?.available || !data.warehouses.length ? (
+        <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-500">
+          {data?.available === false
+            ? "Idle time data unavailable. Requires access to system.compute.warehouse_events and system.query.history."
+            : "No warehouse uptime data found for this date range."}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Warehouse</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Size</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Uptime</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Idle Time</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Idle %</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Total Spend</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Est. Idle Spend</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {data.warehouses.map((wh, i) => (
+                <tr key={`${wh.warehouse_id}-${i}`} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    {host ? (
+                      <a
+                        href={`${host}/sql/warehouses/${wh.warehouse_id}/edit`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {wh.warehouse_name}
+                      </a>
+                    ) : (
+                      wh.warehouse_name
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">{wh.warehouse_size}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.total_running_minutes)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.idle_minutes)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                      wh.idle_pct >= 80 ? "bg-red-100 text-red-700"
+                      : wh.idle_pct >= 50 ? "bg-amber-100 text-amber-700"
+                      : "bg-gray-100 text-gray-700"
+                    }`}>
+                      {wh.idle_pct.toFixed(1)}%
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right text-gray-700">{fmt$(wh.total_spend)}</td>
+                  <td className="px-4 py-3 text-right font-medium text-red-600">{fmt$(wh.estimated_idle_spend)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

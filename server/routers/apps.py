@@ -655,6 +655,7 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
           WHERE u.usage_date BETWEEN :start_date AND :end_date
             AND u.usage_quantity > 0
             AND u.billing_origin_product = 'APPS'
+            {app_filter}
             {ws_clause}
           GROUP BY usage_date
         ) t
@@ -673,6 +674,7 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
           WHERE u.usage_date BETWEEN :start_date AND :end_date
             AND u.usage_quantity > 0
             AND u.billing_origin_product = 'APPS'
+            {app_filter}
             {ws_clause}
           GROUP BY u.usage_date
         ) t
@@ -706,10 +708,11 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
             all_workspaces[ws_id] = ws_name
 
         summary_data = results.get("summary", []) or []
-        days_in_range = 1
+        # Calendar days so the KPI subtitle matches the selected range regardless of billing table lag
+        _start_dt = datetime.strptime(params["start_date"], "%Y-%m-%d")
+        _end_dt = datetime.strptime(params["end_date"], "%Y-%m-%d")
+        days_in_range = (_end_dt - _start_dt).days + 1
         avg_daily_apps = 0
-        if summary_data:
-            days_in_range = summary_data[0].get("days_in_range") or 1
         filtered_avg_data = results.get("filtered_avg_apps", []) or []
         if filtered_avg_data:
             avg_daily_apps = round(float(filtered_avg_data[0].get("avg_daily_apps") or 0))

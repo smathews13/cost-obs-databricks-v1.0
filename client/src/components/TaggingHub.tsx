@@ -44,6 +44,29 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
+function InfoTooltip({ text }: { text: string }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <span
+      className="ml-1.5 inline-flex cursor-help"
+      onMouseEnter={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseMove={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setPos(null)}
+    >
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-500">i</span>
+      {pos && createPortal(
+        <div
+          className="pointer-events-none fixed z-[9999] w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal leading-relaxed text-white shadow-lg"
+          style={{ top: pos.y - 12, transform: "translateY(-100%)", left: Math.min(pos.x + 14, window.innerWidth - 296) }}
+        >
+          {text}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+}
+
 const formatNumber = (value: number) =>
   new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
@@ -465,7 +488,10 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total Tags</p>
+              <p className="flex items-center text-sm font-medium text-gray-500">
+                Total Tags
+                <InfoTooltip text="Distinct tag key-value pairs applied across all resources over the full date range. The trend drilldown shows per-day counts — a tag on a long-running resource is counted each day it appears, so daily totals are lower than this cumulative figure." />
+              </p>
               <p className="text-2xl font-semibold text-gray-900">{data?.total_tag_count?.toLocaleString() ?? "—"}</p>
               <p className="mt-1 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
             </div>

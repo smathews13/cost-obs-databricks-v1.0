@@ -43,6 +43,7 @@ const AppsCostCenter = lazy(() => lazyWithRetry(() => import("@/components/AppsC
 const TaggingHub = lazy(() => lazyWithRetry(() => import("@/components/TaggingHub").then(m => ({ default: m.TaggingHub }))));
 const SQLWarehousing360 = lazy(() => lazyWithRetry(() => import("@/components/SQLWarehousing360").then(m => ({ default: m.SQLWarehousing360 }))));
 const WarehouseRightsizingView = lazy(() => lazyWithRetry(() => import("@/components/SQLWarehousing360").then(m => ({ default: m.WarehouseRightsizingView }))));
+const WarehouseIdleTimeView = lazy(() => lazyWithRetry(() => import("@/components/SQLWarehousing360").then(m => ({ default: m.WarehouseIdleTimeView }))));
 const ForecastingView = lazy(() => lazyWithRetry(() => import("@/components/ForecastingView").then(m => ({ default: m.ForecastingView }))));
 const ContractBurndown = lazy(() => lazyWithRetry(() => import("@/components/ContractBurndown").then(m => ({ default: m.ContractBurndown }))));
 const Alerts = lazy(() => lazyWithRetry(() => import("@/pages/Alerts")));
@@ -1187,6 +1188,7 @@ function Dashboard() {
               </div>
             </div>
             <WarehouseRightsizingView host={accountInfo?.host} />
+            <WarehouseIdleTimeView host={accountInfo?.host} startDate={dateRange.startDate} endDate={dateRange.endDate} />
           </div>
           </TabErrorBoundary>
         ) : activeTab === "kpis" ? (

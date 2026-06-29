@@ -1285,7 +1285,8 @@ async def get_workspace_list(
     }
     configured_ids = wf.get_configured_workspace_ids()
     ws_clause = wf.build_ws_filter_clause() if configured_ids else ""
-    sql = f"""
+
+    sql_with_names = f"""
         SELECT
             CAST(u.workspace_id AS STRING) as workspace_id,
             COALESCE(ws.workspace_name, CAST(u.workspace_id AS STRING)) as workspace_name
@@ -1297,11 +1298,27 @@ async def get_workspace_list(
         GROUP BY u.workspace_id, ws.workspace_name
         ORDER BY workspace_name
     """
+    sql_ids_only = f"""
+        SELECT
+            CAST(workspace_id AS STRING) as workspace_id,
+            CAST(workspace_id AS STRING) as workspace_name
+        FROM system.billing.usage
+        WHERE usage_date BETWEEN :start_date AND :end_date
+          AND usage_quantity > 0
+          {ws_clause}
+        GROUP BY workspace_id
+        ORDER BY workspace_id
+    """
+
+    def _fetch_rows() -> list:
+        try:
+            return execute_query(sql_with_names, params)
+        except Exception as e:
+            logger.warning("get_workspace_list: system.access.workspaces_latest unavailable (%s), falling back to IDs only", e)
+            return execute_query(sql_ids_only, params)
+
     try:
-        rows = await asyncio.wait_for(
-            asyncio.to_thread(execute_query, sql, params),
-            timeout=30.0,
-        )
+        rows = await asyncio.wait_for(asyncio.to_thread(_fetch_rows), timeout=30.0)
         return {
             "workspaces": [{"id": r["workspace_id"], "name": r["workspace_name"]} for r in rows],
             "is_scoped": bool(configured_ids),

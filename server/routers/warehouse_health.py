@@ -245,6 +245,151 @@ async def get_warehouse_health() -> dict[str, Any]:
     return payload
 
 
+_SQL_IDLE_TIME = """
+WITH events_windowed AS (
+  SELECT
+    warehouse_id,
+    event_time,
+    cluster_count,
+    LEAD(event_time) OVER (PARTITION BY warehouse_id ORDER BY event_time) AS next_event_time
+  FROM system.compute.warehouse_events
+  WHERE event_time >= :start_ts AND event_time < :end_ts
+),
+running_windows AS (
+  SELECT
+    warehouse_id,
+    event_time AS window_start,
+    COALESCE(next_event_time, CURRENT_TIMESTAMP()) AS window_end
+  FROM events_windowed
+  WHERE cluster_count > 0
+),
+warehouse_uptime AS (
+  SELECT
+    warehouse_id,
+    SUM((UNIX_TIMESTAMP(window_end) - UNIX_TIMESTAMP(window_start)) / 60.0) AS total_running_minutes
+  FROM running_windows
+  GROUP BY warehouse_id
+),
+query_time AS (
+  SELECT
+    compute.warehouse_id AS warehouse_id,
+    SUM(GREATEST((UNIX_TIMESTAMP(COALESCE(end_time, CURRENT_TIMESTAMP()))
+        - UNIX_TIMESTAMP(start_time)) / 60.0, 0)) AS total_query_minutes
+  FROM system.query.history
+  WHERE start_time >= :start_ts AND start_time < :end_ts
+    AND compute.warehouse_id IS NOT NULL
+    AND status IN ('FINISHED', 'RUNNING', 'FETCHING', 'CANCELED', 'FAILED')
+  GROUP BY compute.warehouse_id
+),
+wh_info AS (
+  SELECT warehouse_id, warehouse_name, warehouse_size, workspace_id
+  FROM system.compute.warehouses
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY change_time DESC) = 1
+),
+wh_cost AS (
+  SELECT
+    usage_metadata.warehouse_id AS warehouse_id,
+    SUM(usage_quantity * COALESCE(p.pricing.default, 0)) AS total_spend
+  FROM system.billing.usage u
+  LEFT JOIN system.billing.list_prices p
+    ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
+  WHERE usage_date BETWEEN :start_date AND :end_date
+    AND usage_metadata.warehouse_id IS NOT NULL
+    AND usage_quantity > 0
+  GROUP BY usage_metadata.warehouse_id
+)
+SELECT
+  u.warehouse_id,
+  COALESCE(i.warehouse_name, u.warehouse_id) AS warehouse_name,
+  COALESCE(i.warehouse_size, 'Unknown') AS warehouse_size,
+  i.workspace_id,
+  ROUND(u.total_running_minutes) AS total_running_minutes,
+  ROUND(COALESCE(q.total_query_minutes, 0)) AS total_query_minutes,
+  ROUND(GREATEST(u.total_running_minutes - COALESCE(q.total_query_minutes, 0), 0)) AS idle_minutes,
+  CASE
+    WHEN u.total_running_minutes > 0
+    THEN ROUND(100.0 * GREATEST(u.total_running_minutes - COALESCE(q.total_query_minutes, 0), 0)
+         / u.total_running_minutes, 1)
+    ELSE 0.0
+  END AS idle_pct,
+  COALESCE(c.total_spend, 0) AS total_spend,
+  CASE
+    WHEN u.total_running_minutes > 0
+    THEN COALESCE(c.total_spend, 0)
+         * GREATEST(u.total_running_minutes - COALESCE(q.total_query_minutes, 0), 0)
+         / u.total_running_minutes
+    ELSE 0.0
+  END AS estimated_idle_spend
+FROM warehouse_uptime u
+LEFT JOIN query_time q ON u.warehouse_id = q.warehouse_id
+LEFT JOIN wh_info i ON u.warehouse_id = i.warehouse_id
+LEFT JOIN wh_cost c ON u.warehouse_id = c.warehouse_id
+WHERE u.total_running_minutes >= 10
+ORDER BY estimated_idle_spend DESC
+LIMIT 25
+"""
+
+_idle_time_cache: dict | None = None
+_idle_time_cache_ts: float = 0.0
+_IDLE_TIME_CACHE_TTL = 30 * 60
+
+
+@router.get("/idle-time")
+async def get_warehouse_idle_time(
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    """Idle time breakdown per warehouse: uptime from warehouse_events minus active query time."""
+    global _idle_time_cache, _idle_time_cache_ts
+    from server.db import get_default_start_date, get_default_end_date
+
+    sd = start_date or get_default_start_date()
+    ed = end_date or get_default_end_date()
+    cache_key = f"{sd}:{ed}"
+    if (_idle_time_cache is not None
+            and (time.time() - _idle_time_cache_ts) < _IDLE_TIME_CACHE_TTL
+            and _idle_time_cache.get("_cache_key") == cache_key):
+        return _idle_time_cache
+
+    params = {
+        "start_ts": f"{sd} 00:00:00",
+        "end_ts": f"{ed} 23:59:59",
+        "start_date": sd,
+        "end_date": ed,
+    }
+    try:
+        rows = await asyncio.to_thread(execute_query, _SQL_IDLE_TIME, params)
+    except Exception as e:
+        logger.warning("warehouse idle-time query failed: %s", e)
+        return {"available": False, "error": str(e), "warehouses": [],
+                "generated_at": datetime.now(timezone.utc).isoformat()}
+
+    warehouses = []
+    for row in rows:
+        warehouses.append({
+            "warehouse_id": row.get("warehouse_id"),
+            "warehouse_name": row.get("warehouse_name"),
+            "warehouse_size": row.get("warehouse_size"),
+            "workspace_id": str(row.get("workspace_id") or ""),
+            "total_running_minutes": int(row.get("total_running_minutes") or 0),
+            "total_query_minutes": int(row.get("total_query_minutes") or 0),
+            "idle_minutes": int(row.get("idle_minutes") or 0),
+            "idle_pct": float(row.get("idle_pct") or 0),
+            "total_spend": float(row.get("total_spend") or 0),
+            "estimated_idle_spend": float(row.get("estimated_idle_spend") or 0),
+        })
+
+    payload = {
+        "available": True,
+        "warehouses": warehouses,
+        "_cache_key": cache_key,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _idle_time_cache = payload
+    _idle_time_cache_ts = time.time()
+    return payload
+
+
 @router.get("/{warehouse_id}")
 async def get_warehouse_health_detail(warehouse_id: str) -> dict[str, Any]:
     """Return health detail for a specific warehouse (served from cache)."""

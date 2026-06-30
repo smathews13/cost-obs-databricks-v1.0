@@ -81,13 +81,13 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
   function label() {
     if (allSelected) {
       if (validWorkspaces.length === 2) {
-        return validWorkspaces.map((w) => w.workspace_name || w.workspace_id).join(", ");
+        return validWorkspaces.map((w) => w.workspace_name || `Workspace ${w.workspace_id}`).join(", ");
       }
       return "All Workspaces";
     }
     if (selectedIds.length === 1) {
       const ws = validWorkspaces.find((w) => w.workspace_id === selectedIds[0]);
-      return ws?.workspace_name || selectedIds[0];
+      return ws?.workspace_name || `Workspace ${selectedIds[0]}`;
     }
     return `${selectedIds.length} Workspaces`;
   }
@@ -171,7 +171,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
             {(() => {
               const q = search.toLowerCase();
               const filtered = validWorkspaces.filter((ws) =>
-                !search || (ws.workspace_name || ws.workspace_id || "").toLowerCase().includes(q)
+                !search || (ws.workspace_name || `Workspace ${ws.workspace_id}` || "").toLowerCase().includes(q)
               );
               if (filtered.length === 0) {
                 return <p className="px-2 py-3 text-center text-xs text-gray-500">No workspaces match</p>;
@@ -192,7 +192,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
                       className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
                     />
                     <span className="flex-1 truncate text-sm text-gray-700">
-                      {ws.workspace_name || id}
+                      {ws.workspace_name || `Workspace ${id}`}
                     </span>
                   </label>
                 );

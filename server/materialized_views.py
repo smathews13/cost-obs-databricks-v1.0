@@ -1782,7 +1782,7 @@ ORDER BY usage_date, product_category
 MV_BILLING_BY_WORKSPACE = """
 SELECT
   workspace_id,
-  COALESCE(MAX(workspace_name), CONCAT('Workspace ', CAST(workspace_id AS STRING))) as workspace_name,
+  MAX(workspace_name) as workspace_name,
   SUM(total_dbus) as total_dbus,
   SUM(total_spend) as total_spend
 FROM `{catalog}`.`{schema}`.`daily_workspace_breakdown`

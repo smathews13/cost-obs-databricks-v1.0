@@ -105,7 +105,8 @@ function getClusterUrl(host: string | null | undefined, clusterId: string, works
 export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, workspaceIds, workspaceNameMap }: AIMLCostCenterProps) {
   const [endpointsPage, setEndpointsPage] = useState(1);
   const [modelsPage, setModelsPage] = useState(1);
-  const [modelsTypeFilter, setModelsTypeFilter] = useState<string | null>(null);
+  const [modelsTypeFilters, setModelsTypeFilters] = useState<string[]>([]);
+  const [modelsTypeDropdownOpen, setModelsTypeDropdownOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<import("@/types/billing").AIMLAgentBrick | null>(null);
   const [showHistoricalAgents, setShowHistoricalAgents] = useState(false);
   const [agentTypeFilter, setAgentTypeFilter] = useState<string>("all");
@@ -699,8 +700,8 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
             };
             const allModelRows = data.models?.models || [];
             const distinctTypes = Array.from(new Set(allModelRows.map(m => m.model_type))).filter(Boolean);
-            const filteredModels = modelsTypeFilter
-              ? allModelRows.filter(m => m.model_type === modelsTypeFilter)
+            const filteredModels = modelsTypeFilters.length > 0
+              ? allModelRows.filter(m => modelsTypeFilters.includes(m.model_type))
               : allModelRows;
             const pageModels = filteredModels.slice((modelsPage - 1) * PAGE_SIZE, modelsPage * PAGE_SIZE);
             return (
@@ -719,25 +720,83 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
               </div>
             </div>
             {distinctTypes.length > 1 && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="relative">
+                {modelsTypeDropdownOpen && (
+                  <div className="fixed inset-0 z-10" onClick={() => setModelsTypeDropdownOpen(false)} />
+                )}
                 <button
-                  onClick={() => { setModelsTypeFilter(null); setModelsPage(1); }}
-                  className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${modelsTypeFilter === null ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
+                  onClick={() => setModelsTypeDropdownOpen((o) => !o)}
+                  className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
                 >
-                  All ({allModelRows.length})
-                </button>
-                {distinctTypes.map(t => {
-                  const count = allModelRows.filter(m => m.model_type === t).length;
-                  return (
+                  <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                  </svg>
+                  <span className="max-w-[140px] truncate">
+                    {modelsTypeFilters.length === 0
+                      ? "All Types"
+                      : modelsTypeFilters.length === 1
+                      ? (TYPE_LABELS[modelsTypeFilters[0]] || modelsTypeFilters[0])
+                      : `${modelsTypeFilters.length} Types`}
+                  </span>
+                  {modelsTypeFilters.length > 0 && (
                     <button
-                      key={t}
-                      onClick={() => { setModelsTypeFilter(t); setModelsPage(1); }}
-                      className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${modelsTypeFilter === t ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
+                      onClick={(e) => { e.stopPropagation(); setModelsTypeFilters([]); setModelsPage(1); }}
+                      className="ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-500 hover:bg-gray-300"
+                      title="Clear filter"
                     >
-                      {TYPE_LABELS[t] || t} ({count})
+                      <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
                     </button>
-                  );
-                })}
+                  )}
+                  <svg
+                    className={`ml-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${modelsTypeDropdownOpen ? "rotate-180" : ""}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {modelsTypeDropdownOpen && (
+                  <div className="absolute right-0 z-20 mt-2 min-w-[200px] rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Model Type</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setModelsTypeFilters([]); setModelsPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">All</button>
+                        <span className="text-gray-300">·</span>
+                        <button onClick={() => { setModelsTypeFilters([]); setModelsPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      {distinctTypes.map((t) => {
+                        const count = allModelRows.filter(m => m.model_type === t).length;
+                        const checked = modelsTypeFilters.includes(t);
+                        return (
+                          <label
+                            key={t}
+                            className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 ${checked ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setModelsTypeFilters((prev) =>
+                                  prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+                                );
+                                setModelsPage(1);
+                              }}
+                              className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
+                            />
+                            <span className="flex-1 truncate text-sm text-gray-700">{TYPE_LABELS[t] || t}</span>
+                            <span className="text-xs text-gray-400">{count}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
+                      {modelsTypeFilters.length === 0 ? `All ${allModelRows.length}` : `${filteredModels.length} of ${allModelRows.length}`} models
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -133,7 +133,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [sourceQueriesCache, setSourceQueriesCache] = useState<Record<string, SourceQuery[]>>({});
   const [sourceQueriesLoading, setSourceQueriesLoading] = useState(false);
-  const [querySourceFilter, setQuerySourceFilter] = useState<string | null>(null);
+  const [querySourceFilters, setQuerySourceFilters] = useState<string[]>([]);
+  const [querySourceDropdownOpen, setQuerySourceDropdownOpen] = useState(false);
   const [querySearch, setQuerySearch] = useState("");
   const [warehouseSizeWsFilter, setWarehouseSizeWsFilter] = useState<string>("all");
   const [whSizeDropdownOpen, setWhSizeDropdownOpen] = useState(false);
@@ -325,8 +326,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
     if (!showHistoricalQueries) {
       queries = queries.filter((q) => !isHistoricalQuery(q));
     }
-    if (querySourceFilter) {
-      queries = queries.filter((q) => q.query_source_type === querySourceFilter);
+    if (querySourceFilters.length > 0) {
+      queries = queries.filter((q) => querySourceFilters.includes(q.query_source_type));
     }
     queries.sort((a, b) => {
       let aVal: number | string = 0;
@@ -355,7 +356,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
       return sortDirection === "asc" ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
     return queries;
-  }, [topQueriesData, sortField, sortDirection, showHistoricalQueries, querySourceFilter]);
+  }, [topQueriesData, sortField, sortDirection, showHistoricalQueries, querySourceFilters]);
 
   const searchedQueries = querySearch
     ? filteredQueries.filter(q =>
@@ -967,32 +968,93 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   </span>
                 </label>
               )}
-              <button
-                onClick={() => { setQuerySourceFilter(null); setQueriesPage(1); }}
-                className={`rounded-full px-3 py-1 text-xs font-medium ${querySourceFilter === null ? "text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
-                style={querySourceFilter === null ? { backgroundColor: '#FF3621' } : undefined}
-              >
-                All ({topQueriesData?.queries?.length ?? 0})
-              </button>
-              {querySourceTypes.map((type) => (
-                <button
-                  key={type}
-                  onClick={() => { setQuerySourceFilter(querySourceFilter === type ? null : type); setQueriesPage(1); }}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${querySourceFilter === type ? "text-white" : "text-gray-700 hover:opacity-80"}`}
-                  style={querySourceFilter === type
-                    ? { backgroundColor: SOURCE_TYPE_COLORS[type] || "#6b7280" }
-                    : { backgroundColor: `${SOURCE_TYPE_COLORS[type] || "#6b7280"}20`, color: SOURCE_TYPE_COLORS[type] || "#6b7280" }}
-                >
-                  {type} ({topQueriesData?.queries?.filter((q) => q.query_source_type === type).length ?? 0})
-                </button>
-              ))}
-              <input
-                type="text"
-                placeholder="Search..."
-                value={querySearch}
-                onChange={(e) => { setQuerySearch(e.target.value); setQueriesPage(1); }}
-                className="ml-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
-              />
+              <div className="relative ml-auto flex items-center gap-2 shrink-0">
+                {querySourceDropdownOpen && (
+                  <div className="fixed inset-0 z-10" onClick={() => setQuerySourceDropdownOpen(false)} />
+                )}
+                <div className="relative">
+                  <button
+                    onClick={() => setQuerySourceDropdownOpen((o) => !o)}
+                    className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                  >
+                    <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                    </svg>
+                    <span className="max-w-[140px] truncate">
+                      {querySourceFilters.length === 0
+                        ? "All Sources"
+                        : querySourceFilters.length === 1
+                        ? querySourceFilters[0]
+                        : `${querySourceFilters.length} Sources`}
+                    </span>
+                    {querySourceFilters.length > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setQuerySourceFilters([]); setQueriesPage(1); }}
+                        className="ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-500 hover:bg-gray-300"
+                        title="Clear filter"
+                      >
+                        <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                    <svg
+                      className={`ml-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${querySourceDropdownOpen ? "rotate-180" : ""}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {querySourceDropdownOpen && (
+                    <div className="absolute right-0 z-20 mt-2 min-w-[200px] rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Source Type</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setQuerySourceFilters([]); setQueriesPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">All</button>
+                          <span className="text-gray-300">·</span>
+                          <button onClick={() => { setQuerySourceFilters([]); setQueriesPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        {querySourceTypes.map((type) => {
+                          const count = topQueriesData?.queries?.filter((q) => q.query_source_type === type).length ?? 0;
+                          const checked = querySourceFilters.includes(type);
+                          return (
+                            <label
+                              key={type}
+                              className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 ${checked ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  setQuerySourceFilters((prev) =>
+                                    prev.includes(type) ? prev.filter((x) => x !== type) : [...prev, type]
+                                  );
+                                  setQueriesPage(1);
+                                }}
+                                className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
+                              />
+                              <span className="flex-1 truncate text-sm text-gray-700">{type}</span>
+                              <span className="text-xs text-gray-400">{count}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-3 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
+                        {querySourceFilters.length === 0 ? `All ${topQueriesData?.queries?.length ?? 0}` : `${filteredQueries.length} of ${topQueriesData?.queries?.length ?? 0}`} queries
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={querySearch}
+                  onChange={(e) => { setQuerySearch(e.target.value); setQueriesPage(1); }}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
+                />
+              </div>
             </div>
             {topQueriesLoading && sortedQueries.length === 0 ? (
               <div className="flex h-32 items-center justify-center gap-3">

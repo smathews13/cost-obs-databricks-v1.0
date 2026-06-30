@@ -1292,9 +1292,9 @@ async def get_workspace_list(
     sql_with_names = f"""
         SELECT
             CAST(u.workspace_id AS STRING) as workspace_id,
-            COALESCE(ws.workspace_name, CAST(u.workspace_id AS STRING)) as workspace_name
+            COALESCE(ws.workspace_name, CONCAT('Workspace ', CAST(u.workspace_id AS STRING))) as workspace_name
         FROM system.billing.usage u
-        LEFT JOIN system.access.workspaces_latest ws ON u.workspace_id = ws.workspace_id
+        LEFT JOIN system.access.workspaces_latest ws ON CAST(u.workspace_id AS BIGINT) = CAST(ws.workspace_id AS BIGINT)
         WHERE u.usage_date BETWEEN :start_date AND :end_date
           AND u.usage_quantity > 0
           {ws_clause}
@@ -1391,8 +1391,7 @@ async def get_dashboard_bundle_fast(
             return r if r else execute_query(_inject_ws_filter(BILLING_BY_PRODUCT_FAST, ws_clause), params)
 
         def _mv_workspaces():
-            r = _exec_mv(MV_BILLING_BY_WORKSPACE, params, mv_ws)
-            return r if r else execute_query(_inject_ws_filter(BILLING_BY_WORKSPACE, ws_clause), params)
+            return execute_query(_inject_ws_filter(BILLING_BY_WORKSPACE, ws_clause), params)
 
         # Also fetch most-recent-day workspace count; MV summary gives period-total DISTINCT
         # which is always >= any single day and mismatches the daily trend chart.

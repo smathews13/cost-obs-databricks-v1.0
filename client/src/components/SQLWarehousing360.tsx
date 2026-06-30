@@ -952,28 +952,28 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
           {/* Top Expensive Queries Table */}
           <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-            <div className="mb-4 flex flex-col gap-2">
+            <div className="mb-3 flex flex-col gap-2">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-lg font-semibold text-gray-900">Most Expensive Queries</h3>
-                <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-                  <input type="checkbox" checked={showHistoricalQueries}
-                    onChange={(e) => { setShowHistoricalQueries(e.target.checked); setQueriesPage(1); }}
-                    className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
-                  Show historical ({historicalQueryCount})
-                  <span className="relative group ml-0.5">
-                    <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Queries with unknown users or unavailable previews</span>
-                  </span>
-                </label>
-              </div>
-              <div className="flex items-center justify-end">
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={querySearch}
-                  onChange={(e) => { setQuerySearch(e.target.value); setQueriesPage(1); }}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-44"
-                />
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                    <input type="checkbox" checked={showHistoricalQueries}
+                      onChange={(e) => { setShowHistoricalQueries(e.target.checked); setQueriesPage(1); }}
+                      className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+                    Show historical ({historicalQueryCount})
+                    <span className="relative group ml-0.5">
+                      <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Queries with unknown users or unavailable previews</span>
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={querySearch}
+                    onChange={(e) => { setQuerySearch(e.target.value); setQueriesPage(1); }}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-44"
+                  />
+                </div>
               </div>
               {querySourceTypes.length > 1 && (
                 <div className="flex flex-wrap items-center gap-2">

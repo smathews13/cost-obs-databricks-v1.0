@@ -87,7 +87,10 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
   }
 
   const searchLower = search.toLowerCase();
-  const isHistorical = (obj: typeof data.objects[0]) => !obj.object_name || obj.object_name === obj.object_id;
+  const isHistorical = (obj: typeof data.objects[0]) => {
+    if (obj.object_type === "SDP Pipeline") return false;
+    return !obj.object_name || obj.object_name === obj.object_id;
+  };
   const filteredObjects = data.objects.filter(
     (obj) => (filter === "all" || obj.object_type === filter) &&
       (showHistorical || !isHistorical(obj)) &&

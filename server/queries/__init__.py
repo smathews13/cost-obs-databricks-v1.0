@@ -331,7 +331,7 @@ SELECT
 FROM workspace_totals wt
 LEFT JOIN top_products tp ON wt.workspace_id = tp.workspace_id
 LEFT JOIN top_users tu ON wt.workspace_id = tu.workspace_id
-LEFT JOIN system.access.workspaces_latest ws ON wt.workspace_id = ws.workspace_id
+LEFT JOIN system.access.workspaces_latest ws ON CAST(wt.workspace_id AS BIGINT) = CAST(ws.workspace_id AS BIGINT)
 ORDER BY wt.total_spend DESC
 """
 

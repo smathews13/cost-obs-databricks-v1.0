@@ -80,16 +80,26 @@ const formatNumber = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-function getEndpointUrl(host: string | null | undefined, endpointName: string | null, workspaceId?: string | null): string | null {
-  if (!host || !endpointName) return null;
+function buildUrl(host: string | null | undefined, path: string): string | null {
+  if (!host) return null;
+  const base = host.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  return `https://${base}${path}`;
+}
+
+function getEndpointUrl(host: string | null | undefined, workspaceId?: string | null): string | null {
   const wsParam = workspaceId ? `?o=${workspaceId}` : '';
-  return `https://${host}/ml/endpoints/${endpointName}${wsParam}`;
+  return buildUrl(host, `/ml/endpoints${wsParam}`);
+}
+
+function getModelUrl(host: string | null | undefined, workspaceId?: string | null): string | null {
+  const wsParam = workspaceId ? `?o=${workspaceId}` : '';
+  return buildUrl(host, `/ml/models${wsParam}`);
 }
 
 function getClusterUrl(host: string | null | undefined, clusterId: string, workspaceId: string | null): string | null {
-  if (!host || !clusterId) return null;
+  if (!clusterId) return null;
   const wsParam = workspaceId ? `?o=${workspaceId}` : '';
-  return `https://${host}/compute/interactive${wsParam}`;
+  return buildUrl(host, `/compute/interactive${wsParam}`);
 }
 
 export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, workspaceIds, workspaceNameMap }: AIMLCostCenterProps) {
@@ -104,6 +114,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const [showHistoricalMlClusters, setShowHistoricalMlClusters] = useState(false);
   const [mlClusterSearch, setMlClusterSearch] = useState("");
   const [mlRuntimeFilter, setMlRuntimeFilter] = useState<string | null>(null);
+  const [endpointsCostTypeFilter, setEndpointsCostTypeFilter] = useState<string | null>(null);
   const [mlRuntimeFilterOpen, setMlRuntimeFilterOpen] = useState(false);
   const mlRuntimeFilterRef = useRef<HTMLDivElement>(null);
   const [agentSearch, setAgentSearch] = useState("");
@@ -195,11 +206,11 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
 
   const endpointsData = useMemo(() => {
     if (!data?.endpoints?.endpoints) return [];
-    const byEndpoint: Record<string, { endpoint_name: string; total_spend: number; total_dbus: number; days_active: number }> = {};
+    const byEndpoint: Record<string, { endpoint_name: string; total_spend: number; total_dbus: number; days_active: number; cost_type: string }> = {};
     for (const e of data.endpoints.endpoints) {
       if (!e.endpoint_name || e.endpoint_name === 'UNKNOWN') continue;
       if (!byEndpoint[e.endpoint_name]) {
-        byEndpoint[e.endpoint_name] = { endpoint_name: e.endpoint_name, total_spend: 0, total_dbus: 0, days_active: e.days_active };
+        byEndpoint[e.endpoint_name] = { endpoint_name: e.endpoint_name, total_spend: 0, total_dbus: 0, days_active: e.days_active, cost_type: e.cost_type };
       }
       byEndpoint[e.endpoint_name].total_spend += e.total_spend;
       byEndpoint[e.endpoint_name].total_dbus += e.total_dbus;
@@ -483,60 +494,83 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
               </div>
             </div>
           </div>
-          {endpointsData.length > 0 ? (
-            <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                        Endpoint
-                      </th>
-                      <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-                        DBUs
-                      </th>
-                      <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-                        Spend
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
-                    {endpointsData.slice((endpointsPage - 1) * PAGE_SIZE, endpointsPage * PAGE_SIZE).map((endpoint, idx) => {
-                      const epUrl = host ? `https://${host}/ml/endpoints${workspaceIds?.[0] ? `?o=${workspaceIds[0]}` : ""}` : null;
-                      return (
-                      <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                        <td className="px-3 py-2 text-sm font-medium truncate max-w-[200px]" title={endpoint.endpoint_name}>
-                          {epUrl ? (
-                            <a href={epUrl} target="_blank" rel="noopener noreferrer" className="text-[#FF3621] hover:underline">
-                              {endpoint.endpoint_name}
-                            </a>
-                          ) : endpoint.endpoint_name}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-500">
-                          {formatNumber(endpoint.total_dbus)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
-                          {formatCurrency(endpoint.total_spend)}
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {endpointsData.length > PAGE_SIZE && (
-                <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
-                  <p className="text-xs text-gray-500">
-                    {(endpointsPage - 1) * PAGE_SIZE + 1}–{Math.min(endpointsPage * PAGE_SIZE, endpointsData.length)} of {endpointsData.length}
-                  </p>
-                  <div className="flex gap-1">
-                    <button onClick={() => setEndpointsPage(p => Math.max(1, p - 1))} disabled={endpointsPage === 1} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Prev</button>
-                    <button onClick={() => setEndpointsPage(p => Math.min(Math.ceil(endpointsData.length / PAGE_SIZE), p + 1))} disabled={endpointsPage >= Math.ceil(endpointsData.length / PAGE_SIZE)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
+          {endpointsData.length > 0 ? (() => {
+            const distinctCostTypes = Array.from(new Set(endpointsData.map(e => e.cost_type).filter(Boolean)));
+            const filteredEndpoints = endpointsCostTypeFilter
+              ? endpointsData.filter(e => e.cost_type === endpointsCostTypeFilter)
+              : endpointsData;
+            const epUrl = getEndpointUrl(host, workspaceIds?.[0]);
+            return (
+              <>
+                {distinctCostTypes.length > 1 && (
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    <button
+                      onClick={() => { setEndpointsCostTypeFilter(null); setEndpointsPage(1); }}
+                      className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${endpointsCostTypeFilter === null ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
+                    >
+                      All ({endpointsData.length})
+                    </button>
+                    {distinctCostTypes.map(ct => (
+                      <button
+                        key={ct}
+                        onClick={() => { setEndpointsCostTypeFilter(ct); setEndpointsPage(1); }}
+                        className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${endpointsCostTypeFilter === ct ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
+                      >
+                        {ct} ({endpointsData.filter(e => e.cost_type === ct).length})
+                      </button>
+                    ))}
                   </div>
+                )}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                          Endpoint
+                        </th>
+                        <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                          DBUs
+                        </th>
+                        <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                          Spend
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {filteredEndpoints.slice((endpointsPage - 1) * PAGE_SIZE, endpointsPage * PAGE_SIZE).map((endpoint, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                          <td className="px-3 py-2 text-sm font-medium truncate max-w-[200px]" title={endpoint.endpoint_name}>
+                            {epUrl ? (
+                              <a href={epUrl} target="_blank" rel="noopener noreferrer" className="text-[#FF3621] hover:underline">
+                                {endpoint.endpoint_name}
+                              </a>
+                            ) : endpoint.endpoint_name}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-500">
+                            {formatNumber(endpoint.total_dbus)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
+                            {formatCurrency(endpoint.total_spend)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </>
-          ) : (
+                {filteredEndpoints.length > PAGE_SIZE && (
+                  <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
+                    <p className="text-xs text-gray-500">
+                      {(endpointsPage - 1) * PAGE_SIZE + 1}–{Math.min(endpointsPage * PAGE_SIZE, filteredEndpoints.length)} of {filteredEndpoints.length}
+                    </p>
+                    <div className="flex gap-1">
+                      <button onClick={() => setEndpointsPage(p => Math.max(1, p - 1))} disabled={endpointsPage === 1} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Prev</button>
+                      <button onClick={() => setEndpointsPage(p => Math.min(Math.ceil(filteredEndpoints.length / PAGE_SIZE), p + 1))} disabled={endpointsPage >= Math.ceil(filteredEndpoints.length / PAGE_SIZE)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })() : (
             <div className="flex h-32 items-center justify-center text-gray-500">No endpoint data available</div>
           )}
         </div>
@@ -577,17 +611,20 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   onClick={() => { setModelsTypeFilter(null); setModelsPage(1); }}
                   className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${modelsTypeFilter === null ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
                 >
-                  All
+                  All ({allModelRows.length})
                 </button>
-                {distinctTypes.map(t => (
-                  <button
-                    key={t}
-                    onClick={() => { setModelsTypeFilter(t); setModelsPage(1); }}
-                    className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${modelsTypeFilter === t ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
-                  >
-                    {TYPE_LABELS[t] || t}
-                  </button>
-                ))}
+                {distinctTypes.map(t => {
+                  const count = allModelRows.filter(m => m.model_type === t).length;
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => { setModelsTypeFilter(t); setModelsPage(1); }}
+                      className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${modelsTypeFilter === t ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
+                    >
+                      {TYPE_LABELS[t] || t} ({count})
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -608,7 +645,9 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                             const typeLabel = TYPE_LABELS[model.model_type] || model.model_type;
                             return (
                               <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                                <td className="px-3 py-2 text-sm font-medium text-gray-900 truncate max-w-45" title={model.model_name}>{model.model_name}</td>
+                                <td className="px-3 py-2 text-sm font-medium truncate max-w-45" title={model.model_name}>
+                                  {(() => { const modelUrl = getModelUrl(host, workspaceIds?.[0]); return modelUrl ? <a href={modelUrl} target="_blank" rel="noopener noreferrer" className="text-[#FF3621] hover:underline">{model.model_name}</a> : <span className="text-gray-900">{model.model_name}</span>; })()}
+                                </td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm">
                                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${colorClass}`}>{typeLabel}</span>
                                 </td>
@@ -664,14 +703,12 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
 
           return (
             <>
-              <div className="mb-2 flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">ML Runtime Clusters</h3>
-                    <p className="text-xs text-gray-500">Clusters running the Databricks ML Runtime ({filteredMlClusters.length} clusters)</p>
-                  </div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">ML Runtime Clusters</h3>
+                  <p className="text-xs text-gray-500">Clusters running the Databricks ML Runtime ({filteredMlClusters.length} clusters)</p>
                 </div>
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
                   {allMlClusters.length > 0 && (
                     <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
                       <input type="checkbox" checked={showHistoricalMlClusters}
@@ -684,7 +721,6 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       </span>
                     </label>
                   )}
-                  <div className="flex items-center gap-3">
                   {availableRuntimes.length > 0 && (
                     <div className="relative flex items-center gap-1.5" ref={mlRuntimeFilterRef}>
                       <button
@@ -729,7 +765,6 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     onChange={(e) => { setMlClusterSearch(e.target.value); setMlClustersPage(1); }}
                     className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-44"
                   />
-                  </div>
                 </div>
               </div>
               {paginatedMlClusters.length > 0 ? (
@@ -824,14 +859,12 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
 
           return (
             <>
-              <div className="mb-2 flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Agent Bricks</h3>
-                    <p className="text-xs text-gray-500">Databricks agents and their cost attribution</p>
-                  </div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Agent Bricks</h3>
+                  <p className="text-xs text-gray-500">Databricks agents and their cost attribution</p>
                 </div>
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
                   {allAgents.length > 0 && (
                     <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
                       <input
@@ -847,8 +880,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       </span>
                     </label>
                   )}
-                  <div className="flex items-center gap-2">
-                    {agentTypes.length > 0 && (
+                  {agentTypes.length > 0 && (
                       <>
                         <button
                           onClick={() => { setAgentTypeFilter("all"); setAgentsPage(1); }}
@@ -868,14 +900,13 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                         })}
                       </>
                     )}
-                    <input
-                      type="text"
-                      placeholder="Search..."
-                      value={agentSearch}
-                      onChange={(e) => { setAgentSearch(e.target.value); setAgentsPage(1); }}
-                      className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-44"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={agentSearch}
+                    onChange={(e) => { setAgentSearch(e.target.value); setAgentsPage(1); }}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-44"
+                  />
                 </div>
               </div>
               {paginatedAgents.length > 0 ? (
@@ -895,7 +926,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     <tbody className="divide-y divide-gray-200 bg-white">
                       {paginatedAgents.map((agent, idx) => {
                         const isSelected = selectedAgent?.agent_name === agent.agent_name;
-                        const endpointUrl = getEndpointUrl(host, agent.agent_name, agent.workspace_id);
+                        const endpointUrl = getEndpointUrl(host, agent.workspace_id);
                         return (
                           <React.Fragment key={idx}>
                             <tr

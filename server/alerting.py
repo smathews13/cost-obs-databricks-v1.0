@@ -243,7 +243,7 @@ def get_alert_details(usage_date: str, prev_usage_date: str | None = None) -> di
                 ("prev_workspaces", lambda: execute_query(workspace_query, prev_params)),
             ])
 
-        query_results = execute_queries_parallel(queries)
+        query_results = execute_queries_parallel(queries, timeout=90.0)
 
         sku_results = query_results.get("skus") or []
         cluster_results = query_results.get("clusters") or []

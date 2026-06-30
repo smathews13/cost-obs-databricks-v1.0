@@ -958,7 +958,7 @@ async def get_monthly_consumption(
         query_results = await asyncio.to_thread(execute_queries_parallel, [
             ("spend", lambda: execute_query(spend_query, query_params)),
             ("live", lambda: execute_query(live_query, query_params)),
-        ])
+        ], timeout=60.0)
 
         spend_results = query_results.get("spend") or []
         live_results = query_results.get("live") or []

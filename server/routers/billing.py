@@ -879,7 +879,7 @@ async def get_infra_bundle(
             ("clusters", lambda: execute_query(_clusters_sql, params)),
             ("timeseries", lambda: execute_query(_ts_sql, params)),
             ("billing_summary", lambda: execute_query(_infra_sql, params)),
-        ])
+        ], timeout=90.0)
 
         cluster_results = query_results.get("clusters") or []
         ts_results = query_results.get("timeseries") or []

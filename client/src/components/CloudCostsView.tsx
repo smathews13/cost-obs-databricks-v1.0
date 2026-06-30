@@ -797,7 +797,11 @@ export function CloudCostsView({
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Cloud Costs</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(cloudSummary.totalCost)}</p>
-              {startDate && endDate && <p className="mt-1 text-xs text-gray-500">cluster spend over {Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1} days</p>}
+              {startDate && endDate && (() => {
+                const days = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1;
+                const dailyAvg = cloudSummary.totalCost > 0 ? cloudSummary.totalCost / days : 0;
+                return <p className="mt-1 text-xs text-gray-500">{formatCurrency(dailyAvg)}/day avg · {days} days</p>;
+              })()}
               {startDate && endDate && <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
             </div>
           </div>
@@ -853,9 +857,9 @@ export function CloudCostsView({
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Avg Cost Per Cluster<InfoTooltip text="Total estimated cloud infrastructure cost divided by the number of distinct clusters with billing activity in the period." /></p>
+              <p className="text-sm font-medium text-gray-500">Cost Per-Cluster<InfoTooltip text="Total estimated cloud infrastructure cost divided by the number of distinct clusters with billing activity in the period." /></p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(cloudSummary.avgCostPerCluster)}</p>
-              <p className="mt-1 text-xs text-gray-500">per-cluster average</p>
+              {startDate && endDate && <p className="mt-1 text-xs text-gray-500">average over {Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1} days</p>}
               {startDate && endDate && (
                 <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>
               )}
@@ -984,17 +988,20 @@ export function CloudCostsView({
       <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Cluster Leaderboard <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
-            <p className="text-sm text-gray-500">
-              {sortedClusters.length} cluster{sortedClusters.length !== 1 ? "s" : ""}{selectedFamilies.size > 0 ? ` · ${[...selectedFamilies].join(", ")} only` : ""}{" "}
-              <span className="inline-flex items-center gap-1 group relative">
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              {cloudDisplayName} Cluster Leaderboard
+              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
+              <span className="inline-flex items-center group relative">
                 <svg className="h-3.5 w-3.5 text-gray-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="pointer-events-none absolute bottom-5 left-0 z-[9999] w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                <span className="pointer-events-none absolute top-5 left-0 z-[9999] w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
                   Estimated {cloudDisplayName} VM cost for cluster compute nodes, derived from DBU hours × cloud instance pricing ({cloudDisplayName === "GCP" ? "us-central1" : cloudDisplayName === "Azure" ? "East US" : "us-east-1"} on-demand rates). This is separate from Databricks DBU spend shown in the page header.
                 </span>
               </span>
+            </h3>
+            <p className="text-sm text-gray-500">
+              {sortedClusters.length} cluster{sortedClusters.length !== 1 ? "s" : ""}{selectedFamilies.size > 0 ? ` · ${[...selectedFamilies].join(", ")} only` : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">

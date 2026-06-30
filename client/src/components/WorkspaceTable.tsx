@@ -1,4 +1,4 @@
-import { Fragment, useState, useRef, useEffect, useMemo, memo } from "react";
+import { Fragment, useState, useRef, useEffect, memo } from "react";
 import type { WorkspaceBreakdownResponse } from "@/types/billing";
 import { formatCurrency, formatNumber, workspaceUrl } from "@/utils/formatters";
 import { formatIdentity } from "@/utils/identity";
@@ -93,14 +93,8 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
   const allHistorical = historicalCount === data.workspaces.length;
   const activeWorkspaces = (showHistorical || allHistorical) ? data.workspaces : data.workspaces.filter((ws) => !isHistoricalWs(ws));
 
-  const allProducts = useMemo(() =>
-    [...new Set(activeWorkspaces.flatMap((ws) => ws.top_products || []))].sort(),
-    [activeWorkspaces]
-  );
-  const allUsers = useMemo(() =>
-    [...new Set(activeWorkspaces.flatMap((ws) => ws.top_users || []))].sort(),
-    [activeWorkspaces]
-  );
+  const allProducts = [...new Set(activeWorkspaces.flatMap((ws) => ws.top_products || []))].sort();
+  const allUsers = [...new Set(activeWorkspaces.flatMap((ws) => ws.top_users || []))].sort();
 
   const filterActive = productFilters.length > 0 || userFilters.length > 0;
   const filteredByDropdowns = filterActive

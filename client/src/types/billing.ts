@@ -262,6 +262,7 @@ export interface PlatformKPIsResponse {
   total_serving_dbus: number;
   avg_daily_models?: number;
   avg_daily_query_users?: number;
+  stickiness_pct?: number;
   start_date: string;
   end_date: string;
   error?: string;

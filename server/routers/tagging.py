@@ -2,12 +2,13 @@
 
 import asyncio
 import logging
+import time as _time
 from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Query
 
-from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put
+from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put, get_workspace_client
 from server import workspace_filter as wf
 from server import cache_ttls
 
@@ -709,6 +710,73 @@ async def get_untagged_jobs(
     }
 
 
+_tagging_pipeline_names_cache: dict[str, str] | None = None
+_tagging_pipeline_names_ts: float = 0
+
+
+def _get_tagging_pipeline_names() -> dict[str, str]:
+    """Get pipeline ID → name mapping. Tries system.lakeflow.pipelines, falls back to SDK. Cached 1 hour."""
+    global _tagging_pipeline_names_cache, _tagging_pipeline_names_ts
+    now = _time.monotonic()
+    ttl = cache_ttls.PIPELINE_NAMES
+    if _tagging_pipeline_names_cache is not None and (now - _tagging_pipeline_names_ts) < ttl:
+        return _tagging_pipeline_names_cache
+
+    try:
+        results = execute_query("""
+            SELECT pipeline_id, MAX(name) as pipeline_name
+            FROM system.lakeflow.pipelines
+            WHERE name IS NOT NULL
+            GROUP BY pipeline_id
+        """)
+        if results:
+            names = {r["pipeline_id"]: r["pipeline_name"] for r in results if r.get("pipeline_id") and r.get("pipeline_name")}
+            if names:
+                logger.info(f"Tagging pipeline names from system table: {len(names)} found")
+                _tagging_pipeline_names_cache = names
+                _tagging_pipeline_names_ts = now
+                return names
+    except Exception as e:
+        logger.warning(f"system.lakeflow.pipelines not accessible for tagging enrichment: {type(e).__name__}: {e}")
+
+    try:
+        w = get_workspace_client()
+        pipeline_names: dict[str, str] = {}
+        for p in w.pipelines.list_pipelines():
+            if p.pipeline_id and p.name:
+                pipeline_names[p.pipeline_id] = p.name
+        logger.info(f"Tagging pipeline names from SDK: {len(pipeline_names)} found")
+        _tagging_pipeline_names_cache = pipeline_names
+        _tagging_pipeline_names_ts = now
+        return pipeline_names
+    except Exception as e:
+        logger.warning(f"Could not list pipelines via SDK for tagging: {type(e).__name__}: {e}")
+        return {}
+
+
+def _enrich_pipeline_rows(rows: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    """Fill in pipeline_name where it is NULL or equals the UUID pipeline_id."""
+    if not rows:
+        return rows
+    try:
+        needs_enrichment = any(
+            not r.get("pipeline_name") or r.get("pipeline_name") == r.get("pipeline_id")
+            for r in rows
+        )
+        if not needs_enrichment:
+            return rows
+        names = _get_tagging_pipeline_names()
+        if not names:
+            return rows
+        for row in rows:
+            pid = row.get("pipeline_id")
+            if pid and pid in names:
+                row["pipeline_name"] = names[pid]
+    except Exception as e:
+        logger.warning(f"Pipeline name enrichment failed: {type(e).__name__}: {e}")
+    return rows
+
+
 @router.get("/untagged/pipelines")
 async def get_untagged_pipelines(
     start_date: str = Query(default=None, description="Start date (YYYY-MM-DD)"),
@@ -721,6 +789,7 @@ async def get_untagged_pipelines(
     }
 
     results = await asyncio.to_thread(execute_query, UNTAGGED_PIPELINES, params)
+    results = await asyncio.to_thread(_enrich_pipeline_rows, results)
 
     pipelines = []
     total_spend = 0
@@ -1090,6 +1159,11 @@ async def get_tagging_dashboard_bundle(
         }
     else:
         summary = {"tagged_spend": 0, "untagged_spend": 0, "total_spend": 0, "tagged_percentage": 0, "untagged_percentage": 0}
+
+    # Enrich pipeline names via system table / SDK fallback (handles NULL names and UUID-only rows)
+    pipeline_rows = results.get("pipelines")
+    if pipeline_rows:
+        results["pipelines"] = _enrich_pipeline_rows(pipeline_rows)
 
     # Format untagged resources
     def format_untagged(data, key):

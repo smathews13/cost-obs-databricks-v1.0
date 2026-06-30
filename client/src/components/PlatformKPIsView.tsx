@@ -212,9 +212,11 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
     ? ((data.successful_runs / data.total_job_runs) * 100).toFixed(1)
     : null;
 
-  const stickinessPct = data.avg_daily_query_users && data.unique_query_users > 0
-    ? Math.min(100, Math.round((data.avg_daily_query_users / data.unique_query_users) * 100))
-    : null;
+  const stickinessPct = data.stickiness_pct != null && data.stickiness_pct > 0
+    ? Math.round(data.stickiness_pct)
+    : (data.avg_daily_query_users && data.unique_query_users > 0
+        ? Math.min(100, Math.round((data.avg_daily_query_users / data.unique_query_users) * 100))
+        : null);
 
   const workspacePct = data.total_workspace_count && data.total_workspace_count > 0
     ? Math.round(((data.avg_daily_workspaces ?? data.active_workspaces) / data.total_workspace_count) * 100)

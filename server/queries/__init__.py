@@ -1304,6 +1304,30 @@ FROM (
 )
 """
 
+STICKINESS_PCT_QH = """
+WITH total_users AS (
+  SELECT COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) AS total
+  FROM system.query.history
+  WHERE start_time >= CAST(:start_date AS TIMESTAMP)
+    AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
+    {ws_filter}
+    AND (executed_by IS NOT NULL OR executed_as_user_id IS NOT NULL)
+),
+daily_users AS (
+  SELECT
+    DATE(start_time) AS d,
+    COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) AS dau
+  FROM system.query.history
+  WHERE start_time >= CAST(:start_date AS TIMESTAMP)
+    AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
+    {ws_filter}
+    AND (executed_by IS NOT NULL OR executed_as_user_id IS NOT NULL)
+  GROUP BY DATE(start_time)
+)
+SELECT ROUND(AVG(100.0 * d.dau / NULLIF(t.total, 0)), 1) AS stickiness_pct
+FROM daily_users d CROSS JOIN total_users t
+"""
+
 TOTAL_WORKSPACES_ALLTIME = """
 SELECT COUNT(DISTINCT workspace_id) as total_workspaces
 FROM system.billing.usage

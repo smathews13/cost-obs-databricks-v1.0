@@ -80,9 +80,6 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
 
   function label() {
     if (allSelected) {
-      if (validWorkspaces.length === 2) {
-        return validWorkspaces.map((w) => w.workspace_name || `Workspace ${w.workspace_id}`).join(", ");
-      }
       return "All Workspaces";
     }
     if (selectedIds.length === 1) {

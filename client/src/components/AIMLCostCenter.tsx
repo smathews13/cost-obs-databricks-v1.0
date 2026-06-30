@@ -123,6 +123,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const mlRuntimeFilterRef = useRef<HTMLDivElement>(null);
   const endpointsWorkspaceFilterRef = useRef<HTMLDivElement>(null);
   const endpointsCostTypeFilterRef = useRef<HTMLDivElement>(null);
+  const modelsTypeDropdownRef = useRef<HTMLDivElement>(null);
   const [agentSearch, setAgentSearch] = useState("");
   const PAGE_SIZE = 10;
 
@@ -170,6 +171,17 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [endpointsCostTypeDropdownOpen]);
+
+  useEffect(() => {
+    if (!modelsTypeDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (modelsTypeDropdownRef.current && !modelsTypeDropdownRef.current.contains(e.target as Node)) {
+        setModelsTypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [modelsTypeDropdownOpen]);
 
   // Pre-warm trend queries so modals open instantly
   const queryClient = useQueryClient();
@@ -720,10 +732,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
               </div>
             </div>
             {distinctTypes.length > 1 && (
-              <div className="relative">
-                {modelsTypeDropdownOpen && (
-                  <div className="fixed inset-0 z-10" onClick={() => setModelsTypeDropdownOpen(false)} />
-                )}
+              <div className="relative" ref={modelsTypeDropdownRef}>
                 <button
                   onClick={() => setModelsTypeDropdownOpen((o) => !o)}
                   className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"

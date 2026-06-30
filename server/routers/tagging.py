@@ -1163,7 +1163,7 @@ async def get_tagging_dashboard_bundle(
     # Enrich pipeline names via system table / SDK fallback (handles NULL names and UUID-only rows)
     pipeline_rows = results.get("pipelines")
     if pipeline_rows:
-        results["pipelines"] = _enrich_pipeline_rows(pipeline_rows)
+        results["pipelines"] = await asyncio.to_thread(_enrich_pipeline_rows, pipeline_rows)
 
     # Format untagged resources
     def format_untagged(data, key):

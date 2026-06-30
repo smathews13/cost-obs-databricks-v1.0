@@ -115,9 +115,13 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const [mlClusterSearch, setMlClusterSearch] = useState("");
   const [mlRuntimeFilter, setMlRuntimeFilter] = useState<string | null>(null);
   const [endpointsCostTypeFilter, setEndpointsCostTypeFilter] = useState<string | null>(null);
-  const [endpointSearch, setEndpointSearch] = useState("");
+  const [endpointsWorkspaceFilter, setEndpointsWorkspaceFilter] = useState<string | null>(null);
+  const [endpointsWorkspaceDropdownOpen, setEndpointsWorkspaceDropdownOpen] = useState(false);
+  const [endpointsCostTypeDropdownOpen, setEndpointsCostTypeDropdownOpen] = useState(false);
   const [mlRuntimeFilterOpen, setMlRuntimeFilterOpen] = useState(false);
   const mlRuntimeFilterRef = useRef<HTMLDivElement>(null);
+  const endpointsWorkspaceFilterRef = useRef<HTMLDivElement>(null);
+  const endpointsCostTypeFilterRef = useRef<HTMLDivElement>(null);
   const [agentSearch, setAgentSearch] = useState("");
   const PAGE_SIZE = 10;
 
@@ -143,6 +147,28 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [mlRuntimeFilterOpen]);
+
+  useEffect(() => {
+    if (!endpointsWorkspaceDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (endpointsWorkspaceFilterRef.current && !endpointsWorkspaceFilterRef.current.contains(e.target as Node)) {
+        setEndpointsWorkspaceDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [endpointsWorkspaceDropdownOpen]);
+
+  useEffect(() => {
+    if (!endpointsCostTypeDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (endpointsCostTypeFilterRef.current && !endpointsCostTypeFilterRef.current.contains(e.target as Node)) {
+        setEndpointsCostTypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [endpointsCostTypeDropdownOpen]);
 
   // Pre-warm trend queries so modals open instantly
   const queryClient = useQueryClient();
@@ -205,10 +231,26 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
     });
   }, [data, categoryColorMap]);
 
+  const endpointWorkspaces = useMemo(() => {
+    if (!data?.endpoints?.endpoints) return [];
+    const ids = new Set<string>();
+    for (const e of data.endpoints.endpoints) {
+      if (e.workspace_id && e.endpoint_name && e.endpoint_name !== 'UNKNOWN') ids.add(e.workspace_id);
+    }
+    return Array.from(ids).sort((a, b) => {
+      const nameA = workspaceNameMap?.[a] || a;
+      const nameB = workspaceNameMap?.[b] || b;
+      return nameA.localeCompare(nameB);
+    });
+  }, [data, workspaceNameMap]);
+
   const endpointsData = useMemo(() => {
     if (!data?.endpoints?.endpoints) return [];
+    const rawRows = endpointsWorkspaceFilter
+      ? data.endpoints.endpoints.filter(e => e.workspace_id === endpointsWorkspaceFilter)
+      : data.endpoints.endpoints;
     const byEndpoint: Record<string, { endpoint_name: string; total_spend: number; total_dbus: number; days_active: number; cost_type: string }> = {};
-    for (const e of data.endpoints.endpoints) {
+    for (const e of rawRows) {
       if (!e.endpoint_name || e.endpoint_name === 'UNKNOWN') continue;
       if (!byEndpoint[e.endpoint_name]) {
         byEndpoint[e.endpoint_name] = { endpoint_name: e.endpoint_name, total_spend: 0, total_dbus: 0, days_active: e.days_active, cost_type: e.cost_type };
@@ -217,7 +259,11 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
       byEndpoint[e.endpoint_name].total_dbus += e.total_dbus;
     }
     return Object.values(byEndpoint).sort((a, b) => b.total_spend - a.total_spend);
-  }, [data]);
+  }, [data, endpointsWorkspaceFilter]);
+
+  const endpointCostTypes = useMemo(() => {
+    return Array.from(new Set(endpointsData.map(e => e.cost_type).filter(Boolean)));
+  }, [endpointsData]);
 
   useEffect(() => {
     if (endpointsPage !== 1) {
@@ -494,42 +540,92 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                 <p>Endpoints deployed via Databricks Model Serving using serverless compute. These are pay-per-request inference endpoints that auto-scale to zero. Costs include both steady-state compute and scale-from-zero launch overhead.</p>
               </div>
             </div>
-            <input
-              type="text"
-              placeholder="Search..."
-              value={endpointSearch}
-              onChange={(e) => { setEndpointSearch(e.target.value); setEndpointsPage(1); }}
-              className="ml-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44"
-            />
+            <div className="ml-auto flex items-center gap-2">
+              {endpointWorkspaces.length > 1 && (
+                <div className="relative" ref={endpointsWorkspaceFilterRef}>
+                  <button
+                    onClick={() => setEndpointsWorkspaceDropdownOpen(o => !o)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${endpointsWorkspaceFilter ? "border-transparent text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
+                    style={endpointsWorkspaceFilter ? { backgroundColor: '#FF3621' } : {}}
+                  >
+                    {endpointsWorkspaceFilter
+                      ? ((n) => n.length > 20 ? n.slice(0, 20) + "…" : n)(workspaceNameMap?.[endpointsWorkspaceFilter] ?? `Workspace ${endpointsWorkspaceFilter}`)
+                      : "Workspace"}
+                    {endpointsWorkspaceFilter ? (
+                      <span className="ml-0.5 opacity-75 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEndpointsWorkspaceFilter(null); setEndpointsPage(1); }}>×</span>
+                    ) : (
+                      <svg className={`h-3 w-3 text-gray-500 transition-transform ${endpointsWorkspaceDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    )}
+                  </button>
+                  {endpointsWorkspaceDropdownOpen && (
+                    <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        onClick={() => { setEndpointsWorkspaceFilter(null); setEndpointsPage(1); setEndpointsWorkspaceDropdownOpen(false); }}
+                        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${!endpointsWorkspaceFilter ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${!endpointsWorkspaceFilter ? "bg-orange-500" : "bg-transparent"}`} />
+                        All Workspaces
+                      </button>
+                      {endpointWorkspaces.map(wsId => (
+                        <button
+                          key={wsId}
+                          onClick={() => { setEndpointsWorkspaceFilter(wsId); setEndpointsPage(1); setEndpointsWorkspaceDropdownOpen(false); }}
+                          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${endpointsWorkspaceFilter === wsId ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${endpointsWorkspaceFilter === wsId ? "bg-orange-500" : "bg-transparent"}`} />
+                          {workspaceNameMap?.[wsId] ?? `Workspace ${wsId}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {endpointCostTypes.length > 1 && (
+                <div className="relative" ref={endpointsCostTypeFilterRef}>
+                  <button
+                    onClick={() => setEndpointsCostTypeDropdownOpen(o => !o)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${endpointsCostTypeFilter ? "border-transparent text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
+                    style={endpointsCostTypeFilter ? { backgroundColor: '#FF3621' } : {}}
+                  >
+                    {endpointsCostTypeFilter || "Cost type"}
+                    {endpointsCostTypeFilter ? (
+                      <span className="ml-0.5 opacity-75 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEndpointsCostTypeFilter(null); setEndpointsPage(1); }}>×</span>
+                    ) : (
+                      <svg className={`h-3 w-3 text-gray-500 transition-transform ${endpointsCostTypeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    )}
+                  </button>
+                  {endpointsCostTypeDropdownOpen && (
+                    <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        onClick={() => { setEndpointsCostTypeFilter(null); setEndpointsPage(1); setEndpointsCostTypeDropdownOpen(false); }}
+                        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${!endpointsCostTypeFilter ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${!endpointsCostTypeFilter ? "bg-orange-500" : "bg-transparent"}`} />
+                        All cost types
+                      </button>
+                      {endpointCostTypes.map(ct => (
+                        <button
+                          key={ct}
+                          onClick={() => { setEndpointsCostTypeFilter(ct); setEndpointsPage(1); setEndpointsCostTypeDropdownOpen(false); }}
+                          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${endpointsCostTypeFilter === ct ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${endpointsCostTypeFilter === ct ? "bg-orange-500" : "bg-transparent"}`} />
+                          {ct}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           {endpointsData.length > 0 ? (() => {
-            const distinctCostTypes = Array.from(new Set(endpointsData.map(e => e.cost_type).filter(Boolean)));
-            const filteredEndpoints = (endpointsCostTypeFilter
+            const filteredEndpoints = endpointsCostTypeFilter
               ? endpointsData.filter(e => e.cost_type === endpointsCostTypeFilter)
-              : endpointsData
-            ).filter(e => !endpointSearch || e.endpoint_name?.toLowerCase().includes(endpointSearch.toLowerCase()));
-            const epUrl = getEndpointUrl(host, workspaceIds?.[0]);
+              : endpointsData;
+            const epUrl = getEndpointUrl(host, endpointsWorkspaceFilter ?? workspaceIds?.[0]);
             return (
               <>
-                {distinctCostTypes.length > 1 && (
-                  <div className="mb-3 flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => { setEndpointsCostTypeFilter(null); setEndpointsPage(1); }}
-                      className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${endpointsCostTypeFilter === null ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
-                    >
-                      All ({endpointsData.length})
-                    </button>
-                    {distinctCostTypes.map(ct => (
-                      <button
-                        key={ct}
-                        onClick={() => { setEndpointsCostTypeFilter(ct); setEndpointsPage(1); }}
-                        className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${endpointsCostTypeFilter === ct ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}
-                      >
-                        {ct} ({endpointsData.filter(e => e.cost_type === ct).length})
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">

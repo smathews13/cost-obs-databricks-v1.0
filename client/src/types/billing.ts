@@ -355,9 +355,9 @@ export interface AIMLEndpoint {
   cost_type: string;
   total_dbus: number;
   total_spend: number;
-  workspace_count: number;
   days_active: number;
   percentage: number;
+  workspace_id?: string | null;
 }
 
 export interface AIMLEndpointsResponse {

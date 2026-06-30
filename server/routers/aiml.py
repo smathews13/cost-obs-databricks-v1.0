@@ -189,17 +189,17 @@ WITH inference_usage AS (
     AND u.sku_name LIKE '%SERVERLESS_REAL_TIME_INFERENCE%'
 )
 SELECT
+  workspace_id,
   COALESCE(endpoint_name, 'UNKNOWN') as endpoint_name,
   sku_name,
   cost_type,
   SUM(usage_quantity) as total_dbus,
   SUM(usage_quantity * price_per_dbu) as total_spend,
-  COUNT(DISTINCT workspace_id) as workspace_count,
   COUNT(DISTINCT usage_date) as days_active
 FROM inference_usage
-GROUP BY endpoint_name, sku_name, cost_type
+GROUP BY workspace_id, endpoint_name, sku_name, cost_type
 ORDER BY total_spend DESC
-LIMIT 100
+LIMIT 500
 """
 
 AIML_BY_CATEGORY = """
@@ -869,8 +869,8 @@ async def get_serverless_endpoints(
                 "cost_type": row.get("cost_type"),
                 "total_dbus": float(row.get("total_dbus") or 0),
                 "total_spend": spend,
-                "workspace_count": row.get("workspace_count") or 0,
                 "days_active": row.get("days_active") or 0,
+                "workspace_id": str(row.get("workspace_id")) if row.get("workspace_id") else None,
             }
         )
 
@@ -1084,6 +1084,7 @@ def _compute_aiml_bundle(params: dict, id_list: list | None, ws_clause: str, dke
                 "total_dbus": float(r.get("total_dbus") or 0),
                 "total_spend": float(r.get("total_spend") or 0),
                 "days_active": r.get("days_active") or 0,
+                "workspace_id": str(r.get("workspace_id")) if r.get("workspace_id") else None,
                 "percentage": (float(r.get("total_spend") or 0) / endpoints_total * 100) if endpoints_total > 0 else 0,
             }
             for r in endpoints_data

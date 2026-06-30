@@ -483,6 +483,28 @@ function Dashboard() {
   const { data: dbsqlTopQueriesData, isLoading: dbsqlTopQueriesLoading } = useDBSQLTopQueries(dateRange, _wsIds, warehouseReady);
   const { data: usersGroupsData } = useUsersGroupsBundle(dateRange, _wsIds, warehouseReady);
 
+  // Optimizer tab — prefetch rightsizing and idle-time in background so the tab loads instantly
+  useQuery({
+    queryKey: ["warehouse-health"],
+    queryFn: () => fetch("/api/sql/warehouse-health").then(r => r.json()),
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+    enabled: warehouseReady,
+  });
+  useQuery({
+    queryKey: ["warehouse-idle-time", dateRange.startDate, dateRange.endDate, _wsIds?.join(",")],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (dateRange.startDate) params.set("start_date", dateRange.startDate);
+      if (dateRange.endDate) params.set("end_date", dateRange.endDate);
+      if (_wsIds?.length) params.set("workspace_ids", _wsIds.join(","));
+      return fetch(`/api/sql/warehouse-health/idle-time?${params}`).then(r => r.json());
+    },
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+    enabled: warehouseReady,
+  });
+
   // Use Cases tab data - only fetch when feature is enabled
   const useCasesEnabled = appSettings.enableUseCaseTracking;
   useQuery({ queryKey: ["use-cases"], queryFn: async () => { const r = await fetch("/api/use-cases/use-cases?status=active"); if (!r.ok) throw new Error("Failed"); return r.json(); }, enabled: useCasesEnabled });

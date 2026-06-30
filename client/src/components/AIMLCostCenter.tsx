@@ -115,6 +115,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const [mlClusterSearch, setMlClusterSearch] = useState("");
   const [mlRuntimeFilter, setMlRuntimeFilter] = useState<string | null>(null);
   const [endpointsCostTypeFilter, setEndpointsCostTypeFilter] = useState<string | null>(null);
+  const [endpointSearch, setEndpointSearch] = useState("");
   const [mlRuntimeFilterOpen, setMlRuntimeFilterOpen] = useState(false);
   const mlRuntimeFilterRef = useRef<HTMLDivElement>(null);
   const [agentSearch, setAgentSearch] = useState("");
@@ -493,12 +494,20 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                 <p>Endpoints deployed via Databricks Model Serving using serverless compute. These are pay-per-request inference endpoints that auto-scale to zero. Costs include both steady-state compute and scale-from-zero launch overhead.</p>
               </div>
             </div>
+            <input
+              type="text"
+              placeholder="Search..."
+              value={endpointSearch}
+              onChange={(e) => { setEndpointSearch(e.target.value); setEndpointsPage(1); }}
+              className="ml-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44"
+            />
           </div>
           {endpointsData.length > 0 ? (() => {
             const distinctCostTypes = Array.from(new Set(endpointsData.map(e => e.cost_type).filter(Boolean)));
-            const filteredEndpoints = endpointsCostTypeFilter
+            const filteredEndpoints = (endpointsCostTypeFilter
               ? endpointsData.filter(e => e.cost_type === endpointsCostTypeFilter)
-              : endpointsData;
+              : endpointsData
+            ).filter(e => !endpointSearch || e.endpoint_name?.toLowerCase().includes(endpointSearch.toLowerCase()));
             const epUrl = getEndpointUrl(host, workspaceIds?.[0]);
             return (
               <>
@@ -768,7 +777,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                 </div>
               </div>
               {paginatedMlClusters.length > 0 ? (
-                <div className="overflow-x-auto">
+                <div className="mt-3 overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
@@ -910,7 +919,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                 </div>
               </div>
               {paginatedAgents.length > 0 ? (
-                <div className="overflow-x-auto">
+                <div className="mt-3 overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>

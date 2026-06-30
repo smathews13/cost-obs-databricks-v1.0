@@ -1187,14 +1187,11 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
 
         return (
           <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Connected Resources</h3>
-                <p className="mt-1 text-xs text-gray-500">Model serving endpoints, SQL warehouses, Lakebase databases, and other Databricks resources used by deployed apps.</p>
-              </div>
-              {/* Type filter chips + App filter dropdown — right-aligned */}
-              <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
-              {/* App filter dropdown — first so it's front and center */}
+            {/* Single toolbar row: title · filters · search */}
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <h3 className="mr-2 text-lg font-semibold text-gray-900 shrink-0">Connected Resources</h3>
+
+              {/* App filter dropdown */}
               <div className="relative" data-artifact-app-dropdown>
                 <button
                   onClick={() => { setArtifactAppFilterOpen(v => !v); setArtifactAppFilterSearch(""); }}
@@ -1209,7 +1206,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   </svg>
                 </button>
                 {artifactAppFilterOpen && (
-                  <div className="absolute right-0 top-full z-[9999] mt-1 w-64 rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <div className="absolute left-0 top-full z-[9999] mt-1 w-64 rounded-lg border border-gray-200 bg-white shadow-lg">
                     <div className="p-2">
                       <input
                         autoFocus
@@ -1270,21 +1267,20 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   </button>
                 );
               })}
-              </div>
-            </div>
 
-            {/* Search */}
-            <div className="mb-4 relative">
-              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                value={artifactSearch}
-                onChange={(e) => { setArtifactSearch(e.target.value); setArtifactPage(1); }}
-                placeholder="Search resources..."
-                className="w-full rounded-md border border-gray-300 py-2 pl-10 pr-3 text-sm text-gray-700 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-              />
+              {/* Search — pushed to far right */}
+              <div className="relative ml-auto w-64 shrink-0">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={artifactSearch}
+                  onChange={(e) => { setArtifactSearch(e.target.value); setArtifactPage(1); }}
+                  placeholder="Search resources..."
+                  className="w-full rounded-md border border-gray-300 py-1.5 pl-9 pr-3 text-sm text-gray-700 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                />
+              </div>
             </div>
 
             <div className="overflow-x-auto">

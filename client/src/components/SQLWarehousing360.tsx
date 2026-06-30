@@ -952,62 +952,45 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
 
           {/* Top Expensive Queries Table */}
           <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-            <div className="mb-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold text-gray-900">Most Expensive Queries</h3>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-                    <input type="checkbox" checked={showHistoricalQueries}
-                      onChange={(e) => { setShowHistoricalQueries(e.target.checked); setQueriesPage(1); }}
-                      className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
-                    Show historical ({historicalQueryCount})
-                    <span className="relative group ml-0.5">
-                      <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Queries with unknown users or unavailable previews</span>
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={querySearch}
-                    onChange={(e) => { setQuerySearch(e.target.value); setQueriesPage(1); }}
-                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-44"
-                  />
-                </div>
-              </div>
-              {querySourceTypes.length > 1 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => { setQuerySourceFilter(null); setQueriesPage(1); }}
-                    className={`rounded-full px-3 py-1 text-xs font-medium ${
-                      querySourceFilter === null
-                        ? "text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
-                    style={querySourceFilter === null ? { backgroundColor: '#FF3621' } : undefined}
-                  >
-                    All
-                  </button>
-                  {querySourceTypes.map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => { setQuerySourceFilter(querySourceFilter === type ? null : type); setQueriesPage(1); }}
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${
-                        querySourceFilter === type
-                          ? "text-white"
-                          : "text-gray-700 hover:opacity-80"
-                      }`}
-                      style={
-                        querySourceFilter === type
-                          ? { backgroundColor: SOURCE_TYPE_COLORS[type] || "#6b7280" }
-                          : { backgroundColor: `${SOURCE_TYPE_COLORS[type] || "#6b7280"}20`, color: SOURCE_TYPE_COLORS[type] || "#6b7280" }
-                      }
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              )}
+            {/* Single toolbar row: title · show historical · source pills · search */}
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <h3 className="mr-2 text-lg font-semibold text-gray-900 shrink-0">Most Expensive Queries</h3>
+              <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                <input type="checkbox" checked={showHistoricalQueries}
+                  onChange={(e) => { setShowHistoricalQueries(e.target.checked); setQueriesPage(1); }}
+                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+                Show historical ({historicalQueryCount})
+                <span className="relative group ml-0.5">
+                  <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Queries with unknown users or unavailable previews</span>
+                </span>
+              </label>
+              <button
+                onClick={() => { setQuerySourceFilter(null); setQueriesPage(1); }}
+                className={`rounded-full px-3 py-1 text-xs font-medium ${querySourceFilter === null ? "text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                style={querySourceFilter === null ? { backgroundColor: '#FF3621' } : undefined}
+              >
+                All ({topQueriesData?.queries?.length ?? 0})
+              </button>
+              {querySourceTypes.map((type) => (
+                <button
+                  key={type}
+                  onClick={() => { setQuerySourceFilter(querySourceFilter === type ? null : type); setQueriesPage(1); }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${querySourceFilter === type ? "text-white" : "text-gray-700 hover:opacity-80"}`}
+                  style={querySourceFilter === type
+                    ? { backgroundColor: SOURCE_TYPE_COLORS[type] || "#6b7280" }
+                    : { backgroundColor: `${SOURCE_TYPE_COLORS[type] || "#6b7280"}20`, color: SOURCE_TYPE_COLORS[type] || "#6b7280" }}
+                >
+                  {type} ({topQueriesData?.queries?.filter((q) => q.query_source_type === type).length ?? 0})
+                </button>
+              ))}
+              <input
+                type="text"
+                placeholder="Search..."
+                value={querySearch}
+                onChange={(e) => { setQuerySearch(e.target.value); setQueriesPage(1); }}
+                className="ml-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
+              />
             </div>
             {topQueriesLoading && sortedQueries.length === 0 ? (
               <div className="flex h-32 items-center justify-center gap-3">
@@ -1318,6 +1301,67 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   );
 }
 
+export function OptimizeMethodologyPanel() {
+  const MINIMIZE_KEY = "cost-obs-minimize-optimize-info";
+  const [minimized, setMinimized] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem(MINIMIZE_KEY) === "true" : false
+  );
+  const toggle = (v: boolean) => {
+    setMinimized(v);
+    v ? localStorage.setItem(MINIMIZE_KEY, "true") : localStorage.removeItem(MINIMIZE_KEY);
+  };
+  return (
+    <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 shrink-0">
+          <svg className="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+        </div>
+        <div className="ml-1 flex-1">
+          <button className="flex w-full items-center justify-between" onClick={() => toggle(!minimized)}>
+            <h3 className="text-sm font-medium text-orange-800">Optimize — Methodology</h3>
+            <svg className={`h-4 w-4 text-orange-500 transition-transform ${minimized ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {!minimized && (
+            <>
+              <div className="mt-2 text-sm text-orange-700">
+                <p className="mb-2 font-medium">Idle Time</p>
+                <ul className="list-inside list-disc space-y-1">
+                  <li><strong>Uptime</strong>: Derived from <code className="rounded bg-orange-100 px-1 text-xs">system.compute.warehouse_events</code> — the delta between START and STOP lifecycle events per warehouse</li>
+                  <li><strong>Active query time</strong>: Sum of query durations from <code className="rounded bg-orange-100 px-1 text-xs">system.query.history</code> for the same warehouse and window</li>
+                  <li><strong>Idle time</strong>: Uptime minus active query time (floored at zero)</li>
+                  <li><strong>Est. idle spend</strong>: <code className="rounded bg-orange-100 px-1 text-xs">total_billed_spend × (idle_minutes / uptime_minutes)</code> — prorated from Databricks billing data</li>
+                  <li>Serverless warehouses are excluded — they scale per-query and do not emit start/stop events</li>
+                </ul>
+                <p className="mb-2 mt-3 font-medium">Rightsizing</p>
+                <ul className="list-inside list-disc space-y-1">
+                  <li><strong>Over-Scaled</strong>: Warehouse has multiple clusters (auto-scaling enabled) but median concurrency per query window never exceeded 1 — extra clusters never needed</li>
+                  <li><strong>Oversized</strong>: Warehouse size (M, L, XL…) is larger than query complexity warrants — average query duration and data scanned suggest a smaller size would suffice</li>
+                  <li>Recommendations are based on the <code className="rounded bg-orange-100 px-1 text-xs">system.compute.warehouse_events</code> and <code className="rounded bg-orange-100 px-1 text-xs">system.query.history</code> system tables over the selected date range</li>
+                </ul>
+              </div>
+              <div className="mt-3 flex justify-start">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={minimized}
+                    onChange={(e) => toggle(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-orange-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  <span className="text-xs text-orange-600">Minimize from now on</span>
+                </label>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WarehouseRightsizingView({ host }: { host?: string | null }) {
   const { data: warehouseHealth, isLoading: healthLoading } = useQuery<{
     available: boolean;
@@ -1345,7 +1389,7 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-base font-semibold text-gray-900">Warehouse Rightsizing</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Idle, over-scaled, and oversized warehouse recommendations</p>
+          <p className="text-xs text-gray-500 mt-0.5">Over-scaled and oversized warehouse recommendations</p>
         </div>
         <div className="flex items-center gap-3">
           {warehouseHealth && (
@@ -1358,7 +1402,6 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
               className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
             >
               <option value="">All Issues</option>
-              <option value="IDLE_RUNNING">Idle Running</option>
               <option value="OVER_SCALED">Over-Scaled</option>
               <option value="OVERSIZED">Oversized</option>
             </select>
@@ -1387,9 +1430,9 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
           OVER_SCALED: "Over-Scaled",
           OVERSIZED: "Oversized",
         };
-        const filtered = healthIssueFilter
-          ? warehouseHealth.recommendations.filter((r) => r.recommendation_type === healthIssueFilter)
-          : warehouseHealth.recommendations;
+        const filtered = warehouseHealth.recommendations
+          .filter((r) => r.recommendation_type !== "IDLE_RUNNING")
+          .filter((r) => !healthIssueFilter || r.recommendation_type === healthIssueFilter);
         const totalPages = Math.max(1, Math.ceil(filtered.length / HEALTH_PAGE_SIZE));
         const safePage = Math.min(healthPage, totalPages);
         const pageRecs = filtered.slice((safePage - 1) * HEALTH_PAGE_SIZE, safePage * HEALTH_PAGE_SIZE);
@@ -1514,6 +1557,8 @@ export function WarehouseIdleTimeView({
     staleTime: 30 * 60 * 1000,
     retry: false,
   });
+  const [idlePage, setIdlePage] = useState(1);
+  const IDLE_PAGE_SIZE = 10;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6">
@@ -1538,63 +1583,69 @@ export function WarehouseIdleTimeView({
             ? "Idle time via lifecycle events is not available for Serverless SQL Warehouses. Serverless warehouses scale per-query and do not emit start/stop events."
             : "No warehouse uptime data found for this date range."}
         </div>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Warehouse</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Size</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Uptime</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Idle Time</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Idle %</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Total Spend</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Est. Idle Spend</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
-              {data.warehouses.map((wh, i) => (
-                <tr key={`${wh.warehouse_id}-${i}`} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {host ? (
-                      <a
-                        href={`${host}/sql/warehouses/${wh.warehouse_id}/edit`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
-                      >
-                        {wh.warehouse_name}
-                      </a>
-                    ) : (
-                      wh.warehouse_name
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-left text-sm text-gray-500">{wh.warehouse_size}</td>
-                  <td className="px-4 py-3 text-left">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${wh.warehouse_type === 'SERVERLESS' ? 'bg-cyan-100 text-cyan-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {wh.warehouse_type === 'SERVERLESS' ? 'Serverless' : 'Classic'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.total_running_minutes)}</td>
-                  <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.idle_minutes)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                      wh.idle_pct >= 80 ? "bg-red-100 text-red-700"
-                      : wh.idle_pct >= 50 ? "bg-amber-100 text-amber-700"
-                      : "bg-gray-100 text-gray-700"
-                    }`}>
-                      {wh.idle_pct.toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-700">{fmt$(wh.total_spend)}</td>
-                  <td className="px-4 py-3 text-right font-medium text-red-600">{fmt$(wh.estimated_idle_spend)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      ) : (() => {
+        const totalIdlePages = Math.max(1, Math.ceil(data.warehouses.length / IDLE_PAGE_SIZE));
+        const safeIdlePage = Math.min(idlePage, totalIdlePages);
+        const pageWarehouses = data.warehouses.slice((safeIdlePage - 1) * IDLE_PAGE_SIZE, safeIdlePage * IDLE_PAGE_SIZE);
+        return (
+          <>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Warehouse</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Size</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Uptime</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Idle Time</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Idle %</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Total Spend</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Est. Idle Spend</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {pageWarehouses.map((wh, i) => (
+                    <tr key={`${wh.warehouse_id}-${i}`} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        {host ? (
+                          <a href={`${host}/sql/warehouses/${wh.warehouse_id}/edit`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                            {wh.warehouse_name}
+                          </a>
+                        ) : wh.warehouse_name}
+                      </td>
+                      <td className="px-4 py-3 text-left text-sm text-gray-500">{wh.warehouse_size}</td>
+                      <td className="px-4 py-3 text-left">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${wh.warehouse_type === 'SERVERLESS' ? 'bg-cyan-100 text-cyan-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {wh.warehouse_type === 'SERVERLESS' ? 'Serverless' : 'Classic'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.total_running_minutes)}</td>
+                      <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.idle_minutes)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${wh.idle_pct >= 80 ? "bg-red-100 text-red-700" : wh.idle_pct >= 50 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-700"}`}>
+                          {wh.idle_pct.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-700">{fmt$(wh.total_spend)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-red-600">{fmt$(wh.estimated_idle_spend)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {totalIdlePages > 1 && (
+              <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                <span>{data.warehouses.length} warehouse{data.warehouses.length !== 1 ? "s" : ""}</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setIdlePage((p) => Math.max(1, p - 1))} disabled={safeIdlePage <= 1} className="rounded px-2 py-1 disabled:opacity-40 hover:bg-gray-100">‹ Prev</button>
+                  <span className="px-2">Page {safeIdlePage} of {totalIdlePages}</span>
+                  <button onClick={() => setIdlePage((p) => Math.min(totalIdlePages, p + 1))} disabled={safeIdlePage >= totalIdlePages} className="rounded px-2 py-1 disabled:opacity-40 hover:bg-gray-100">Next ›</button>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }

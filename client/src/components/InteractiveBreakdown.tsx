@@ -193,84 +193,46 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
 
   return (
     <div className="animate-fade-in rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-      <div className="mb-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-1.5">
-              Interactive Compute Breakdown
-              <span className="relative group">
-                <svg className="h-4 w-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg z-20">
-                  All-purpose cluster usage from notebooks, IDEs, and interactive sessions. Does not include automated jobs or streaming pipelines — those are tracked in the ETL Breakdown below.
-                </span>
+      <div className="mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <h3 className="mr-1 text-lg font-semibold text-gray-900 shrink-0 flex items-center gap-1.5">
+            Interactive Compute Breakdown
+            <span className="relative group">
+              <svg className="h-4 w-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg z-20">
+                All-purpose cluster usage from notebooks, IDEs, and interactive sessions. Does not include automated jobs or streaming pipelines — those are tracked in the ETL Breakdown below.
               </span>
-            </h3>
-            <p className="text-sm text-gray-500">
-              All-purpose cluster usage: {uniqueUsers} users, {uniqueClusters} clusters, {uniqueNotebooks} notebooks
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {historicalCount > 0 && (
-              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showHistorical}
-                  onChange={(e) => { setShowHistorical(e.target.checked); setCurrentPage(1); }}
-                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                />
-                Show historical ({historicalCount})
-                <span className="relative group ml-0.5">
-                  <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Clusters whose names could not be resolved — likely terminated or from inaccessible workspaces</span>
-                </span>
-              </label>
-            )}
-            <input
-              type="text"
-              placeholder="Search..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-48"
-            />
-          </div>
+            </span>
+          </h3>
+          {historicalCount > 0 && (
+            <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showHistorical}
+                onChange={(e) => { setShowHistorical(e.target.checked); setCurrentPage(1); }}
+                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+              />
+              Show historical ({historicalCount})
+              <span className="relative group ml-0.5">
+                <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Clusters whose names could not be resolved — likely terminated or from inaccessible workspaces</span>
+              </span>
+            </label>
+          )}
+          <button onClick={() => setViewMode("by-user")} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-user" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-user" ? { backgroundColor: '#FF3621' } : undefined}>By User</button>
+          <button onClick={() => setViewMode("by-cluster")} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-cluster" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-cluster" ? { backgroundColor: '#FF3621' } : undefined}>By Cluster</button>
+          <button onClick={() => setViewMode("by-notebook")} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-notebook" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-notebook" ? { backgroundColor: '#FF3621' } : undefined}>By Notebook</button>
+          <input
+            type="text"
+            placeholder="Search..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+            className="ml-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode("by-user")}
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
-              viewMode === "by-user"
-                ? "text-white"
-                : "bg-orange-50 text-orange-700 hover:bg-orange-100"
-            }`}
-            style={viewMode === "by-user" ? { backgroundColor: '#FF3621' } : undefined}
-          >
-            By User
-          </button>
-          <button
-            onClick={() => setViewMode("by-cluster")}
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
-              viewMode === "by-cluster"
-                ? "text-white"
-                : "bg-orange-50 text-orange-700 hover:bg-orange-100"
-            }`}
-            style={viewMode === "by-cluster" ? { backgroundColor: '#FF3621' } : undefined}
-          >
-            By Cluster
-          </button>
-          <button
-            onClick={() => setViewMode("by-notebook")}
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
-              viewMode === "by-notebook"
-                ? "text-white"
-                : "bg-orange-50 text-orange-700 hover:bg-orange-100"
-            }`}
-            style={viewMode === "by-notebook" ? { backgroundColor: '#FF3621' } : undefined}
-          >
-            By Notebook
-          </button>
-        </div>
+        <p className="text-sm text-gray-500">All-purpose cluster usage: {uniqueUsers} users, {uniqueClusters} clusters, {uniqueNotebooks} notebooks</p>
       </div>
 
       <div className="overflow-x-auto">

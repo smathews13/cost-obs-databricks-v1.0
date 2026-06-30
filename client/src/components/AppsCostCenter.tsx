@@ -1204,6 +1204,8 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <h3 className="mr-2 text-lg font-semibold text-gray-900 shrink-0">Connected Resources</h3>
 
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+
               {/* App filter dropdown */}
               <div className="relative" data-artifact-app-dropdown>
                 <button
@@ -1219,7 +1221,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   </svg>
                 </button>
                 {artifactAppFilterOpen && (
-                  <div className="absolute left-0 top-full z-[9999] mt-1 w-64 rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <div className="absolute right-0 top-full z-[9999] mt-1 w-64 rounded-lg border border-gray-200 bg-white shadow-lg">
                     <div className="p-2">
                       <input
                         autoFocus
@@ -1273,7 +1275,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   </svg>
                 </button>
                 {artifactTypeDropdownOpen && (
-                  <div className="absolute left-0 top-full z-[9999] mt-1 w-56 rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <div className="absolute right-0 top-full z-[9999] mt-1 w-56 rounded-lg border border-gray-200 bg-white shadow-lg">
                     <div className="max-h-64 overflow-y-auto py-1">
                       <button
                         onClick={() => { setArtifactTypeFilters([]); setArtifactPage(1); }}
@@ -1308,8 +1310,8 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                 )}
               </div>
 
-              {/* Search — pushed to far right */}
-              <div className="relative ml-auto w-64 shrink-0">
+              {/* Search */}
+              <div className="relative w-64 shrink-0">
                 <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
@@ -1321,6 +1323,8 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   className="w-full rounded-md border border-gray-300 py-1.5 pl-9 pr-3 text-sm text-gray-700 placeholder-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
                 />
               </div>
+
+              </div>{/* end ml-auto group */}
             </div>
 
             <div className="overflow-x-auto">

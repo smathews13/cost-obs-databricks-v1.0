@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, useRef, useEffect } from "react";
 import type { InteractiveBreakdownResponse } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
@@ -40,7 +40,21 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
+  const [viewDropdownOpen, setViewDropdownOpen] = useState(false);
+  const viewDropdownRef = useRef<HTMLDivElement>(null);
   const itemsPerPage = 10;
+
+  useEffect(() => {
+    if (!viewDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (viewDropdownRef.current && !viewDropdownRef.current.contains(e.target as Node)) {
+        setViewDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [viewDropdownOpen]);
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -48,6 +62,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
       setSortField(field);
       setSortDirection("desc");
     }
+    setCurrentPage(1);
   };
 
   const SortIcon = ({ field }: { field: SortField }) => {
@@ -194,8 +209,8 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
   return (
     <div className="animate-fade-in rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
       <div className="mb-4">
-        <div className="flex flex-wrap items-center gap-2 mb-1">
-          <h3 className="mr-1 text-lg font-semibold text-gray-900 shrink-0 flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-lg font-semibold text-gray-900 shrink-0 flex items-center gap-1.5">
             Interactive Compute Breakdown
             <span className="relative group">
               <svg className="h-4 w-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -206,6 +221,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
               </span>
             </span>
           </h3>
+          <span className="text-sm text-gray-500 shrink-0">{uniqueUsers} users · {uniqueClusters} clusters · {uniqueNotebooks} notebooks</span>
           {historicalCount > 0 && (
             <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
               <input
@@ -221,18 +237,46 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
               </span>
             </label>
           )}
-          <button onClick={() => { setViewMode("by-user"); setCurrentPage(1); }} className={`ml-auto rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-user" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-user" ? { backgroundColor: '#FF3621' } : undefined}>By User</button>
-          <button onClick={() => { setViewMode("by-cluster"); setCurrentPage(1); }} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-cluster" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-cluster" ? { backgroundColor: '#FF3621' } : undefined}>By Cluster</button>
-          <button onClick={() => { setViewMode("by-notebook"); setCurrentPage(1); }} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-notebook" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-notebook" ? { backgroundColor: '#FF3621' } : undefined}>By Notebook</button>
-          <input
-            type="text"
-            placeholder="Search..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
-          />
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <div ref={viewDropdownRef} className="relative">
+              <button
+                onClick={() => setViewDropdownOpen(o => !o)}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${viewMode !== "by-user" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"}`}
+              >
+                {viewMode === "by-user" ? "By User" : viewMode === "by-cluster" ? "By Cluster" : "By Notebook"}
+                <svg className={`h-3 w-3 transition-transform ${viewDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {viewDropdownOpen && (
+                <div className="absolute right-0 top-full z-[9999] mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                  {(["by-user", "by-cluster", "by-notebook"] as const).map((v) => {
+                    const label = v === "by-user" ? "By User" : v === "by-cluster" ? "By Cluster" : "By Notebook";
+                    return (
+                      <button
+                        key={v}
+                        onClick={() => { setViewMode(v); setViewDropdownOpen(false); setCurrentPage(1); }}
+                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${viewMode === v ? "bg-orange-50 font-medium text-[#FF3621]" : "text-gray-700 hover:bg-gray-50"}`}
+                      >
+                        <span className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${viewMode === v ? "border-transparent" : "border-gray-300"}`} style={viewMode === v ? { backgroundColor: '#FF3621' } : undefined}>
+                          {viewMode === v && <svg className="h-2 w-2 text-white" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="2" /></svg>}
+                        </span>
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
+            />
+          </div>
         </div>
-        <p className="text-sm text-gray-500">All-purpose cluster usage: {uniqueUsers} users, {uniqueClusters} clusters, {uniqueNotebooks} notebooks</p>
       </div>
 
       <div className="overflow-x-auto">

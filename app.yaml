@@ -38,6 +38,11 @@ env:
   # - name: DATABRICKS_HTTP_PATH
   #   value: /sql/1.0/warehouses/<id>
 
+  # Databricks Account ID — used to resolve cross-metastore workspace names.
+  # The app auto-detects this from system.billing.usage; set this only to override.
+  # - name: DATABRICKS_ACCOUNT_ID
+  #   value: <your-account-id>
+
   # Azure subscription ID (shown in account banner on Azure workspaces)
   # - name: AZURE_SUBSCRIPTION_ID
   #   value: <subscription-id>

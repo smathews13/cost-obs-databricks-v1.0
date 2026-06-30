@@ -1276,6 +1276,50 @@ def _inject_qh_ws_filter(sql: str, clause: str) -> str:
     return sql
 
 
+# Module-level cache for account workspace names (1h TTL).
+# Populated by AccountClient.workspaces.list() when DATABRICKS_ACCOUNT_ID is set.
+_account_ws_names: dict[str, str] = {}
+_account_ws_names_ts: float = 0.0
+
+
+def _get_account_workspace_names() -> dict[str, str]:
+    """Return workspace_id → workspace_name from AccountClient. Cached 1h. Returns {} on failure.
+
+    Account ID is auto-detected from system.billing.usage so no env var is required.
+    DATABRICKS_ACCOUNT_ID env var takes precedence if set.
+    """
+    global _account_ws_names, _account_ws_names_ts
+    if time.time() - _account_ws_names_ts < 3600:
+        return _account_ws_names
+
+    # Prefer explicit env var; auto-detect from billing table as fallback
+    account_id = os.environ.get("DATABRICKS_ACCOUNT_ID", "")
+    if not account_id:
+        try:
+            rows = execute_query(
+                "SELECT DISTINCT account_id FROM system.billing.usage WHERE usage_date >= CURRENT_DATE - 7 AND account_id IS NOT NULL LIMIT 1"
+            )
+            account_id = rows[0].get("account_id", "") if rows else ""
+        except Exception as e:
+            logger.debug("Could not auto-detect account_id from billing: %s", e)
+
+    if not account_id:
+        return {}
+
+    try:
+        from databricks.sdk import AccountClient
+        a = AccountClient(account_id=account_id)
+        names = {str(w.workspace_id): w.workspace_name for w in a.workspaces.list() if w.workspace_name}
+        _account_ws_names = names
+        _account_ws_names_ts = time.time()
+        logger.info("AccountClient: fetched %d workspace names for account %s", len(names), account_id)
+        return names
+    except Exception as e:
+        logger.warning("AccountClient workspace list failed (account %s): %s", account_id, e)
+        _account_ws_names_ts = time.time()  # backoff: don't retry for another hour
+        return {}
+
+
 @router.get("/workspaces")
 async def get_workspace_list(
     start_date: str = Query(default=None),
@@ -1316,10 +1360,14 @@ async def get_workspace_list(
 
     def _fetch_rows() -> list:
         try:
-            return execute_query(sql_with_names, params)
+            rows = execute_query(sql_with_names, params)
         except Exception as e:
             logger.warning("get_workspace_list: system.access.workspaces_latest unavailable (%s), falling back to IDs only", e)
-            return execute_query(sql_ids_only, params)
+            rows = execute_query(sql_ids_only, params)
+        account_names = _get_account_workspace_names()
+        if account_names:
+            rows = [{**r, "workspace_name": r["workspace_name"] or account_names.get(r["workspace_id"])} for r in rows]
+        return rows
 
     try:
         rows = await asyncio.wait_for(asyncio.to_thread(_fetch_rows), timeout=30.0)

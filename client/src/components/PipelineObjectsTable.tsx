@@ -1,4 +1,4 @@
-import { Fragment, useState, memo } from "react";
+import { Fragment, useState, useRef, useEffect, memo } from "react";
 import type { PipelineObjectsResponse } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
@@ -37,7 +37,21 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
+  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
   const itemsPerPage = 10;
+
+  useEffect(() => {
+    if (!filterDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) {
+        setFilterDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [filterDropdownOpen]);
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -45,6 +59,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
       setSortField(field);
       setSortDirection("desc");
     }
+    setCurrentPage(1);
   };
 
   const SortIcon = ({ field }: { field: SortField }) => {
@@ -121,35 +136,62 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
 
   return (
     <div className="animate-fade-in rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-      <div className="mb-4">
-        <div className="flex flex-wrap items-center gap-2 mb-1">
-          <h3 className="mr-1 text-lg font-semibold text-gray-900 shrink-0 flex items-center gap-1.5">
-            ETL Breakdown
-            <span className="relative group">
-              <svg className="h-4 w-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-80 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg z-20">
-                All streaming and batch workloads across Spark Declarative Pipelines (SDP) and Jobs. Unlike Interactive Compute, these are automated scheduled or triggered workloads that run without user interaction.
-              </span>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <h3 className="text-lg font-semibold text-gray-900 shrink-0 flex items-center gap-1.5">
+          ETL Breakdown
+          <span className="relative group">
+            <svg className="h-4 w-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-80 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg z-20">
+              All streaming and batch workloads across Spark Declarative Pipelines (SDP) and Jobs. Unlike Interactive Compute, these are automated scheduled or triggered workloads that run without user interaction.
             </span>
-          </h3>
-          {historicalCount > 0 && (
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-              <input type="checkbox" checked={showHistorical} onChange={(e) => { setShowHistorical(e.target.checked); setCurrentPage(1); }} className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
-              Show historical ({historicalCount})
-              <span className="relative group ml-0.5">
-                <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Objects whose names could not be resolved — likely deleted or from inaccessible workspaces</span>
-              </span>
-            </label>
-          )}
-          <button onClick={() => setFilter("all")} className={`ml-auto rounded-full px-3 py-1 text-xs font-medium ${filter === "all" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={filter === "all" ? { backgroundColor: '#FF3621' } : undefined}>All ({activeObjects.length})</button>
-          <button onClick={() => setFilter("Job")} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === "Job" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={filter === "Job" ? { backgroundColor: '#FF3621' } : undefined}>Jobs ({jobCount})</button>
-          <button onClick={() => setFilter("SDP Pipeline")} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === "SDP Pipeline" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={filter === "SDP Pipeline" ? { backgroundColor: '#FF3621' } : undefined}>SDP ({pipelineCount})</button>
+          </span>
+        </h3>
+        <span className="text-sm text-gray-500 shrink-0">{activeObjects.length} objects by spend</span>
+        {historicalCount > 0 && (
+          <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" checked={showHistorical} onChange={(e) => { setShowHistorical(e.target.checked); setCurrentPage(1); }} className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+            Show historical ({historicalCount})
+            <span className="relative group ml-0.5">
+              <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Objects whose names could not be resolved — likely deleted or from inaccessible workspaces</span>
+            </span>
+          </label>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div ref={filterDropdownRef} className="relative">
+            <button
+              onClick={() => setFilterDropdownOpen(o => !o)}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"}`}
+            >
+              {filter === "all" ? `All (${activeObjects.length})` : filter === "Job" ? `Jobs (${jobCount})` : `SDP (${pipelineCount})`}
+              <svg className={`h-3 w-3 transition-transform ${filterDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {filterDropdownOpen && (
+              <div className="absolute right-0 top-full z-[9999] mt-1 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                {(["all", "Job", "SDP Pipeline"] as const).map((f) => {
+                  const label = f === "all" ? `All (${activeObjects.length})` : f === "Job" ? `Jobs (${jobCount})` : `SDP (${pipelineCount})`;
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => { setFilter(f); setFilterDropdownOpen(false); setCurrentPage(1); }}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${filter === f ? "bg-orange-50 font-medium text-[#FF3621]" : "text-gray-700 hover:bg-gray-50"}`}
+                    >
+                      <span className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${filter === f ? "border-transparent" : "border-gray-300"}`} style={filter === f ? { backgroundColor: '#FF3621' } : undefined}>
+                        {filter === f && <svg className="h-2 w-2 text-white" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="2" /></svg>}
+                      </span>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <input type="text" placeholder="Search jobs & pipelines..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-52 shrink-0" />
         </div>
-        <p className="text-sm text-gray-500">{activeObjects.length} objects by spend</p>
       </div>
 
       <div className="overflow-x-auto">

@@ -18,7 +18,6 @@ export interface ExportSections {
   query360: boolean;
   users: boolean;
   useCases: boolean;
-  alerts: boolean;
 }
 
 export type ExportFormat = "pdf" | "csv";
@@ -45,7 +44,6 @@ const sectionToTab: Record<keyof ExportSections, keyof TabVisibility | null> = {
   tagging: "tagging",
   users: "users-groups",
   useCases: "use-cases",
-  alerts: "alerts",
   platformKPIs: "kpis",
   awsCosts: "infra",
 };
@@ -64,7 +62,6 @@ const sectionLabels: Record<keyof ExportSections, { label: string; description: 
   tagging: { label: "Tagging", description: "Tag coverage and untagged resources" },
   users: { label: "Users", description: "Top users by spend and product breakdown" },
   useCases: { label: "Use Cases", description: "Use case spend attribution and go-live tracking" },
-  alerts: { label: "Alerts", description: "Cost anomaly alerts and thresholds" },
   platformKPIs: { label: "Platform KPIs & Trends", description: "Platform-wide metrics and trends" },
   awsCosts: { label: "Cloud Costs", description: "Estimated cloud infrastructure costs" },
 };

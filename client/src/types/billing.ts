@@ -862,38 +862,6 @@ export interface GCPActualDashboardBundle {
   end_date: string;
 }
 
-// Contract Burn-Down Types
-export interface ContractTerms {
-  start_date: string;
-  end_date: string;
-  total_commit_usd: number;
-  notes: string;
-}
-
-export interface ContractKPIs {
-  total_commit_usd: number;
-  spent_to_date: number;
-  remaining: number;
-  days_elapsed: number;
-  days_remaining: number;
-  projected_end_date: string;
-  pace_status: "under" | "on_pace" | "over";
-}
-
-export interface ContractDailyPoint {
-  date: string;
-  actual_cumulative: number | null;
-  ideal_cumulative: number;
-}
-
-export interface ContractBurndownResponse {
-  configured: boolean;
-  error?: string;
-  contract?: ContractTerms;
-  kpis?: ContractKPIs;
-  daily_series?: ContractDailyPoint[];
-}
-
 // DBSQL Query Cost Attribution Types
 export interface DBSQLDataRange {
   earliest_date: string | null;

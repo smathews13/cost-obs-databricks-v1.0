@@ -53,22 +53,6 @@ export interface UseCaseSummaryExport {
   count: number;
 }
 
-export interface RecentAlertsExport {
-  spikes: Array<{
-    usage_date: string;
-    daily_spend: number;
-    prev_day_spend?: number;
-    change_amount?: number;
-    change_percent?: number;
-    threshold?: number;
-    excess_amount?: number;
-    alert_type: string;
-    severity: string;
-  }>;
-  total_alerts: number;
-  date_range: { start: string; end: string };
-}
-
 export interface ExportData {
   summary: BillingSummary | undefined;
   products: ProductBreakdownResponse | undefined;
@@ -85,7 +69,6 @@ export interface ExportData {
   query360: DBSQLDashboardBundle | undefined;
   users: UsersGroupsBundle | undefined;
   useCases: UseCaseSummaryExport | undefined;
-  alerts?: RecentAlertsExport | undefined;
   dateRange: { start: string; end: string };
   workspaceFilter?: { ids: string[]; names?: string[] };
 }
@@ -112,7 +95,6 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
     query360: true,
     users: true,
     useCases: true,
-    alerts: true,
   };
 
   // Read company name from settings for branding
@@ -1267,57 +1249,6 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
       columnStyles: {
         0: { cellWidth: 50 },
       },
-    });
-
-    yPos = getLastTableY(doc) + 12;
-  }
-
-  // Alerts
-  if (includeSections.alerts && data.alerts && data.alerts.spikes.length > 0) {
-    if (yPos > 180) {
-      doc.addPage();
-      yPos = 20;
-    }
-
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(DB_ORANGE[0], DB_ORANGE[1], DB_ORANGE[2]);
-    doc.text("Alerts", 14, yPos);
-    doc.setTextColor(0, 0, 0);
-    yPos += 8;
-
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Total Alerts: ${data.alerts.total_alerts}`, 14, yPos);
-    yPos += 5;
-    doc.text(`Date Range: ${data.alerts?.date_range?.start || "—"} to ${data.alerts?.date_range?.end || "—"}`, 14, yPos);
-    yPos += 12;
-
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
-    doc.text("Recent Cost Alerts", 14, yPos);
-    doc.setTextColor(0, 0, 0);
-    yPos += 6;
-
-    const alertData = data.alerts.spikes.slice(0, 15).map((a) => [
-      format(new Date(a.usage_date), "MMM d, yyyy"),
-      a.alert_type === "spike" ? "Spike" : "Threshold",
-      a.severity === "high" ? "HIGH" : "Medium",
-      formatCurrency(a.daily_spend),
-      a.change_percent != null ? `${a.change_percent > 0 ? "+" : ""}${a.change_percent.toFixed(1)}%` : "-",
-      a.change_amount != null ? formatCurrency(Math.abs(a.change_amount)) : "-",
-    ]);
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [["Date", "Type", "Severity", "Daily Spend", "Change %", "Change $"]],
-      body: alertData,
-      theme: "striped",
-      headStyles: { fillColor: DB_HEADER, fontSize: 9 },
-      alternateRowStyles: { fillColor: DB_ALT_ROW },
-      bodyStyles: { fontSize: 8 },
-      margin: { left: 14, right: 14 },
     });
 
     yPos = getLastTableY(doc) + 12;

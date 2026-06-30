@@ -7,7 +7,6 @@ const TAB_LABELS: Record<keyof TabVisibility, { label: string; color: string }> 
   apps: { label: "Apps", color: "#FF3621" },
   tagging: { label: "Tagging", color: "#FF3621" },
   "use-cases": { label: "Use Cases", color: "#FF3621" },
-  alerts: { label: "Alerts", color: "#FF3621" },
   "users-groups": { label: "Users", color: "#FF3621" },
   forecasting: { label: "Forecasting", color: "#FF3621" },
   kpis: { label: "Platform KPIs & Trends", color: "#FF3621" },
@@ -20,11 +19,10 @@ interface SettingsTabsProps {
   toggleTab: (key: keyof TabVisibility) => void;
   visibleCount: number;
   enableUseCaseTracking?: boolean;
-  enableAlerts?: boolean;
   enableForecasting?: boolean;
 }
 
-export function SettingsTabs({ localVisibility, toggleTab, visibleCount, enableUseCaseTracking, enableAlerts, enableForecasting }: SettingsTabsProps) {
+export function SettingsTabs({ localVisibility, toggleTab, visibleCount, enableUseCaseTracking, enableForecasting }: SettingsTabsProps) {
   return (
     <div>
       <p className="mb-3 text-sm text-gray-500">
@@ -33,7 +31,6 @@ export function SettingsTabs({ localVisibility, toggleTab, visibleCount, enableU
       <div className="space-y-1.5">
         {(Object.keys(TAB_LABELS) as Array<keyof TabVisibility>).filter((key) => {
           if (key === "use-cases" && !enableUseCaseTracking) return false;
-          if (key === "alerts" && !enableAlerts) return false;
           if (key === "forecasting" && !enableForecasting) return false;
           return true;
         }).map((key) => {

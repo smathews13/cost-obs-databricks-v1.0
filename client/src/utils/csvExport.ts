@@ -225,27 +225,6 @@ export function generateCostCSV(
   // === KPIs & Trends tab ===
   // (no structured table data in platformKPIs currently — skip or add when available)
 
-  // === Cloud Costs tab ===
-  const cloudRows: string[] = [];
-
-  const alertSpikes = data.alerts?.spikes ?? data.alerts?.alerts;
-  if (sections.alerts && alertSpikes?.length) {
-    cloudRows.push(row(headerCell("Spend Spikes")));
-    cloudRows.push(row(headerCell("Date"), headerCell("Category"), headerCell("Daily Spend ($)"), headerCell("Prev Spend ($)"), headerCell("% Change")));
-    for (const a of alertSpikes.slice(0, 200)) {
-      cloudRows.push(row(
-        cell(a.usage_date ?? a.date ?? a.triggered_at ?? ""),
-        cell(a.product_category ?? a.metric ?? ""),
-        cell(fmt(a.daily_spend ?? a.current_spend ?? a.threshold), "Number"),
-        cell(fmt(a.prev_daily_spend ?? a.previous_spend), "Number"),
-        cell(fmt(a.pct_change ?? a.spike_percent), "Number")
-      ));
-    }
-    cloudRows.push(row());
-  }
-
-  if (cloudRows.length) sheets.push(sheet("Alerts", cloudRows));
-
   // Build SpreadsheetML workbook
   const styles = `<Styles>
     <Style ss:ID="header">

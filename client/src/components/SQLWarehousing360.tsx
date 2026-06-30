@@ -955,16 +955,18 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
             {/* Single toolbar row: title · show historical · source pills · search */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <h3 className="mr-2 text-lg font-semibold text-gray-900 shrink-0">Most Expensive Queries</h3>
-              <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-                <input type="checkbox" checked={showHistoricalQueries}
-                  onChange={(e) => { setShowHistoricalQueries(e.target.checked); setQueriesPage(1); }}
-                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
-                Show historical ({historicalQueryCount})
-                <span className="relative group ml-0.5">
-                  <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Queries with unknown users or unavailable previews</span>
-                </span>
-              </label>
+              {historicalQueryCount > 0 && (
+                <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                  <input type="checkbox" checked={showHistoricalQueries}
+                    onChange={(e) => { setShowHistoricalQueries(e.target.checked); setQueriesPage(1); }}
+                    className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+                  Show historical ({historicalQueryCount})
+                  <span className="relative group ml-0.5">
+                    <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Queries with unknown users or unavailable previews</span>
+                  </span>
+                </label>
+              )}
               <button
                 onClick={() => { setQuerySourceFilter(null); setQueriesPage(1); }}
                 className={`rounded-full px-3 py-1 text-xs font-medium ${querySourceFilter === null ? "text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
@@ -1077,7 +1079,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 {queryTotalPages > 1 && (
                   <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
                     <p className="text-sm text-gray-700">
-                      Showing <span className="font-medium">{queryStart + 1}</span> to <span className="font-medium">{Math.min(queryStart + 10, filteredQueries.length)}</span> of <span className="font-medium">{filteredQueries.length}</span>
+                      Showing <span className="font-medium">{queryStart + 1}</span> to <span className="font-medium">{Math.min(queryStart + 10, searchedQueries.length)}</span> of <span className="font-medium">{searchedQueries.length}</span>
                     </p>
                     <div className="flex gap-2">
                       <button onClick={() => setQueriesPage(p => Math.max(1, p - 1))} disabled={queriesPage === 1}

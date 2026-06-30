@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { Fragment, useState, memo } from "react";
 import type { PipelineObjectsResponse } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
@@ -331,18 +331,14 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
                   );
                 })
                 .map((page, idx, arr) => {
-                  // Add ellipsis if there's a gap
                   const prevPage = arr[idx - 1];
                   const showEllipsis = prevPage && page - prevPage > 1;
                   return (
-                    <>
+                    <Fragment key={page}>
                       {showEllipsis && (
-                        <span key={`ellipsis-${page}`} className="px-2 py-1 text-gray-500">
-                          ...
-                        </span>
+                        <span className="px-2 py-1 text-gray-500">...</span>
                       )}
                       <button
-                        key={page}
                         onClick={() => setCurrentPage(page)}
                         className={`rounded px-3 py-1 text-sm font-medium ${
                           currentPage === page
@@ -353,7 +349,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
                       >
                         {page}
                       </button>
-                    </>
+                    </Fragment>
                   );
                 })}
               <button

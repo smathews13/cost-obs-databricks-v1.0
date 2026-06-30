@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { InteractiveBreakdownResponse } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
@@ -221,9 +221,9 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
               </span>
             </label>
           )}
-          <button onClick={() => setViewMode("by-user")} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-user" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-user" ? { backgroundColor: '#FF3621' } : undefined}>By User</button>
-          <button onClick={() => setViewMode("by-cluster")} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-cluster" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-cluster" ? { backgroundColor: '#FF3621' } : undefined}>By Cluster</button>
-          <button onClick={() => setViewMode("by-notebook")} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-notebook" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-notebook" ? { backgroundColor: '#FF3621' } : undefined}>By Notebook</button>
+          <button onClick={() => { setViewMode("by-user"); setCurrentPage(1); }} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-user" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-user" ? { backgroundColor: '#FF3621' } : undefined}>By User</button>
+          <button onClick={() => { setViewMode("by-cluster"); setCurrentPage(1); }} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-cluster" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-cluster" ? { backgroundColor: '#FF3621' } : undefined}>By Cluster</button>
+          <button onClick={() => { setViewMode("by-notebook"); setCurrentPage(1); }} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-notebook" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-notebook" ? { backgroundColor: '#FF3621' } : undefined}>By Notebook</button>
           <input
             type="text"
             placeholder="Search..."
@@ -400,18 +400,14 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                   );
                 })
                 .map((page, idx, arr) => {
-                  // Add ellipsis if there's a gap
                   const prevPage = arr[idx - 1];
                   const showEllipsis = prevPage && page - prevPage > 1;
                   return (
-                    <>
+                    <Fragment key={page}>
                       {showEllipsis && (
-                        <span key={`ellipsis-${page}`} className="px-2 py-1 text-gray-500">
-                          ...
-                        </span>
+                        <span className="px-2 py-1 text-gray-500">...</span>
                       )}
                       <button
-                        key={page}
                         onClick={() => setCurrentPage(page)}
                         className={`rounded px-3 py-1 text-sm font-medium ${
                           currentPage === page
@@ -422,7 +418,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                       >
                         {page}
                       </button>
-                    </>
+                    </Fragment>
                   );
                 })}
               <button

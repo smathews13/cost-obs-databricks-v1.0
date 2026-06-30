@@ -260,7 +260,7 @@ WITH all_events AS (
     cluster_count
   FROM system.compute.warehouse_events
   WHERE event_time < CAST(:end_ts AS TIMESTAMP)
-    AND event_time >= TIMESTAMPADD(DAY, -7, CAST(:start_ts AS TIMESTAMP))
+    AND event_time >= CAST(:start_ts AS TIMESTAMP) - INTERVAL 7 DAYS
 ),
 events_with_next AS (
   SELECT
@@ -293,17 +293,17 @@ warehouse_uptime AS (
 ),
 query_time AS (
   SELECT
-    compute.warehouse_id AS warehouse_id,
+    qh.compute.warehouse_id AS warehouse_id,
     SUM(GREATEST(
-      (UNIX_TIMESTAMP(COALESCE(end_time, CURRENT_TIMESTAMP())) - UNIX_TIMESTAMP(start_time)) / 60.0,
+      (UNIX_TIMESTAMP(COALESCE(qh.end_time, CURRENT_TIMESTAMP())) - UNIX_TIMESTAMP(qh.start_time)) / 60.0,
       0
     )) AS total_query_minutes
-  FROM system.query.history
-  WHERE start_time >= CAST(:start_ts AS TIMESTAMP)
-    AND start_time < CAST(:end_ts AS TIMESTAMP)
-    AND compute.warehouse_id IS NOT NULL
-    AND status IN ('FINISHED', 'RUNNING', 'FETCHING', 'CANCELED', 'FAILED')
-  GROUP BY compute.warehouse_id
+  FROM system.query.history qh
+  WHERE qh.start_time >= CAST(:start_ts AS TIMESTAMP)
+    AND qh.start_time < CAST(:end_ts AS TIMESTAMP)
+    AND qh.compute.warehouse_id IS NOT NULL
+    AND qh.status IN ('FINISHED', 'RUNNING', 'FETCHING', 'CANCELED', 'FAILED')
+  GROUP BY qh.compute.warehouse_id
 ),
 wh_info AS (
   SELECT warehouse_id, warehouse_name, warehouse_size, workspace_id, warehouse_type
@@ -362,7 +362,7 @@ def _build_serverless_check_sql(ws_clause_wh: str) -> str:
 WITH latest_warehouses AS (
   SELECT warehouse_id, warehouse_type
   FROM system.compute.warehouses
-  WHERE change_time >= TIMESTAMPADD(DAY, -90, CURRENT_TIMESTAMP())
+  WHERE change_time >= CURRENT_TIMESTAMP() - INTERVAL 90 DAYS
   {ws_clause_wh}
   QUALIFY ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY change_time DESC) = 1
 )

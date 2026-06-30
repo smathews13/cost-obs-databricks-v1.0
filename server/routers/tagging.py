@@ -238,7 +238,6 @@ pipeline_info AS (
     pipeline_id,
     MAX(name) as pipeline_name
   FROM system.lakeflow.pipelines
-  WHERE delete_time IS NULL
   GROUP BY pipeline_id
 )
 SELECT

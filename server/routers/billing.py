@@ -1136,7 +1136,7 @@ def _get_pipeline_names() -> dict[str, str]:
         results = execute_query("""
             SELECT pipeline_id, MAX(name) as pipeline_name
             FROM system.lakeflow.pipelines
-            WHERE delete_time IS NULL AND name IS NOT NULL
+            WHERE name IS NOT NULL
             GROUP BY pipeline_id
         """)
         if results:
@@ -3393,6 +3393,44 @@ async def get_platform_kpi_trend(
         GROUP BY DATE(start_time)
         ORDER BY date
         """
+    elif kpi == "stickiness":
+        # DAU / total period users * 100 — inject workspace filter into both CTEs inline
+        _qh_ws = ws_clause if ws_clause else ""
+        stickiness_query = f"""
+        WITH total_users AS (
+          SELECT COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) AS total
+          FROM system.query.history
+          WHERE start_time >= CAST(:start_date AS TIMESTAMP)
+            AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
+            {_qh_ws}
+            AND (executed_by IS NOT NULL OR executed_as_user_id IS NOT NULL)
+        ),
+        daily_users AS (
+          SELECT
+            DATE(start_time) AS date,
+            COUNT(DISTINCT COALESCE(executed_by, executed_as_user_id)) AS dau
+          FROM system.query.history
+          WHERE start_time >= CAST(:start_date AS TIMESTAMP)
+            AND start_time < CAST(DATE_ADD(CAST(:end_date AS DATE), 1) AS TIMESTAMP)
+            {_qh_ws}
+            AND (executed_by IS NOT NULL OR executed_as_user_id IS NOT NULL)
+          GROUP BY DATE(start_time)
+        )
+        SELECT d.date, 100.0 * d.dau / NULLIF(t.total, 0) AS value
+        FROM daily_users d CROSS JOIN total_users t
+        ORDER BY d.date
+        """
+        try:
+            results = await asyncio.to_thread(execute_query, stickiness_query, params)
+        except Exception as e:
+            logger.error(f"Platform KPI trend query failed for {kpi}: {e}")
+            return {
+                "kpi": kpi, "granularity": granularity, "data_points": [],
+                "summary": {"period_start_value": 0, "period_end_value": 0, "change_amount": 0,
+                            "change_percent": 0, "min_value": 0, "max_value": 0, "avg_value": 0, "trend": "flat"}
+            }
+        s_points = [{"date": str(r["date"]), "value": float(r["value"] or 0)} for r in results]
+        return _resp(_build_platform_kpi_response(kpi, granularity, s_points))
     else:
         return {"error": f"Unknown platform KPI: {kpi}"}
 

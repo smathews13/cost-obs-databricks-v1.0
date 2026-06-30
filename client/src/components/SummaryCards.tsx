@@ -1,8 +1,32 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BillingSummary } from "@/types/billing";
 import { formatCurrency, formatNumber } from "@/utils/formatters";
 import { KPITrendModal } from "./KPITrendModal";
+
+function InfoTooltip({ text }: { text: string }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <span
+      className="ml-1.5 inline-flex cursor-help"
+      onMouseEnter={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseMove={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setPos(null)}
+    >
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-500">i</span>
+      {pos && createPortal(
+        <div
+          className="pointer-events-none fixed z-[9999] w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal leading-relaxed text-white shadow-lg"
+          style={{ top: pos.y - 12, transform: "translateY(-100%)", left: Math.min(pos.x + 14, window.innerWidth - 272) }}
+        >
+          {text}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+}
 
 interface SummaryCardsProps {
   data: BillingSummary | undefined;
@@ -16,12 +40,13 @@ interface CardProps {
   title: string;
   value: string;
   subtitle?: string;
+  infoTooltip?: string;
   icon: React.ReactNode;
   isLoading: boolean;
   onClick?: () => void;
 }
 
-function Card({ title, value, subtitle, icon, isLoading, onClick }: CardProps) {
+function Card({ title, value, subtitle, infoTooltip, icon, isLoading, onClick }: CardProps) {
   return (
     <div
       className={`rounded-lg bg-white p-6 border shadow-sm transition-all ${
@@ -35,7 +60,7 @@ function Card({ title, value, subtitle, icon, isLoading, onClick }: CardProps) {
           {icon}
         </div>
         <div className="ml-4 flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-500">{title}</p>
+          <p className="flex items-center text-sm font-medium text-gray-500">{title}{infoTooltip && <InfoTooltip text={infoTooltip} />}</p>
           {isLoading ? (
             <div className="mt-1 h-7 w-20 animate-pulse rounded bg-gray-200" />
           ) : (
@@ -116,9 +141,9 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
           }
         />
         <Card
-          title="Daily Spend"
+          title="Average Daily Spend"
           value={formatCurrency(data?.avg_daily_spend ?? 0)}
-          subtitle={data?.workspace_count != null ? `avg. across ${data.workspace_count} workspaces` : "daily average"}
+          subtitle={data?.workspace_count != null ? `across ${data.workspace_count} workspaces` : "daily average"}
           isLoading={isLoading}
           onClick={() => handleCardClick("avg_daily_spend", "Average Daily Spend")}
           icon={
@@ -131,6 +156,7 @@ export function SummaryCards({ data, isLoading, startDate, endDate, workspaceIds
           title="Workspaces"
           value={String(data?.workspace_count ?? 0)}
           subtitle="active workspaces"
+          infoTooltip="Average number of distinct workspaces with billable usage per day in the selected period. Matches the daily trend average."
           isLoading={isLoading}
           onClick={() => handleCardClick("workspace_count", "Daily Active Workspaces")}
           icon={

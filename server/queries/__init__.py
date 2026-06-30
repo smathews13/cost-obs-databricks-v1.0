@@ -524,7 +524,6 @@ WITH pipeline_info AS (
     MAX(name) as pipeline_name,
     MAX(creator_name) as creator_name
   FROM system.lakeflow.pipelines
-  WHERE delete_time IS NULL
   GROUP BY pipeline_id
 ),
 pipeline_usage AS (

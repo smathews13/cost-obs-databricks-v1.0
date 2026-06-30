@@ -137,6 +137,8 @@ export function UntaggedResourcesTable({
   const isHistoricalItem = (item: UntaggedItem) => {
     const name = item[resourceConfig.nameKey];
     const id = item[resourceConfig.idKey];
+    // When nameKey === idKey (e.g. endpoints), name===id is always true — only check for missing name
+    if (!resourceConfig.idKey || resourceConfig.nameKey === resourceConfig.idKey) return !name;
     return !name || name === id;
   };
   const historicalCount = allItems.filter(isHistoricalItem).length;

@@ -90,21 +90,21 @@ export function formatBytes(bytes: number): string {
  */
 export function formatBytesNoDecimal(bytes: number): string {
   if (bytes >= 1_000_000_000_000_000) {
-    return `${(bytes / 1_000_000_000_000_000).toFixed(0)} PB`;
+    return `${(bytes / 1_000_000_000_000_000).toFixed(1)} PB`;
   }
   if (bytes >= 1_000_000_000_000) {
-    return `${(bytes / 1_000_000_000_000).toFixed(0)} TB`;
+    return `${(bytes / 1_000_000_000_000).toFixed(1)} TB`;
   }
   if (bytes >= 1_000_000_000) {
-    return `${(bytes / 1_000_000_000).toFixed(0)} GB`;
+    return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
   }
   if (bytes >= 1_000_000) {
-    return `${(bytes / 1_000_000).toFixed(0)} MB`;
+    return `${(bytes / 1_000_000).toFixed(1)} MB`;
   }
   if (bytes >= 1_000) {
-    return `${(bytes / 1_000).toFixed(0)} KB`;
+    return `${(bytes / 1_000).toFixed(1)} KB`;
   }
-  return `${bytes.toFixed(0)} B`;
+  return `${bytes.toFixed(1)} B`;
 }
 
 /**
@@ -113,21 +113,21 @@ export function formatBytesNoDecimal(bytes: number): string {
  */
 export function formatRowCount(rows: number): string {
   if (rows >= 1_000_000_000_000_000) {
-    return `${(rows / 1_000_000_000_000_000).toFixed(0)}P`;
+    return `${(rows / 1_000_000_000_000_000).toFixed(1)} P`;
   }
   if (rows >= 1_000_000_000_000) {
-    return `${(rows / 1_000_000_000_000).toFixed(0)}T`;
+    return `${(rows / 1_000_000_000_000).toFixed(1)} T`;
   }
   if (rows >= 1_000_000_000) {
-    return `${(rows / 1_000_000_000).toFixed(0)}B`;
+    return `${(rows / 1_000_000_000).toFixed(1)} B`;
   }
   if (rows >= 1_000_000) {
-    return `${(rows / 1_000_000).toFixed(0)}M`;
+    return `${(rows / 1_000_000).toFixed(1)} M`;
   }
   if (rows >= 1_000) {
-    return `${(rows / 1_000).toFixed(0)}K`;
+    return `${(rows / 1_000).toFixed(1)} K`;
   }
-  return rows.toFixed(0);
+  return rows.toFixed(1);
 }
 
 /**
@@ -171,11 +171,11 @@ export function formatDurationSeconds(seconds: number): string {
  */
 export function formatComputeSecondsCompact(value: number): string {
   const hours = value / 3600;
-  if (hours >= 24) return `${(hours / 24).toFixed(1)}d`;
-  if (hours >= 1) return `${hours.toFixed(1)}h`;
+  if (hours >= 24) return `${(hours / 24).toFixed(1)} days`;
+  if (hours >= 1) return `${hours.toFixed(1)} hrs`;
   const minutes = value / 60;
-  if (minutes >= 1) return `${minutes.toFixed(1)}m`;
-  return `${value.toFixed(0)}s`;
+  if (minutes >= 1) return `${minutes.toFixed(1)} min`;
+  return `${value.toFixed(0)} sec`;
 }
 
 /**

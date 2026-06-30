@@ -42,6 +42,7 @@ function defaultPlatformFormat(value: number, kpi: string): string {
   if (kpi === "total_rows_read") return formatRowCount(value);
   if (kpi === "total_compute_seconds") return formatComputeSecondsCompact(value);
   if (kpi === "avg_query_duration") return `${value.toFixed(1)}s`;
+  if (kpi === "stickiness") return `${value.toFixed(1)}%`;
   return formatNumber(value);
 }
 
@@ -173,7 +174,7 @@ export function KPITrendModal({
                       tickFormatter={(value) => fmt(value, kpi)}
                       tick={{ fontSize: 11, fill: "#6b7280" }}
                       axisLine={{ stroke: "#e5e7eb" }}
-                      width={60}
+                      width={80}
                     />
                     <Tooltip
                       formatter={(value: number | undefined) => [fmt(value ?? 0, kpi), kpiLabel]}

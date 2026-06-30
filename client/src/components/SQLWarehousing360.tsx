@@ -1493,6 +1493,7 @@ export function WarehouseIdleTimeView({
   const { data, isLoading } = useQuery<{
     available: boolean;
     serverless_detected: boolean;
+    error?: string;
     warehouses: Array<{
       warehouse_id: string;
       warehouse_name: string;
@@ -1530,7 +1531,9 @@ export function WarehouseIdleTimeView({
       ) : !data?.available || !data.warehouses.length ? (
         <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-500">
           {data?.available === false
-            ? "Idle time data unavailable. Requires access to system.compute.warehouse_events and system.query.history."
+            ? (data as any).error
+              ? `Idle time query failed: ${(data as any).error}`
+              : "Idle time data unavailable. Requires access to system.compute.warehouse_events and system.query.history."
             : data?.serverless_detected
             ? "Idle time via lifecycle events is not available for Serverless SQL Warehouses. Serverless warehouses scale per-query and do not emit start/stop events."
             : "No warehouse uptime data found for this date range."}

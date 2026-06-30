@@ -324,6 +324,9 @@ def _fetch_workspace_groups(user_token: str | None = None) -> dict[str, list[str
                 return user_groups
             logger.info("Group mapping: user-side returned 0 users with groups, trying group-side fallback")
         except Exception as e:
+            if "403" in str(e) or "Forbidden" in str(e):
+                logger.warning("Group mapping unavailable: SCIM API returned 403 — grant the app SP 'databricks_monitoring_viewers' or workspace admin role to enable group display")
+                return {}
             logger.warning(f"Group mapping: user-side lookup failed: {e}")
 
         # ── Fallback: group-side lookup ────────────────────────────────────
@@ -348,7 +351,10 @@ def _fetch_workspace_groups(user_token: str | None = None) -> dict[str, list[str
             )
             logger.info(f"Group mapping (group-side): found {len(groups)} groups")
         except Exception as e:
-            logger.error(f"Group mapping: failed to list groups: {e}", exc_info=True)
+            if "403" in str(e) or "Forbidden" in str(e):
+                logger.warning("Group mapping unavailable: SCIM /Groups returned 403 — SP needs SCIM read permission")
+            else:
+                logger.warning(f"Group mapping: failed to list groups: {e}")
             return {}
 
         group_count = 0

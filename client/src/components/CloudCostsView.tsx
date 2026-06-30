@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import awsLogo from "@/assets/aws.png";
 import azureLogo from "@/assets/azure.png";
@@ -94,6 +95,34 @@ const INSTANCE_COLORS: Record<string, string> = {
 
 function getInstanceColor(name: string, index: number): string {
   return INSTANCE_COLORS[name] || FAMILY_PALETTE[index % FAMILY_PALETTE.length];
+}
+
+function InfoTooltip({ text }: { text: string }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <span
+      className="ml-1 inline-flex cursor-help"
+      onMouseEnter={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseMove={e => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setPos(null)}
+      onClick={e => e.stopPropagation()}
+    >
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold normal-case text-gray-500">i</span>
+      {pos && createPortal(
+        <div
+          className="pointer-events-none fixed z-[9999] w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal normal-case leading-relaxed text-white shadow-lg"
+          style={{
+            top: pos.y - 12,
+            transform: 'translateY(-100%)',
+            left: Math.min(pos.x + 14, window.innerWidth - 272),
+          }}
+        >
+          {text}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
 }
 
 function formatDate(dateStr: string): string {
@@ -275,6 +304,9 @@ export function CloudCostsView({
   const cloudDisplayName = cloud.toUpperCase() === "AZURE" ? "Azure" : cloud.toUpperCase() === "GCP" ? "GCP" : "AWS";
   const isAzure = cloud.toUpperCase() === "AZURE";
   const isGCP = cloud.toUpperCase() === "GCP";
+  const daysCount = startDate && endDate
+    ? Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1
+    : null;
 
   const awsActualAvailable = actualData?.available === true;
   const azureActualAvailable = azureActualData?.available === true;
@@ -751,7 +783,7 @@ export function CloudCostsView({
         <div
           className="relative rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_cost", label: "Infrastructure Spend" })}
+          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_cost", label: `Daily ${cloudDisplayName} Cluster Spend` })}
         >
           <span className="absolute top-2 left-2 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
           <div className="flex items-center">
@@ -763,7 +795,7 @@ export function CloudCostsView({
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Cloud Costs</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(cloudSummary.totalCost)}</p>
-              {startDate && endDate && <p className="mt-1 text-xs text-gray-500">over {Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1} days</p>}
+              {startDate && endDate && <p className="mt-1 text-xs text-gray-500">over {Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1} days · cluster compute (DBU billing)</p>}
               {startDate && endDate && <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
             </div>
           </div>
@@ -771,7 +803,7 @@ export function CloudCostsView({
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_dbu_hours", label: "Total DBUs" })}
+          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_dbu_hours", label: "Daily Cluster DBUs" })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
@@ -780,7 +812,7 @@ export function CloudCostsView({
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total DBUs</p>
+              <p className="text-sm font-medium text-gray-500">Total Cluster DBUs</p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(cloudSummary.totalDBUHours)}</p>
               <p className="mt-1 text-xs text-gray-500">across {data.clusters.length} clusters</p>
               {startDate && endDate && <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
@@ -790,16 +822,16 @@ export function CloudCostsView({
         <div
           className="rounded-lg bg-white p-6 border shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all"
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_clusters", label: "Active Clusters" })}
+          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "infra_clusters", label: `Daily Active ${cloudDisplayName} Clusters` })}
         >
           <div className="flex items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-orange-100">
               <svg className="h-6 w-6 text-[#FF3621]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Active Clusters</p>
+              <p className="text-sm font-medium text-gray-500">Active Clusters<InfoTooltip text="Average number of distinct clusters with billing activity per day in the selected period. Includes all cluster types (job clusters, interactive clusters)." /></p>
               <p className="text-2xl font-semibold text-gray-900">{formatNumber(cloudSummary.avgActiveClustersPerDay)}</p>
               <p className="mt-1 text-xs text-gray-500">daily average</p>
               {startDate && endDate && <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
@@ -809,7 +841,7 @@ export function CloudCostsView({
         <div
           className={`relative rounded-lg bg-white p-6 border shadow-sm transition-all ${startDate && endDate ? "cursor-pointer hover:shadow-md hover:scale-[1.01]" : ""}`}
           style={{ borderColor: '#E5E5E5' }}
-          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "avg_cost_per_cluster", label: "Cluster Cost" })}
+          onClick={() => startDate && endDate && setSelectedKPI({ kpi: "avg_cost_per_cluster", label: `Daily ${cloudDisplayName} Cost Per-Cluster` })}
         >
           <span className="absolute top-2 left-2 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
           <div className="flex items-center">
@@ -819,7 +851,7 @@ export function CloudCostsView({
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Cluster Cost</p>
+              <p className="text-sm font-medium text-gray-500">Avg Cost Per Cluster<InfoTooltip text="Total estimated cloud infrastructure cost divided by the number of distinct clusters with billing activity in the period." /></p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(cloudSummary.avgCostPerCluster)}</p>
               <p className="mt-1 text-xs text-gray-500">per-cluster average</p>
               {startDate && endDate && (
@@ -845,12 +877,12 @@ export function CloudCostsView({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {(infraTimeseriesLoading || timeseriesLoading) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cluster Costs{daysCount ? ` over ${daysCount} Days` : ""} <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
             <div className="h-80 animate-pulse rounded bg-gray-200" />
           </div>
         ) : (infraTimeseriesData?.timeseries && infraTimeseriesData.timeseries.length > 0) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">{cloudDisplayName} Cluster Costs{daysCount ? ` over ${daysCount} Days` : ""} <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
             <ResponsiveContainer width="100%" height={320}>
               <AreaChart data={infraTimeseriesData.timeseries} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <defs>
@@ -873,7 +905,7 @@ export function CloudCostsView({
         ) : (filteredTimeseriesData && filteredTimeseriesData.length > 0) ? (
           <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Cost Over Time <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
+              <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Cluster Costs{daysCount ? ` over ${daysCount} Days` : ""} <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
               {timeseriesFamilies.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -950,7 +982,7 @@ export function CloudCostsView({
       <div className="rounded-lg bg-white p-6 border" style={{ borderColor: '#E5E5E5' }}>
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Costs by Cluster <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
+            <h3 className="text-lg font-semibold text-gray-900">{cloudDisplayName} Cluster Leaderboard <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide align-middle ml-1" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span></h3>
             <p className="text-sm text-gray-500">
               {sortedClusters.length} cluster{sortedClusters.length !== 1 ? "s" : ""}{selectedFamilies.size > 0 ? ` · ${[...selectedFamilies].join(", ")} only` : ""}{" "}
               <span className="inline-flex items-center gap-1 group relative">

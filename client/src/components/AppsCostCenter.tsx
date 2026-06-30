@@ -332,7 +332,8 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const [wsFilterSearch, setWsFilterSearch] = useState("");
   const [appsPage, setAppsPage] = useState(1);
   const APPS_PAGE_SIZE = 40;
-  const [artifactTypeFilter, setArtifactTypeFilter] = useState<string | null>(null);
+  const [artifactTypeFilters, setArtifactTypeFilters] = useState<string[]>([]);
+  const [artifactTypeDropdownOpen, setArtifactTypeDropdownOpen] = useState(false);
   const [artifactAppFilter, setArtifactAppFilter] = useState<string | null>(null);
   const [artifactAppFilterOpen, setArtifactAppFilterOpen] = useState(false);
   const [artifactAppFilterSearch, setArtifactAppFilterSearch] = useState("");
@@ -368,6 +369,18 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [artifactAppFilterOpen]);
+
+  // Close artifact type filter dropdown on outside click
+  useEffect(() => {
+    if (!artifactTypeDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-artifact-type-dropdown]")) {
+        setArtifactTypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [artifactTypeDropdownOpen]);
 
   const handleToggleWorkspace = useCallback((ws: string) => {
     setSelectedWorkspaces(prev =>
@@ -1165,8 +1178,8 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
       {data?.connected_artifacts && data.connected_artifacts.length > 0 && (() => {
         const artifactTypes = [...new Set(data.connected_artifacts.map((a: AppsConnectedArtifact) => a.artifact_type))].filter((t: string) => t && t !== 'UNKNOWN' && t !== 'Unknown').sort();
         const allAppNames = [...new Set(data.connected_artifacts.map((a: AppsConnectedArtifact) => a.app_name).filter(Boolean))].sort() as string[];
-        let filteredArtifacts = artifactTypeFilter
-          ? data.connected_artifacts.filter((a: AppsConnectedArtifact) => a.artifact_type === artifactTypeFilter)
+        let filteredArtifacts = artifactTypeFilters.length > 0
+          ? data.connected_artifacts.filter((a: AppsConnectedArtifact) => artifactTypeFilters.includes(a.artifact_type))
           : data.connected_artifacts;
         if (artifactAppFilter) {
           filteredArtifacts = filteredArtifacts.filter((a: AppsConnectedArtifact) => a.app_name === artifactAppFilter);
@@ -1241,32 +1254,59 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                 )}
               </div>
 
-              {/* Type filter pills */}
-              <button
-                onClick={() => { setArtifactTypeFilter(null); setArtifactPage(1); }}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  !artifactTypeFilter ? 'text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                style={!artifactTypeFilter ? { backgroundColor: '#FF3621' } : undefined}
-              >
-                All ({data.connected_artifacts.length})
-              </button>
-              {artifactTypes.map((type: string) => {
-                const count = data.connected_artifacts.filter((a: AppsConnectedArtifact) => a.artifact_type === type).length;
-                const isActive = artifactTypeFilter === type;
-                return (
-                  <button
-                    key={type}
-                    onClick={() => { setArtifactTypeFilter(isActive ? null : type); setArtifactPage(1); }}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      isActive ? 'text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                    style={isActive ? { backgroundColor: '#FF3621' } : undefined}
-                  >
-                    {type.replace(/_/g, ' ')} ({count})
-                  </button>
-                );
-              })}
+              {/* Resource type multi-select dropdown */}
+              <div className="relative" data-artifact-type-dropdown>
+                <button
+                  onClick={() => setArtifactTypeDropdownOpen(v => !v)}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    artifactTypeFilters.length > 0 ? 'text-white border-transparent' : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                  }`}
+                  style={artifactTypeFilters.length > 0 ? { backgroundColor: '#FF3621', borderColor: '#FF3621' } : undefined}
+                >
+                  {artifactTypeFilters.length > 0
+                    ? artifactTypeFilters.length === 1
+                      ? artifactTypeFilters[0].replace(/_/g, ' ')
+                      : `${artifactTypeFilters.length} types`
+                    : 'Resource type'}
+                  <svg className={`h-3 w-3 transition-transform ${artifactTypeDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {artifactTypeDropdownOpen && (
+                  <div className="absolute left-0 top-full z-[9999] mt-1 w-56 rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <div className="max-h-64 overflow-y-auto py-1">
+                      <button
+                        onClick={() => { setArtifactTypeFilters([]); setArtifactPage(1); }}
+                        className={`w-full px-3 py-2 text-left text-xs transition-colors ${artifactTypeFilters.length === 0 ? 'bg-orange-50 font-medium text-[#FF3621]' : 'text-gray-700 hover:bg-gray-50'}`}
+                      >
+                        All types ({data.connected_artifacts.length})
+                      </button>
+                      {artifactTypes.map((type: string) => {
+                        const count = data.connected_artifacts.filter((a: AppsConnectedArtifact) => a.artifact_type === type).length;
+                        const checked = artifactTypeFilters.includes(type);
+                        return (
+                          <button
+                            key={type}
+                            onClick={() => {
+                              setArtifactTypeFilters(prev =>
+                                prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+                              );
+                              setArtifactPage(1);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 transition-colors hover:bg-gray-50"
+                          >
+                            <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${checked ? 'border-transparent' : 'border-gray-300 bg-white'}`} style={checked ? { backgroundColor: '#FF3621' } : undefined}>
+                              {checked && <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                            </span>
+                            <span className="flex-1 truncate">{type.replace(/_/g, ' ')}</span>
+                            <span className="text-gray-400">({count})</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Search — pushed to far right */}
               <div className="relative ml-auto w-64 shrink-0">

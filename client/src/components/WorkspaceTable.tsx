@@ -1,4 +1,4 @@
-import { Fragment, useState, memo } from "react";
+import { Fragment, useState, useRef, useEffect, useMemo, memo } from "react";
 import type { WorkspaceBreakdownResponse } from "@/types/billing";
 import { formatCurrency, formatNumber, workspaceUrl } from "@/utils/formatters";
 import { formatIdentity } from "@/utils/identity";
@@ -43,6 +43,22 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
+  const [productFilters, setProductFilters] = useState<string[]>([]);
+  const [userFilters, setUserFilters] = useState<string[]>([]);
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const productDropdownRef = useRef<HTMLDivElement>(null);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!productDropdownOpen && !userDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (productDropdownOpen && productDropdownRef.current && !productDropdownRef.current.contains(e.target as Node)) setProductDropdownOpen(false);
+      if (userDropdownOpen && userDropdownRef.current && !userDropdownRef.current.contains(e.target as Node)) setUserDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [productDropdownOpen, userDropdownOpen]);
+
   const itemsPerPage = 10;
   if (isLoading) {
     return (
@@ -76,15 +92,36 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
   // When all workspaces lack names (workspace_name is unavailable), show everything rather than a blank table.
   const allHistorical = historicalCount === data.workspaces.length;
   const activeWorkspaces = (showHistorical || allHistorical) ? data.workspaces : data.workspaces.filter((ws) => !isHistoricalWs(ws));
+
+  const allProducts = useMemo(() =>
+    [...new Set(activeWorkspaces.flatMap((ws) => ws.top_products || []))].sort(),
+    [activeWorkspaces]
+  );
+  const allUsers = useMemo(() =>
+    [...new Set(activeWorkspaces.flatMap((ws) => ws.top_users || []))].sort(),
+    [activeWorkspaces]
+  );
+
+  const filterActive = productFilters.length > 0 || userFilters.length > 0;
+  const filteredByDropdowns = filterActive
+    ? activeWorkspaces.filter((ws) => {
+        const products = ws.top_products || [];
+        const users = ws.top_users || [];
+        const productMatch = productFilters.length === 0 || productFilters.some((p) => products.includes(p));
+        const userMatch = userFilters.length === 0 || userFilters.some((u) => users.includes(u));
+        return productMatch && userMatch;
+      })
+    : activeWorkspaces;
+
   const searchLower = search.toLowerCase();
   const filteredWorkspaces = search
-    ? activeWorkspaces.filter((ws) =>
+    ? filteredByDropdowns.filter((ws) =>
         (workspaceNameMap?.[ws.workspace_id] || ws.workspace_name || "").toLowerCase().includes(searchLower) ||
         ws.workspace_id.toLowerCase().includes(searchLower) ||
         (ws.top_products || []).some((p) => p.toLowerCase().includes(searchLower)) ||
         (ws.top_users || []).some((u) => u.toLowerCase().includes(searchLower))
       )
-    : activeWorkspaces;
+    : filteredByDropdowns;
 
   const totalPages = Math.ceil(filteredWorkspaces.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -93,11 +130,11 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
 
   return (
     <div className="animate-fade-in rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <h3 className="text-lg font-semibold text-gray-900 shrink-0">
           Spend by Workspace
         </h3>
-        <div className="flex items-center gap-3">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {historicalCount > 0 && !allHistorical && (
             <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
               <input
@@ -113,12 +150,72 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 </span>
             </label>
           )}
+          {/* Product filter dropdown */}
+          {allProducts.length > 0 && (
+            <div className="relative" ref={productDropdownRef}>
+              <button
+                onClick={() => { setProductDropdownOpen((o) => !o); setUserDropdownOpen(false); }}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${productFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+              >
+                {productFilters.length === 0 ? "All Products" : productFilters.length === 1 ? formatProductName(productFilters[0]) : `${productFilters.length} Products`}
+                {productFilters.length > 0 && (
+                  <button onClick={(e) => { e.stopPropagation(); setProductFilters([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
+                    <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                )}
+                <svg className={`h-3 w-3 transition-transform ${productDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </button>
+              {productDropdownOpen && (
+                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                  {allProducts.map((p) => (
+                    <button key={p} onClick={() => { setProductFilters((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]); setCurrentPage(1); }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50">
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilters.includes(p) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {productFilters.includes(p) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      </div>
+                      <span className="truncate text-gray-700">{formatProductName(p)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {/* User filter dropdown */}
+          {allUsers.length > 0 && (
+            <div className="relative" ref={userDropdownRef}>
+              <button
+                onClick={() => { setUserDropdownOpen((o) => !o); setProductDropdownOpen(false); }}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${userFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+              >
+                {userFilters.length === 0 ? "All Users" : `${userFilters.length} User${userFilters.length > 1 ? "s" : ""}`}
+                {userFilters.length > 0 && (
+                  <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
+                    <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                )}
+                <svg className={`h-3 w-3 transition-transform ${userDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </button>
+              {userDropdownOpen && (
+                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                  {allUsers.map((u) => (
+                    <button key={u} onClick={() => { setUserFilters((prev) => prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]); setCurrentPage(1); }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50">
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      </div>
+                      <span className="truncate text-gray-700">{u}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <input
             type="text"
             placeholder="Search workspaces..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-56"
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-52"
           />
         </div>
       </div>

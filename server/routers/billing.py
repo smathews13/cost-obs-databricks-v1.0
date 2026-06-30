@@ -1280,6 +1280,7 @@ def _inject_qh_ws_filter(sql: str, clause: str) -> str:
 # Populated by AccountClient.workspaces.list() when DATABRICKS_ACCOUNT_ID is set.
 _account_ws_names: dict[str, str] = {}
 _account_ws_names_ts: float = 0.0
+_background_tasks: set = set()  # keeps fire-and-forget tasks alive
 
 
 def _get_account_workspace_names() -> dict[str, str]:
@@ -1318,6 +1319,11 @@ def _get_account_workspace_names() -> dict[str, str]:
         logger.warning("AccountClient workspace list failed (account %s): %s", account_id, e)
         _account_ws_names_ts = time.time()  # backoff: don't retry for another hour
         return {}
+
+
+async def _refresh_account_ws_names_bg() -> None:
+    """Fire-and-forget: refresh workspace name cache without blocking the request path."""
+    await asyncio.to_thread(_get_account_workspace_names)
 
 
 @router.get("/workspaces")
@@ -1364,10 +1370,16 @@ async def get_workspace_list(
         except Exception as e:
             logger.warning("get_workspace_list: system.access.workspaces_latest unavailable (%s), falling back to IDs only", e)
             rows = execute_query(sql_ids_only, params)
-        account_names = _get_account_workspace_names()
-        if account_names:
-            rows = [{**r, "workspace_name": r["workspace_name"] or account_names.get(r["workspace_id"])} for r in rows]
+        # Read cached value only — AccountClient refresh happens in background
+        if _account_ws_names:
+            rows = [{**r, "workspace_name": r["workspace_name"] or _account_ws_names.get(r["workspace_id"])} for r in rows]
         return rows
+
+    # Kick off background refresh if stale — never blocks the request path
+    if time.time() - _account_ws_names_ts >= 3600:
+        _t = asyncio.create_task(_refresh_account_ws_names_bg())
+        _background_tasks.add(_t)
+        _t.add_done_callback(_background_tasks.discard)
 
     try:
         rows = await asyncio.wait_for(asyncio.to_thread(_fetch_rows), timeout=30.0)

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import { formatIdentity } from "@/utils/identity";
 import { workspaceUrl } from "@/utils/formatters";
 import type { TaggingDashboardBundle } from "@/types/billing";
@@ -85,6 +85,19 @@ export function UntaggedResourcesTable({
     }
     return false;
   });
+
+  const [tabDropdownOpen, setTabDropdownOpen] = useState(false);
+  const tabDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!tabDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (tabDropdownRef.current && !tabDropdownRef.current.contains(e.target as Node)) {
+        setTabDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [tabDropdownOpen]);
 
   const handleSuggestedTagsMinimize = useCallback((minimized: boolean) => {
     setSuggestedTagsMinimized(minimized);
@@ -177,27 +190,40 @@ export function UntaggedResourcesTable({
         <span className="text-sm text-red-600">{formatCurrency(data.summary.untagged_spend)} untagged spend</span>
       </div>
 
-      <div className="mb-4 border-b border-gray-200">
-        <nav className="-mb-px flex space-x-4 overflow-x-auto">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => onTabChange(tab.key)}
-              className={`whitespace-nowrap border-b-2 border-gray-200 px-1 py-2 text-sm font-medium ${
-                activeUntaggedTab === tab.key ? "text-[#FF3621]" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {tab.label}
-              {tab.count > 0 && (
-                <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
-                  activeUntaggedTab === tab.key ? "bg-orange-100 text-orange-600" : "bg-gray-100 text-gray-600"
-                }`}>
-                  {tab.count >= 1000 ? "1000+" : tab.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
+      <div className="mb-4 flex items-center">
+        <div className="relative" ref={tabDropdownRef}>
+          <button
+            onClick={() => setTabDropdownOpen((o) => !o)}
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors border-[#FF3621] text-[#FF3621]`}
+          >
+            {tabs.find((t) => t.key === activeUntaggedTab)?.label ?? "Select"}
+            {(() => { const c = tabs.find((t) => t.key === activeUntaggedTab)?.count ?? 0; return c > 0 ? <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600">{c >= 1000 ? "1000+" : c}</span> : null; })()}
+            <svg className={`h-3 w-3 transition-transform ${tabDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {tabDropdownOpen && (
+            <div className="absolute left-0 top-full z-[9999] mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => { onTabChange(tab.key); setTabDropdownOpen(false); }}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full shrink-0 ${activeUntaggedTab === tab.key ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                    <span className={activeUntaggedTab === tab.key ? "font-medium text-[#FF3621]" : "text-gray-700"}>{tab.label}</span>
+                  </div>
+                  {tab.count > 0 && (
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${activeUntaggedTab === tab.key ? "bg-orange-100 text-orange-600" : "bg-gray-100 text-gray-600"}`}>
+                      {tab.count >= 1000 ? "1000+" : tab.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {suggestedTags.length > 0 && allItems.length > 0 && (

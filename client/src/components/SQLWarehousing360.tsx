@@ -976,9 +976,9 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 <div className="relative">
                   <button
                     onClick={() => setQuerySourceDropdownOpen((o) => !o)}
-                    className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${querySourceFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                   >
-                    <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className={`h-3.5 w-3.5 shrink-0 ${querySourceFilters.length > 0 ? "text-[#FF3621]" : "text-gray-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
                     </svg>
                     <span className="max-w-[140px] truncate">
@@ -1448,6 +1448,24 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
   const [healthIssueFilter, setHealthIssueFilter] = useState<string>("");
   const [healthPage, setHealthPage] = useState(1);
   const HEALTH_PAGE_SIZE = 10;
+  const [healthIssueDropdownOpen, setHealthIssueDropdownOpen] = useState(false);
+  const healthIssueDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!healthIssueDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (healthIssueDropdownRef.current && !healthIssueDropdownRef.current.contains(e.target as Node)) {
+        setHealthIssueDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [healthIssueDropdownOpen]);
+
+  const HEALTH_ISSUE_OPTIONS = [
+    { value: "", label: "All Issues" },
+    { value: "OVER_SCALED", label: "Over-Scaled" },
+    { value: "OVERSIZED", label: "Oversized" },
+  ];
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6">
@@ -1461,15 +1479,31 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
             <span className="text-xs text-gray-500">{warehouseHealth.warehouses_analyzed} warehouse{warehouseHealth.warehouses_analyzed !== 1 ? "s" : ""} analyzed</span>
           )}
           {warehouseHealth?.recommendations?.length ? (
-            <select
-              value={healthIssueFilter}
-              onChange={(e) => { setHealthIssueFilter(e.target.value); setHealthPage(1); }}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-            >
-              <option value="">All Issues</option>
-              <option value="OVER_SCALED">Over-Scaled</option>
-              <option value="OVERSIZED">Oversized</option>
-            </select>
+            <div className="relative" ref={healthIssueDropdownRef}>
+              <button
+                onClick={() => setHealthIssueDropdownOpen((o) => !o)}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${healthIssueFilter ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+              >
+                {HEALTH_ISSUE_OPTIONS.find(o => o.value === healthIssueFilter)?.label ?? "All Issues"}
+                <svg className={`h-3 w-3 transition-transform ${healthIssueDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {healthIssueDropdownOpen && (
+                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[140px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                  {HEALTH_ISSUE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => { setHealthIssueFilter(opt.value); setHealthPage(1); setHealthIssueDropdownOpen(false); }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                    >
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${healthIssueFilter === opt.value ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                      <span className={healthIssueFilter === opt.value ? "font-medium text-[#FF3621]" : "text-gray-700"}>{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : null}
         </div>
       </div>

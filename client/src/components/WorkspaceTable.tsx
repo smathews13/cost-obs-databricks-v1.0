@@ -69,7 +69,9 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
     );
   }
 
-  const isHistoricalWs = (ws: typeof data.workspaces[0]) => !ws.workspace_name && !workspaceNameMap?.[ws.workspace_id];
+  // A workspace is only "historical" if it has no workspace_id at all.
+  // Null workspace_name means the name isn't in workspaces_latest — that's not the same as historical.
+  const isHistoricalWs = (ws: typeof data.workspaces[0]) => !ws.workspace_id;
   const historicalCount = data.workspaces.filter((ws) => isHistoricalWs(ws)).length;
   // When all workspaces lack names (workspace_name is unavailable), show everything rather than a blank table.
   const allHistorical = historicalCount === data.workspaces.length;

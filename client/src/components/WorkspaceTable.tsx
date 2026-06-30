@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { Fragment, useState, memo } from "react";
 import type { WorkspaceBreakdownResponse } from "@/types/billing";
 import { formatCurrency, formatNumber, workspaceUrl } from "@/utils/formatters";
 import { formatIdentity } from "@/utils/identity";
@@ -258,14 +258,13 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                   const prevPage = arr[idx - 1];
                   const showEllipsis = prevPage && page - prevPage > 1;
                   return (
-                    <>
+                    <Fragment key={page}>
                       {showEllipsis && (
-                        <span key={`ellipsis-${page}`} className="px-2 py-1 text-gray-500">
+                        <span className="px-2 py-1 text-gray-500">
                           ...
                         </span>
                       )}
                       <button
-                        key={page}
                         onClick={() => setCurrentPage(page)}
                         className={`rounded px-3 py-1 text-sm font-medium ${
                           currentPage === page
@@ -276,7 +275,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                       >
                         {page}
                       </button>
-                    </>
+                    </Fragment>
                   );
                 })}
               <button

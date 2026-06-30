@@ -107,19 +107,9 @@ export function formatBytesNoDecimal(bytes: number): string {
   return `${bytes.toFixed(1)} B`;
 }
 
-/**
- * Format a large row count with no decimal places, scaling up through T (trillion)
- * and P (quadrillion) tiers for petascale datasets.
- */
 export function formatRowCount(rows: number): string {
-  if (rows >= 1_000_000_000_000_000) {
-    return `${(rows / 1_000_000_000_000_000).toFixed(1)} P`;
-  }
-  if (rows >= 1_000_000_000_000) {
-    return `${(rows / 1_000_000_000_000).toFixed(1)} T`;
-  }
   if (rows >= 1_000_000_000) {
-    return `${(rows / 1_000_000_000).toFixed(1)} B`;
+    return `${Math.round(rows / 1_000_000_000).toLocaleString('en-US')} B`;
   }
   if (rows >= 1_000_000) {
     return `${(rows / 1_000_000).toFixed(1)} M`;

@@ -470,7 +470,7 @@ export function PlatformKPIsView({ data, isLoading, isFetching, spendAnomalies, 
           <KPICard
             title="Unique Active Users"
             value={formatNumber(data.unique_query_users)}
-            subtitle={(data.avg_daily_query_users ?? 0) > 0 ? `${formatNumber(data.avg_daily_query_users ?? 0)} daily active users` : `${formatNumber(data.unique_job_owners)} job owners separately`}
+            subtitle={`${formatNumber(data.unique_job_owners ?? 0)} job owners`}
             isLoading={isLoading || isFetching}
             infoTooltip="Distinct SQL query executors in the selected period (matches the daily trend). Job owners shown separately — some users may appear in both groups."
             color="bg-orange-100"

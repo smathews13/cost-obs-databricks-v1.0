@@ -764,7 +764,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   const wsId = (w as any).workspace_id;
                   const wsName = (w as any).workspace_name;
                   if (wsId && !wsMap.has(wsId)) {
-                    wsMap.set(wsId, wsName || wsId);
+                    wsMap.set(wsId, workspaceNameMap?.[wsId] || wsName || wsId);
                   }
                 }
                 const wsEntries = Array.from(wsMap.entries());

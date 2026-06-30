@@ -302,7 +302,6 @@ query_time AS (
   WHERE qh.start_time >= CAST(:start_ts AS TIMESTAMP)
     AND qh.start_time < CAST(:end_ts AS TIMESTAMP)
     AND qh.compute.warehouse_id IS NOT NULL
-    AND qh.status IN ('FINISHED', 'RUNNING', 'FETCHING', 'CANCELED', 'FAILED')
   GROUP BY qh.compute.warehouse_id
 ),
 wh_info AS (

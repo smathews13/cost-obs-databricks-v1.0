@@ -679,6 +679,8 @@ export function CloudCostsView({
     return { totalCost: estimatedTotal, totalDBUHours, avgActiveClustersPerDay: clustersWithTypes.length, avgCostPerCluster };
   }, [data, infraTimeseriesData, billingSummary]);
 
+  const historicalClusterCount = data.clusters.filter(c => !c.driver_instance_type && !c.worker_instance_type).length;
+
   const filteredClusters = showHistoricalClusters
     ? data.clusters
     : data.clusters.filter(c => c.driver_instance_type || c.worker_instance_type);
@@ -795,7 +797,7 @@ export function CloudCostsView({
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Cloud Costs</p>
               <p className="text-2xl font-semibold text-gray-900">{formatCurrency(cloudSummary.totalCost)}</p>
-              {startDate && endDate && <p className="mt-1 text-xs text-gray-500">over {Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1} days · cluster compute (DBU billing)</p>}
+              {startDate && endDate && <p className="mt-1 text-xs text-gray-500">cluster spend over {Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1} days</p>}
               {startDate && endDate && <p className="mt-0.5 text-xs font-medium" style={{ color: '#FF3621' }}>Click to see trend →</p>}
             </div>
           </div>
@@ -1076,7 +1078,7 @@ export function CloudCostsView({
                 onChange={(e) => { setShowHistoricalClusters(e.target.checked); setCurrentPage(1); }}
                 className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
               />
-              <span>Show historical clusters</span>
+              <span>Show historical clusters ({historicalClusterCount})</span>
             </label>
             <div className="group relative">
               <svg className="h-4 w-4 cursor-help text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -1187,11 +1187,13 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
 
         return (
           <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Connected Resources</h3>
-            <p className="mb-3 text-xs text-gray-500">Model serving endpoints, SQL warehouses, Lakebase databases, and other Databricks resources used by deployed apps.</p>
-
-            {/* Type filter chips + App filter dropdown */}
-            <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Connected Resources</h3>
+                <p className="mt-1 text-xs text-gray-500">Model serving endpoints, SQL warehouses, Lakebase databases, and other Databricks resources used by deployed apps.</p>
+              </div>
+              {/* Type filter chips + App filter dropdown — right-aligned */}
+              <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
               {/* App filter dropdown — first so it's front and center */}
               <div className="relative" data-artifact-app-dropdown>
                 <button
@@ -1268,6 +1270,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   </button>
                 );
               })}
+              </div>
             </div>
 
             {/* Search */}

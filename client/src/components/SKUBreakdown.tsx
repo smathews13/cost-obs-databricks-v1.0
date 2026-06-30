@@ -17,6 +17,7 @@ interface SKUBreakdownProps {
   isLoading: boolean;
   workspaces?: WorkspaceBreakdown[];
   dateRange?: { startDate: string; endDate: string };
+  workspaceNameMap?: Record<string, string>;
 }
 
 const SKU_COLORS = [
@@ -24,7 +25,7 @@ const SKU_COLORS = [
   "#3B82F6", "#EC4899", "#EF4444", "#14B8A6", "#6B7280",
 ];
 
-export function SKUBreakdown({ data, isLoading, workspaces, dateRange }: SKUBreakdownProps) {
+export function SKUBreakdown({ data, isLoading, workspaces, dateRange, workspaceNameMap }: SKUBreakdownProps) {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>("all");
   const [filteredData, setFilteredData] = useState<SKUBreakdownResponse | undefined>(undefined);
   const [filterLoading, setFilterLoading] = useState(false);
@@ -70,8 +71,8 @@ export function SKUBreakdown({ data, isLoading, workspaces, dateRange }: SKUBrea
   const selectedWorkspaceName = useMemo(() => {
     if (selectedWorkspace === "all" || !workspaces) return null;
     const ws = workspaces.find((w) => String(w.workspace_id) === selectedWorkspace);
-    return ws ? (ws.workspace_name || String(ws.workspace_id)) : selectedWorkspace;
-  }, [selectedWorkspace, workspaces]);
+    return workspaceNameMap?.[selectedWorkspace] || (ws ? (ws.workspace_name || String(ws.workspace_id)) : selectedWorkspace);
+  }, [selectedWorkspace, workspaces, workspaceNameMap]);
 
   const workspaceSelector = workspaces && workspaces.length > 1 ? (
     <div className="relative" ref={dropdownRef}>
@@ -125,7 +126,7 @@ export function SKUBreakdown({ data, isLoading, workspaces, dateRange }: SKUBrea
                 }`}
               >
                 <span className={`h-2 w-2 rounded-full ${isActive ? "bg-orange-500" : "bg-transparent"}`} />
-                <span className="truncate">{ws.workspace_name || ws.workspace_id}</span>
+                <span className="truncate">{workspaceNameMap?.[wsId] || ws.workspace_name || ws.workspace_id}</span>
               </button>
             );
           })}

@@ -7,6 +7,7 @@ interface WorkspaceTableProps {
   data: WorkspaceBreakdownResponse | undefined;
   isLoading: boolean;
   host: string | null | undefined;
+  workspaceNameMap?: Record<string, string>;
 }
 
 function getWorkspaceUrl(host: string | null | undefined, workspaceId: string): string | null {
@@ -38,7 +39,7 @@ function formatProductName(raw: string): string {
   return PRODUCT_LABELS[raw] || raw.split("_").map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(" ");
 }
 
-export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, host }: WorkspaceTableProps) {
+export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, host, workspaceNameMap }: WorkspaceTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
@@ -68,7 +69,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
     );
   }
 
-  const isHistoricalWs = (ws: typeof data.workspaces[0]) => !ws.workspace_name;
+  const isHistoricalWs = (ws: typeof data.workspaces[0]) => !ws.workspace_name && !workspaceNameMap?.[ws.workspace_id];
   const historicalCount = data.workspaces.filter((ws) => isHistoricalWs(ws)).length;
   // When all workspaces lack names (workspace_name is unavailable), show everything rather than a blank table.
   const allHistorical = historicalCount === data.workspaces.length;
@@ -76,7 +77,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
   const searchLower = search.toLowerCase();
   const filteredWorkspaces = search
     ? activeWorkspaces.filter((ws) =>
-        (ws.workspace_name || "").toLowerCase().includes(searchLower) ||
+        (workspaceNameMap?.[ws.workspace_id] || ws.workspace_name || "").toLowerCase().includes(searchLower) ||
         ws.workspace_id.toLowerCase().includes(searchLower) ||
         (ws.top_products || []).some((p) => p.toLowerCase().includes(searchLower)) ||
         (ws.top_users || []).some((u) => u.toLowerCase().includes(searchLower))
@@ -158,7 +159,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                           rel="noopener noreferrer"
                           className="group flex items-center gap-1 text-sm font-medium text-[#FF3621] hover:text-[#E02F1C]"
                         >
-                          <span>{ws.workspace_name || `Workspace ${ws.workspace_id}`}</span>
+                          <span>{workspaceNameMap?.[ws.workspace_id] || ws.workspace_name || `Workspace ${ws.workspace_id}`}</span>
                           <svg className="h-3 w-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                           </svg>
@@ -170,7 +171,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                       </div>
                     ) : (
                       <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium text-gray-900">{ws.workspace_name || `Workspace ${ws.workspace_id}`}</span>
+                        <span className="text-sm font-medium text-gray-900">{workspaceNameMap?.[ws.workspace_id] || ws.workspace_name || `Workspace ${ws.workspace_id}`}</span>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500">{ws.workspace_id}</span>
                           {isHistoricalWs(ws) && <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">Historical</span>}

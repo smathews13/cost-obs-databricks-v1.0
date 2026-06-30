@@ -17,6 +17,7 @@ interface ProductBreakdownProps {
   isLoading: boolean;
   workspaces?: WorkspaceBreakdown[];
   dateRange?: { startDate: string; endDate: string };
+  workspaceNameMap?: Record<string, string>;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -40,7 +41,7 @@ const COLOR_ROTATION = [
   "#3B82F6", "#F97316",
 ];
 
-export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading, workspaces, dateRange }: ProductBreakdownProps) {
+export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading, workspaces, dateRange, workspaceNameMap }: ProductBreakdownProps) {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>("all");
   const [filteredData, setFilteredData] = useState<ProductBreakdownResponse | undefined>(undefined);
   const [filterLoading, setFilterLoading] = useState(false);
@@ -87,8 +88,8 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
   const selectedWorkspaceName = useMemo(() => {
     if (selectedWorkspace === "all" || !workspaces) return null;
     const ws = workspaces.find((w) => String(w.workspace_id) === selectedWorkspace);
-    return ws ? (ws.workspace_name || String(ws.workspace_id)) : selectedWorkspace;
-  }, [selectedWorkspace, workspaces]);
+    return workspaceNameMap?.[selectedWorkspace] || (ws ? (ws.workspace_name || String(ws.workspace_id)) : selectedWorkspace);
+  }, [selectedWorkspace, workspaces, workspaceNameMap]);
 
   const workspaceSelector = workspaces && workspaces.length > 1 ? (
     <div className="relative" ref={dropdownRef}>
@@ -142,7 +143,7 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
                 }`}
               >
                 <span className={`h-2 w-2 rounded-full ${isActive ? "bg-orange-500" : "bg-transparent"}`} />
-                <span className="truncate">{ws.workspace_name || ws.workspace_id}</span>
+                <span className="truncate">{workspaceNameMap?.[wsId] || ws.workspace_name || ws.workspace_id}</span>
               </button>
             );
           })}

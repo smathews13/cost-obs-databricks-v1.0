@@ -1137,11 +1137,11 @@ function Dashboard() {
             <SpendChart data={timeseries} isLoading={bundleLoading} />
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <ProductBreakdown data={products} isLoading={bundleLoading} workspaces={workspaces?.workspaces} dateRange={dateRange} />
-              <SKUBreakdown data={skuBreakdown} isLoading={skuLoading} workspaces={workspaces?.workspaces} dateRange={dateRange} />
+              <ProductBreakdown data={products} isLoading={bundleLoading} workspaces={workspaces?.workspaces} dateRange={dateRange} workspaceNameMap={workspaceNameMap} />
+              <SKUBreakdown data={skuBreakdown} isLoading={skuLoading} workspaces={workspaces?.workspaces} dateRange={dateRange} workspaceNameMap={workspaceNameMap} />
             </div>
 
-            <WorkspaceTable data={workspaces} isLoading={bundleLoading} host={accountInfo?.host} />
+            <WorkspaceTable data={workspaces} isLoading={bundleLoading} host={accountInfo?.host} workspaceNameMap={workspaceNameMap} />
 
             <InteractiveBreakdown data={interactiveBreakdown} isLoading={interactiveLoading} host={accountInfo?.host} />
 

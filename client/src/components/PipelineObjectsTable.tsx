@@ -144,10 +144,10 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
               </span>
             </label>
           )}
-          <button onClick={() => setFilter("all")} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === "all" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={filter === "all" ? { backgroundColor: '#FF3621' } : undefined}>All ({activeObjects.length})</button>
+          <button onClick={() => setFilter("all")} className={`ml-auto rounded-full px-3 py-1 text-xs font-medium ${filter === "all" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={filter === "all" ? { backgroundColor: '#FF3621' } : undefined}>All ({activeObjects.length})</button>
           <button onClick={() => setFilter("Job")} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === "Job" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={filter === "Job" ? { backgroundColor: '#FF3621' } : undefined}>Jobs ({jobCount})</button>
           <button onClick={() => setFilter("SDP Pipeline")} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === "SDP Pipeline" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={filter === "SDP Pipeline" ? { backgroundColor: '#FF3621' } : undefined}>SDP ({pipelineCount})</button>
-          <input type="text" placeholder="Search jobs & pipelines..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} className="ml-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-52 shrink-0" />
+          <input type="text" placeholder="Search jobs & pipelines..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-52 shrink-0" />
         </div>
         <p className="text-sm text-gray-500">{activeObjects.length} objects by spend</p>
       </div>

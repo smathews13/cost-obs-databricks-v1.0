@@ -221,7 +221,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
               </span>
             </label>
           )}
-          <button onClick={() => { setViewMode("by-user"); setCurrentPage(1); }} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-user" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-user" ? { backgroundColor: '#FF3621' } : undefined}>By User</button>
+          <button onClick={() => { setViewMode("by-user"); setCurrentPage(1); }} className={`ml-auto rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-user" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-user" ? { backgroundColor: '#FF3621' } : undefined}>By User</button>
           <button onClick={() => { setViewMode("by-cluster"); setCurrentPage(1); }} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-cluster" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-cluster" ? { backgroundColor: '#FF3621' } : undefined}>By Cluster</button>
           <button onClick={() => { setViewMode("by-notebook"); setCurrentPage(1); }} className={`rounded-full px-3 py-1 text-xs font-medium ${viewMode === "by-notebook" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`} style={viewMode === "by-notebook" ? { backgroundColor: '#FF3621' } : undefined}>By Notebook</button>
           <input
@@ -229,7 +229,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
             placeholder="Search..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-            className="ml-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
           />
         </div>
         <p className="text-sm text-gray-500">All-purpose cluster usage: {uniqueUsers} users, {uniqueClusters} clusters, {uniqueNotebooks} notebooks</p>

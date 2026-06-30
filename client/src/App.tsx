@@ -437,13 +437,6 @@ function Dashboard() {
     };
   }, [bundle?.workspaces, pricingMultiplier, applyPricing]);
 
-  const workspaceNameMap = useMemo(() =>
-    workspaces?.workspaces?.reduce((m: Record<string, string>, w: WorkspaceBreakdown) => {
-      m[w.workspace_id] = w.workspace_name || w.workspace_id;
-      return m;
-    }, {} as Record<string, string>) ?? {}
-  , [workspaces?.workspaces]);
-
   const timeseries = useMemo(() => {
     const t = bundle?.timeseries;
     if (!t || pricingMultiplier === 1.0) return t;
@@ -513,6 +506,17 @@ function Dashboard() {
     enabled: warehouseReady,
   });
   const wsFilterList = (wsListData?.workspaces ?? []).map(w => ({ workspace_id: w.id, workspace_name: w.name }));
+
+  const workspaceNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    // wsListData has real account-level names; only store entries where a real name exists
+    wsListData?.workspaces?.forEach((w) => { if (w.name) map[w.id] = w.name; });
+    // Fill any gaps from billing data (workspace_name sometimes populated here too)
+    workspaces?.workspaces?.forEach((w: WorkspaceBreakdown) => {
+      if (!map[w.workspace_id] && w.workspace_name) map[w.workspace_id] = w.workspace_name;
+    });
+    return map;
+  }, [wsListData?.workspaces, workspaces?.workspaces]);
 
   // Settings data — all prefetched in the background after the main bundle loads.
   // `enabled` gates each query on `!!bundle` so settings requests don't race the

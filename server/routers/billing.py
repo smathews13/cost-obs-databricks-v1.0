@@ -1293,14 +1293,14 @@ async def get_workspace_list(
     sql_with_names = f"""
         SELECT
             CAST(u.workspace_id AS STRING) as workspace_id,
-            COALESCE(ws.workspace_name, CONCAT('Workspace ', CAST(u.workspace_id AS STRING))) as workspace_name
+            ws.workspace_name as workspace_name
         FROM system.billing.usage u
         LEFT JOIN system.access.workspaces_latest ws ON CAST(u.workspace_id AS BIGINT) = CAST(ws.workspace_id AS BIGINT)
         WHERE u.usage_date BETWEEN :start_date AND :end_date
           AND u.usage_quantity > 0
           {ws_clause}
         GROUP BY u.workspace_id, ws.workspace_name
-        ORDER BY workspace_name
+        ORDER BY COALESCE(ws.workspace_name, CAST(u.workspace_id AS STRING))
     """
     sql_ids_only = f"""
         SELECT
@@ -3557,113 +3557,4 @@ async def get_platform_kpi_trend(
         }
     })
 
-
-@router.get("/contract-burndown")
-async def get_contract_burndown() -> dict[str, Any]:
-    """Return contract burn-down data: KPIs + daily cumulative series vs ideal pace.
-
-    Reads contract terms from .settings/contract_settings.json.
-    If not configured, returns {"configured": false}.
-    """
-    from datetime import date as _date, timedelta as _td
-    from server.routers.settings import _load_contract_settings
-
-    contract = _load_contract_settings()
-
-    start_str = contract.get("start_date") or ""
-    end_str = contract.get("end_date") or ""
-    total_commit = contract.get("total_commit_usd")
-    if not start_str or not end_str or not total_commit:
-        return {"configured": False}
-
-    try:
-        start_date = _date.fromisoformat(start_str)
-        end_date = _date.fromisoformat(end_str)
-    except ValueError:
-        return {"configured": False, "error": "Invalid date format in contract settings"}
-
-    total_days = (end_date - start_date).days
-    if total_days <= 0:
-        return {"configured": False, "error": "end_date must be after start_date"}
-
-    today = _date.today()
-    query_end = min(today, end_date)
-
-    catalog, schema = get_catalog_schema()
-    import asyncio as _asyncio
-    _sql = (
-        f"SELECT usage_date, SUM(total_spend) as total_spend FROM `{catalog}`.`{schema}`.`daily_usage_summary`"
-        f" WHERE usage_date >= :start_date AND usage_date <= :end_date"
-        f" GROUP BY usage_date ORDER BY usage_date"
-    )
-    _params = {"start_date": start_str, "end_date": query_end.isoformat()}
-    loop = _asyncio.get_running_loop()
-    rows = await loop.run_in_executor(None, execute_query, _sql, _params)
-
-    # Build daily spend lookup
-    spend_by_date: dict[str, float] = {}
-    for row in rows:
-        d = str(row["usage_date"])[:10]
-        spend_by_date[d] = float(row.get("total_spend") or 0)
-
-    # Build cumulative series over the full contract range
-    daily_series = []
-    cumulative = 0.0
-    day = start_date
-    while day <= end_date:
-        day_str = day.isoformat()
-        day_index = (day - start_date).days
-        ideal = (day_index / total_days) * total_commit
-        if day <= query_end:
-            cumulative += spend_by_date.get(day_str, 0.0)
-            daily_series.append({
-                "date": day_str,
-                "actual_cumulative": round(cumulative, 2),
-                "ideal_cumulative": round(ideal, 2),
-            })
-        else:
-            daily_series.append({
-                "date": day_str,
-                "actual_cumulative": None,
-                "ideal_cumulative": round(ideal, 2),
-            })
-        day += _td(days=1)
-
-    spent_to_date = cumulative
-    days_elapsed = max((min(today, end_date) - start_date).days, 1)
-    days_remaining = max((end_date - today).days, 0)
-    remaining = total_commit - spent_to_date
-
-    # Projected end: daily burn rate projected to exhausting the commit
-    avg_daily_burn = spent_to_date / days_elapsed if days_elapsed else 0
-    if avg_daily_burn > 0:
-        days_to_exhaust = remaining / avg_daily_burn
-        projected_end = (today + _td(days=int(days_to_exhaust))).isoformat()
-    else:
-        projected_end = end_str
-
-    # Pace status: ratio of actual vs ideal spend at today
-    ideal_at_today = (days_elapsed / total_days) * total_commit if total_days else 0
-    pace_ratio = spent_to_date / ideal_at_today if ideal_at_today > 0 else 0
-    if pace_ratio < 0.95:
-        pace_status = "under"
-    elif pace_ratio <= 1.10:
-        pace_status = "on_pace"
-    else:
-        pace_status = "over"
-
-    return {
-        "configured": True,
-        "contract": contract,
-        "kpis": {
-            "total_commit_usd": total_commit,
-            "spent_to_date": round(spent_to_date, 2),
-            "remaining": round(remaining, 2),
-            "days_elapsed": days_elapsed,
-            "days_remaining": days_remaining,
-            "projected_end_date": projected_end,
-            "pace_status": pace_status,
-        },
-        "daily_series": daily_series,
-    }
 

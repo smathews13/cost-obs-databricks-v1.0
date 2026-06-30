@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from server.routers import aiml, alerts, apps, aws_actual, azure_actual, gcp_actual, billing, dbsql, dbsql_prpr, debug, health, permissions, query_origin, settings, setup, tagging, use_cases, user, users_groups, warehouse_health
+from server.routers import aiml, apps, aws_actual, azure_actual, gcp_actual, billing, dbsql, debug, health, permissions, settings, setup, tagging, use_cases, user, users_groups, warehouse_health
 
 # Configure structured logging
 logging.basicConfig(
@@ -419,113 +419,6 @@ def setup_materialized_views():
 
     except Exception as e:
         logger.warning(f"Materialized views startup check failed (non-fatal): {e}")
-
-
-def prewarm_cache_sync():
-    """Pre-warm the query cache with common queries on startup (synchronous)."""
-    try:
-        from server.db import execute_query, execute_queries_parallel
-        from server.queries import (
-            BILLING_SUMMARY,
-            BILLING_BY_PRODUCT_FAST,
-            BILLING_BY_WORKSPACE,
-            BILLING_TIMESERIES_FAST,
-            ETL_BREAKDOWN,
-            BILLING_KPIS_FAST,
-            SPEND_ANOMALIES,
-        )
-
-        # Default 30-day range
-        params = {
-            "start_date": (date.today() - timedelta(days=30)).isoformat(),
-            "end_date": date.today().isoformat(),
-        }
-
-        logger.info("Pre-warming cache with default 30-day queries...")
-
-        # Run fast queries in parallel to warm cache
-        queries = [
-            ("summary", lambda: execute_query(BILLING_SUMMARY, params)),
-            ("products", lambda: execute_query(BILLING_BY_PRODUCT_FAST, params)),
-            ("workspaces", lambda: execute_query(BILLING_BY_WORKSPACE, params)),
-            ("timeseries", lambda: execute_query(BILLING_TIMESERIES_FAST, params)),
-            ("etl", lambda: execute_query(ETL_BREAKDOWN, params)),
-            ("kpis", lambda: execute_query(BILLING_KPIS_FAST, params)),
-            ("anomalies", lambda: execute_query(SPEND_ANOMALIES, params)),
-        ]
-
-        results = execute_queries_parallel(queries)
-        success_count = sum(1 for v in results.values() if v is not None)
-        logger.info(f"Cache pre-warming complete: {success_count}/{len(queries)} queries cached")
-
-    except Exception as e:
-        logger.warning(f"Cache pre-warming failed (non-fatal): {e}")
-
-
-def prewarm_all_tabs():
-    """Pre-warm cache for ALL tabs (runs in background after initial prewarm)."""
-    try:
-        from server.db import execute_query, execute_queries_parallel
-        from server.routers.tagging import (
-            TAGGING_SUMMARY, UNTAGGED_CLUSTERS, UNTAGGED_JOBS,
-            UNTAGGED_PIPELINES, UNTAGGED_WAREHOUSES, UNTAGGED_ENDPOINTS,
-            COST_BY_TAG, COST_BY_TAG_KEY, TAG_COVERAGE_TIMESERIES,
-        )
-        from server.routers.query_origin import (
-            _SUMMARY_SQL, _SUMMARY_SQL_NO_COST,
-            _TIMESERIES_SQL, _TIMESERIES_SQL_NO_COST,
-            _BY_WAREHOUSE_SQL, _BY_WAREHOUSE_SQL_NO_COST,
-        )
-        from server.db import get_catalog_schema
-
-        params = {
-            "start_date": (date.today() - timedelta(days=30)).isoformat(),
-            "end_date": date.today().isoformat(),
-        }
-
-        logger.info("Pre-warming ALL tabs cache in background...")
-
-        # Query origin — pre-warm all endpoints in parallel (system.query.history × dbsql_cost_per_query can be slow)
-        catalog, schema = get_catalog_schema()
-
-        def _prewarm_origin(sql_cost, sql_no_cost, name):
-            try:
-                execute_query(sql_cost, params)
-                logger.info(f"Pre-warmed query origin {name} (with cost)")
-            except Exception:
-                try:
-                    execute_query(sql_no_cost, params)
-                    logger.info(f"Pre-warmed query origin {name} (no cost fallback)")
-                except Exception as e:
-                    logger.warning(f"Query origin {name} pre-warm failed (non-fatal): {e}")
-
-        origin_prewarm_queries = [
-            ("origin_summary", lambda: _prewarm_origin(_SUMMARY_SQL.format(catalog=catalog, schema=schema), _SUMMARY_SQL_NO_COST, "summary")),
-            ("origin_timeseries", lambda: _prewarm_origin(_TIMESERIES_SQL.format(catalog=catalog, schema=schema), _TIMESERIES_SQL_NO_COST, "timeseries")),
-            ("origin_by_warehouse", lambda: _prewarm_origin(_BY_WAREHOUSE_SQL.format(catalog=catalog, schema=schema), _BY_WAREHOUSE_SQL_NO_COST, "by_warehouse")),
-        ]
-        execute_queries_parallel(origin_prewarm_queries)
-
-        # Tagging queries
-        tagging_queries = [
-            ("tag_summary", lambda: execute_query(TAGGING_SUMMARY, params)),
-            ("tag_clusters", lambda: execute_query(UNTAGGED_CLUSTERS, params)),
-            ("tag_jobs", lambda: execute_query(UNTAGGED_JOBS, params)),
-            ("tag_pipelines", lambda: execute_query(UNTAGGED_PIPELINES, params)),
-            ("tag_warehouses", lambda: execute_query(UNTAGGED_WAREHOUSES, params)),
-            ("tag_endpoints", lambda: execute_query(UNTAGGED_ENDPOINTS, params)),
-            ("tag_cost_by_tag", lambda: execute_query(COST_BY_TAG, params)),
-            ("tag_keys", lambda: execute_query(COST_BY_TAG_KEY, params)),
-            ("tag_timeseries", lambda: execute_query(TAG_COVERAGE_TIMESERIES, params)),
-        ]
-
-        # Run all queries in parallel
-        results = execute_queries_parallel(tagging_queries)
-        success_count = sum(1 for v in results.values() if v is not None)
-        logger.info(f"Background cache pre-warming complete: {success_count}/{len(tagging_queries)} queries cached")
-
-    except Exception as e:
-        logger.warning(f"Background cache pre-warming failed (non-fatal): {e}")
 
 
 def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 180, force_full: bool = False) -> dict:
@@ -1006,13 +899,10 @@ app.include_router(aws_actual.router, prefix="/api/aws-actual", tags=["aws-actua
 app.include_router(azure_actual.router, prefix="/api/azure-actual", tags=["azure-actual"])
 app.include_router(gcp_actual.router, prefix="/api/gcp-actual", tags=["gcp-actual"])
 app.include_router(dbsql.router, prefix="/api/dbsql", tags=["dbsql"])
-app.include_router(dbsql_prpr.router, prefix="/api/dbsql-prpr", tags=["dbsql-prpr"])
-app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(use_cases.router, prefix="/api/use-cases", tags=["use-cases"])
 app.include_router(permissions.router, prefix="/api/permissions", tags=["permissions"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(users_groups.router, prefix="/api/users-groups", tags=["users-groups"])
-app.include_router(query_origin.router, prefix="/api/sql/query-origin", tags=["query-origin"])
 app.include_router(warehouse_health.router, prefix="/api/sql/warehouse-health", tags=["warehouse-health"])
 app.include_router(debug.router, prefix="/api/debug", tags=["debug"])
 

@@ -85,7 +85,7 @@ export interface ExportData {
   query360: DBSQLDashboardBundle | undefined;
   users: UsersGroupsBundle | undefined;
   useCases: UseCaseSummaryExport | undefined;
-  alerts: RecentAlertsExport | undefined;
+  alerts?: RecentAlertsExport | undefined;
   dateRange: { start: string; end: string };
   workspaceFilter?: { ids: string[]; names?: string[] };
 }

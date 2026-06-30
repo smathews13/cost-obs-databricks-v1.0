@@ -137,14 +137,6 @@ def _ensure_config_table(ddl: str) -> None:
         _ensured_tables.add(ddl)
 
 
-def _ensure_contract_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_contract_settings')} "
-        f"(start_date STRING, end_date STRING, total_commit_usd DOUBLE, "
-        f"notes STRING, updated_at TIMESTAMP) USING DELTA"
-    )
-
-
 def _ensure_connections_table() -> None:
     _ensure_config_table(
         f"CREATE TABLE IF NOT EXISTS {_config_table('app_cloud_connections')} "
@@ -805,109 +797,6 @@ async def _get_tables_status_inner(request: Request):
     _tables_cache = result
     _tables_cache_ts = time.time()
     return result
-
-
-_CONTRACT_SETTINGS_FILE = os.path.join(
-    os.path.dirname(__file__), "..", "..", ".settings", "contract_settings.json"
-)
-
-_CONTRACT_EMPTY = {"start_date": None, "end_date": None, "total_commit_usd": None, "notes": ""}
-
-
-def _load_contract_settings() -> dict:
-    """Load contract settings from Delta table, falling back to local file."""
-    try:
-        from server.db import execute_query
-        table = _config_table("app_contract_settings")
-        rows = execute_query(f"SELECT * FROM {table} LIMIT 1", None, no_cache=True)
-        if rows:
-            r = rows[0]
-            return {
-                "start_date": r.get("start_date"),
-                "end_date": r.get("end_date"),
-                "total_commit_usd": r.get("total_commit_usd"),
-                "notes": r.get("notes") or "",
-            }
-    except Exception as e:
-        if _table_missing(e):
-            logger.debug("Could not load contract from Delta table (not yet created): %s", e)
-        else:
-            logger.warning(f"Could not load contract from Delta table: {e}")
-
-    # Fallback: local file — migrate to Delta if data present
-    try:
-        with open(_CONTRACT_SETTINGS_FILE) as f:
-            data = json.load(f)
-        if data.get("start_date"):
-            try:
-                _save_contract_to_table(data)
-                logger.info("Migrated contract settings from file to Delta table")
-            except Exception as e:
-                logger.warning(f"Could not migrate contract settings to Delta: {e}")
-        return data
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return _CONTRACT_EMPTY.copy()
-
-
-def _save_contract_to_table(data: dict) -> None:
-    from server.db import execute_write
-    _ensure_contract_table()
-    table = _config_table("app_contract_settings")
-    execute_write(f"DELETE FROM {table}", None)
-    execute_write(
-        f"INSERT INTO {table} (start_date, end_date, total_commit_usd, notes, updated_at) "
-        f"VALUES (:start_date, :end_date, :total_commit_usd, :notes, current_timestamp())",
-        {
-            "start_date": data["start_date"],
-            "end_date": data["end_date"],
-            "total_commit_usd": float(data["total_commit_usd"]),
-            "notes": data.get("notes") or "",
-        },
-    )
-
-
-@router.get("/contract")
-async def get_contract_settings():
-    """Return saved contract terms (or empty defaults)."""
-    return _load_contract_settings()
-
-
-@router.post("/contract")
-async def save_contract_settings(body: dict):
-    """Persist contract terms after basic validation."""
-    from datetime import date as _date
-    errors = []
-    start = body.get("start_date") or ""
-    end = body.get("end_date") or ""
-    commit = body.get("total_commit_usd")
-    try:
-        _date.fromisoformat(start)
-    except (ValueError, TypeError):
-        errors.append("start_date must be a valid ISO date (YYYY-MM-DD)")
-    try:
-        _date.fromisoformat(end)
-    except (ValueError, TypeError):
-        errors.append("end_date must be a valid ISO date (YYYY-MM-DD)")
-    if commit is None or not isinstance(commit, (int, float)) or commit <= 0:
-        errors.append("total_commit_usd must be a positive number")
-    if errors:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=422, detail="; ".join(errors))
-    data = {
-        "start_date": start,
-        "end_date": end,
-        "total_commit_usd": float(commit),
-        "notes": (body.get("notes") or "").strip(),
-    }
-    # Write to Delta table (primary) and file (dev fallback)
-    try:
-        _save_contract_to_table(data)
-    except Exception as e:
-        logger.warning(f"Could not save contract to Delta table: {e}")
-    os.makedirs(os.path.dirname(_CONTRACT_SETTINGS_FILE), exist_ok=True)
-    with open(_CONTRACT_SETTINGS_FILE, "w") as f:
-        json.dump(data, f)
-    return data
 
 
 @router.get("/catalog")

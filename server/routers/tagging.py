@@ -150,24 +150,14 @@ LIMIT 1000
 """
 
 UNTAGGED_JOBS_ENRICHED = """
-WITH job_info AS (
+WITH job_usage AS (
   SELECT
-    job_id,
-    MAX(name) as job_name,
-    MAX(creator_name) as creator_name
-  FROM system.lakeflow.jobs
-  WHERE delete_time IS NULL
-  GROUP BY job_id
-),
-job_usage AS (
-  SELECT
-    u.usage_date,
-    u.workspace_id,
     u.usage_metadata.job_id AS job_id,
-    u.usage_metadata.job_name AS usage_job_name,
-    u.sku_name,
-    u.usage_quantity,
-    COALESCE(p.pricing.default, 0) as price_per_dbu
+    MAX(u.workspace_id) AS workspace_id,
+    MAX(u.usage_metadata.job_name) AS usage_job_name,
+    SUM(u.usage_quantity) AS total_dbus,
+    SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS total_spend,
+    COUNT(DISTINCT u.usage_date) AS days_active
   FROM system.billing.usage u
   LEFT JOIN system.billing.list_prices p
     ON u.sku_name = p.sku_name
@@ -177,16 +167,19 @@ job_usage AS (
     AND u.usage_quantity > 0
     AND u.usage_metadata.job_id IS NOT NULL
     AND (u.custom_tags IS NULL OR size(u.custom_tags) = 0)
+  GROUP BY u.usage_metadata.job_id
 )
 SELECT
   ju.job_id,
-  COALESCE(MAX(ji.job_name), MAX(ju.usage_job_name), CAST(MAX(ju.job_id) AS STRING)) as job_name,
-  MAX(ju.workspace_id) as workspace_id,
-  SUM(ju.usage_quantity) as total_dbus,
-  SUM(ju.usage_quantity * ju.price_per_dbu) as total_spend,
-  COUNT(DISTINCT ju.usage_date) as days_active
+  COALESCE(MAX(lj.name), MAX(ju.usage_job_name), ju.job_id) AS job_name,
+  MAX(ju.workspace_id) AS workspace_id,
+  MAX(ju.total_dbus) AS total_dbus,
+  MAX(ju.total_spend) AS total_spend,
+  MAX(ju.days_active) AS days_active
 FROM job_usage ju
-LEFT JOIN job_info ji ON CAST(ju.job_id AS STRING) = CAST(ji.job_id AS STRING)
+LEFT JOIN system.lakeflow.jobs lj
+  ON TRY_CAST(ju.job_id AS BIGINT) = lj.job_id
+  AND lj.delete_time IS NULL
 GROUP BY ju.job_id
 ORDER BY total_spend DESC
 LIMIT 1000
@@ -217,13 +210,11 @@ LIMIT 1000
 UNTAGGED_PIPELINES_ENRICHED = """
 WITH pipeline_usage AS (
   SELECT
-    u.usage_date,
-    u.workspace_id,
     u.usage_metadata.dlt_pipeline_id AS pipeline_id,
-    u.sku_name,
-    u.usage_quantity,
-    u.custom_tags,
-    COALESCE(p.pricing.default, 0) as price_per_dbu
+    MAX(u.workspace_id) AS workspace_id,
+    SUM(u.usage_quantity) AS total_dbus,
+    SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS total_spend,
+    COUNT(DISTINCT u.usage_date) AS days_active
   FROM system.billing.usage u
   LEFT JOIN system.billing.list_prices p
     ON u.sku_name = p.sku_name
@@ -233,23 +224,17 @@ WITH pipeline_usage AS (
     AND u.usage_quantity > 0
     AND u.usage_metadata.dlt_pipeline_id IS NOT NULL
     AND (u.custom_tags IS NULL OR size(u.custom_tags) = 0)
-),
-pipeline_info AS (
-  SELECT
-    pipeline_id,
-    MAX(name) as pipeline_name
-  FROM system.lakeflow.pipelines
-  GROUP BY pipeline_id
+  GROUP BY u.usage_metadata.dlt_pipeline_id
 )
 SELECT
   pu.pipeline_id,
-  COALESCE(MAX(pi.pipeline_name), CAST(pu.pipeline_id AS STRING)) as pipeline_name,
-  MAX(pu.workspace_id) as workspace_id,
-  SUM(pu.usage_quantity) as total_dbus,
-  SUM(pu.usage_quantity * pu.price_per_dbu) as total_spend,
-  COUNT(DISTINCT pu.usage_date) as days_active
+  COALESCE(MAX(lp.name), pu.pipeline_id) AS pipeline_name,
+  MAX(pu.workspace_id) AS workspace_id,
+  MAX(pu.total_dbus) AS total_dbus,
+  MAX(pu.total_spend) AS total_spend,
+  MAX(pu.days_active) AS days_active
 FROM pipeline_usage pu
-LEFT JOIN pipeline_info pi ON pu.pipeline_id = pi.pipeline_id
+LEFT JOIN system.lakeflow.pipelines lp ON pu.pipeline_id = lp.pipeline_id
 GROUP BY pu.pipeline_id
 ORDER BY total_spend DESC
 LIMIT 1000

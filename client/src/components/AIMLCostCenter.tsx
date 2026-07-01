@@ -125,6 +125,8 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const endpointsCostTypeFilterRef = useRef<HTMLDivElement>(null);
   const modelsTypeDropdownRef = useRef<HTMLDivElement>(null);
   const [agentSearch, setAgentSearch] = useState("");
+  const [agentTypeDropdownOpen, setAgentTypeDropdownOpen] = useState(false);
+  const agentTypeDropdownRef = useRef<HTMLDivElement>(null);
   const PAGE_SIZE = 10;
 
   // Info box minimize state with localStorage persistence
@@ -182,6 +184,17 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [modelsTypeDropdownOpen]);
+
+  useEffect(() => {
+    if (!agentTypeDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (agentTypeDropdownRef.current && !agentTypeDropdownRef.current.contains(e.target as Node)) {
+        setAgentTypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [agentTypeDropdownOpen]);
 
   // Pre-warm trend queries so modals open instantly
   const queryClient = useQueryClient();
@@ -735,7 +748,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
               <div className="relative" ref={modelsTypeDropdownRef}>
                 <button
                   onClick={() => setModelsTypeDropdownOpen((o) => !o)}
-                  className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${modelsTypeFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                 >
                   <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
@@ -1061,26 +1074,43 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       </span>
                     </label>
                   )}
-                  {agentTypes.length > 0 && (
-                      <>
-                        <button
-                          onClick={() => { setAgentTypeFilter("all"); setAgentsPage(1); }}
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${agentTypeFilter === "all" ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`}
-                          style={agentTypeFilter === "all" ? { backgroundColor: '#FF3621' } : undefined}
-                        >All ({allAgents.filter(a => showHistoricalAgents || !isHistoricalAgent(a)).length})</button>
-                        {agentTypes.map(t => {
-                          const count = allAgents.filter(a => (a.agent_type || "Agent") === t && (showHistoricalAgents || !isHistoricalAgent(a))).length;
-                          return (
+                  {agentTypes.length > 1 && (
+                    <div className="relative" ref={agentTypeDropdownRef}>
+                      <button
+                        onClick={() => setAgentTypeDropdownOpen((o) => !o)}
+                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${agentTypeFilter !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                      >
+                        <svg className={`h-3 w-3 shrink-0 ${agentTypeFilter !== "all" ? "text-[#FF3621]" : "text-gray-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                        </svg>
+                        <span>{agentTypeFilter === "all" ? "All Types" : agentTypeFilter}</span>
+                        <svg className={`h-3 w-3 text-gray-400 transition-transform ${agentTypeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      {agentTypeDropdownOpen && (
+                        <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[160px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                          <button
+                            onClick={() => { setAgentTypeFilter("all"); setAgentsPage(1); setAgentTypeDropdownOpen(false); }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                          >
+                            <span className={`h-2 w-2 rounded-full shrink-0 ${agentTypeFilter === "all" ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                            <span className={agentTypeFilter === "all" ? "font-medium text-[#FF3621]" : "text-gray-700"}>All Types</span>
+                          </button>
+                          {agentTypes.map(t => (
                             <button
                               key={t}
-                              onClick={() => { setAgentTypeFilter(t); setAgentsPage(1); }}
-                              className={`rounded-full px-3 py-1 text-xs font-medium ${agentTypeFilter === t ? "text-white" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`}
-                              style={agentTypeFilter === t ? { backgroundColor: '#FF3621' } : undefined}
-                            >{t} ({count})</button>
-                          );
-                        })}
-                      </>
-                    )}
+                              onClick={() => { setAgentTypeFilter(t); setAgentsPage(1); setAgentTypeDropdownOpen(false); }}
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                            >
+                              <span className={`h-2 w-2 rounded-full shrink-0 ${agentTypeFilter === t ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                              <span className={agentTypeFilter === t ? "font-medium text-[#FF3621]" : "text-gray-700"}>{t}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <input
                     type="text"
                     placeholder="Search..."

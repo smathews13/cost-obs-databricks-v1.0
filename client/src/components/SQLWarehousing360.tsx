@@ -1657,15 +1657,107 @@ export function WarehouseIdleTimeView({
     retry: false,
   });
   const [idlePage, setIdlePage] = useState(1);
+  const [idleSizeFilter, setIdleSizeFilter] = useState<string | null>(null);
+  const [idleTypeFilter, setIdleTypeFilter] = useState<string | null>(null);
+  const [idleSizeDropdownOpen, setIdleSizeDropdownOpen] = useState(false);
+  const [idleTypeDropdownOpen, setIdleTypeDropdownOpen] = useState(false);
+  const idleSizeDropdownRef = useRef<HTMLDivElement>(null);
+  const idleTypeDropdownRef = useRef<HTMLDivElement>(null);
   const IDLE_PAGE_SIZE = 10;
+
+  useEffect(() => {
+    if (!idleSizeDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (idleSizeDropdownRef.current && !idleSizeDropdownRef.current.contains(e.target as Node)) {
+        setIdleSizeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [idleSizeDropdownOpen]);
+
+  useEffect(() => {
+    if (!idleTypeDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (idleTypeDropdownRef.current && !idleTypeDropdownRef.current.contains(e.target as Node)) {
+        setIdleTypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [idleTypeDropdownOpen]);
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <div className="mb-4">
-        <h3 className="text-base font-semibold text-gray-900">Top Warehouses by Idle Time</h3>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Idle time = warehouse uptime (from lifecycle events) minus active query time. Estimated idle spend is prorated from total billed spend.
-        </p>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">Top Warehouses by Idle Time</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Idle time = warehouse uptime (from lifecycle events) minus active query time. Estimated idle spend is prorated from total billed spend.
+          </p>
+        </div>
+        {data?.available && data.warehouses.length > 0 && (() => {
+          const distinctSizes = Array.from(new Set(data.warehouses.map(w => w.warehouse_size))).filter(Boolean).sort();
+          const distinctTypes = Array.from(new Set(data.warehouses.map(w => w.warehouse_type))).filter(Boolean);
+          return (
+            <div className="flex items-center gap-2 shrink-0">
+              {distinctSizes.length > 1 && (
+                <div className="relative" ref={idleSizeDropdownRef}>
+                  <button
+                    onClick={() => { setIdleSizeDropdownOpen(o => !o); setIdleTypeDropdownOpen(false); }}
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${idleSizeFilter ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                  >
+                    <span>{idleSizeFilter ?? "All Sizes"}</span>
+                    <svg className={`h-3 w-3 text-gray-400 transition-transform ${idleSizeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {idleSizeDropdownOpen && (
+                    <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[140px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                      <button onClick={() => { setIdleSizeFilter(null); setIdlePage(1); setIdleSizeDropdownOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${!idleSizeFilter ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                        <span className={!idleSizeFilter ? "font-medium text-[#FF3621]" : "text-gray-700"}>All Sizes</span>
+                      </button>
+                      {distinctSizes.map(s => (
+                        <button key={s} onClick={() => { setIdleSizeFilter(s); setIdlePage(1); setIdleSizeDropdownOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50">
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${idleSizeFilter === s ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                          <span className={idleSizeFilter === s ? "font-medium text-[#FF3621]" : "text-gray-700"}>{s}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {distinctTypes.length > 1 && (
+                <div className="relative" ref={idleTypeDropdownRef}>
+                  <button
+                    onClick={() => { setIdleTypeDropdownOpen(o => !o); setIdleSizeDropdownOpen(false); }}
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${idleTypeFilter ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                  >
+                    <span>{idleTypeFilter ? (idleTypeFilter === "SERVERLESS" ? "Serverless" : "Classic") : "All Types"}</span>
+                    <svg className={`h-3 w-3 text-gray-400 transition-transform ${idleTypeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {idleTypeDropdownOpen && (
+                    <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[140px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                      <button onClick={() => { setIdleTypeFilter(null); setIdlePage(1); setIdleTypeDropdownOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${!idleTypeFilter ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                        <span className={!idleTypeFilter ? "font-medium text-[#FF3621]" : "text-gray-700"}>All Types</span>
+                      </button>
+                      {distinctTypes.map(t => (
+                        <button key={t} onClick={() => { setIdleTypeFilter(t); setIdlePage(1); setIdleTypeDropdownOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50">
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${idleTypeFilter === t ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                          <span className={idleTypeFilter === t ? "font-medium text-[#FF3621]" : "text-gray-700"}>{t === "SERVERLESS" ? "Serverless" : "Classic"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {isLoading ? (
@@ -1683,9 +1775,12 @@ export function WarehouseIdleTimeView({
             : "No warehouse uptime data found for this date range."}
         </div>
       ) : (() => {
-        const totalIdlePages = Math.max(1, Math.ceil(data.warehouses.length / IDLE_PAGE_SIZE));
+        const filteredWarehouses = data.warehouses
+          .filter(w => !idleSizeFilter || w.warehouse_size === idleSizeFilter)
+          .filter(w => !idleTypeFilter || w.warehouse_type === idleTypeFilter);
+        const totalIdlePages = Math.max(1, Math.ceil(filteredWarehouses.length / IDLE_PAGE_SIZE));
         const safeIdlePage = Math.min(idlePage, totalIdlePages);
-        const pageWarehouses = data.warehouses.slice((safeIdlePage - 1) * IDLE_PAGE_SIZE, safeIdlePage * IDLE_PAGE_SIZE);
+        const pageWarehouses = filteredWarehouses.slice((safeIdlePage - 1) * IDLE_PAGE_SIZE, safeIdlePage * IDLE_PAGE_SIZE);
         return (
           <>
             <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -1734,7 +1829,7 @@ export function WarehouseIdleTimeView({
             </div>
             {totalIdlePages > 1 && (
               <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                <span>{data.warehouses.length} warehouse{data.warehouses.length !== 1 ? "s" : ""}</span>
+                <span>{filteredWarehouses.length} warehouse{filteredWarehouses.length !== 1 ? "s" : ""}{filteredWarehouses.length !== data.warehouses.length ? ` of ${data.warehouses.length}` : ""}</span>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setIdlePage((p) => Math.max(1, p - 1))} disabled={safeIdlePage <= 1} className="rounded px-2 py-1 disabled:opacity-40 hover:bg-gray-100">‹ Prev</button>
                   <span className="px-2">Page {safeIdlePage} of {totalIdlePages}</span>

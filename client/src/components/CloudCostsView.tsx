@@ -253,6 +253,7 @@ export function CloudCostsView({
   };
 
   useEffect(() => {
+    if (!familyFilterOpen && !workspaceFilterOpen) return;
     const handler = (e: MouseEvent) => {
       if (familyFilterRef.current && !familyFilterRef.current.contains(e.target as Node)) {
         setFamilyFilterOpen(false);
@@ -263,7 +264,7 @@ export function CloudCostsView({
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [familyFilterOpen, workspaceFilterOpen]);
 
   const queryClient = useQueryClient();
   const wsKey = workspaceIds?.join(",") ?? "";

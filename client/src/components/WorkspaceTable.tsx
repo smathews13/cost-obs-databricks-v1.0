@@ -189,7 +189,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 onClick={() => { setUserDropdownOpen((o) => !o); setProductDropdownOpen(false); }}
                 className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${userFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
               >
-                {userFilters.length === 0 ? "Users" : userFilters.length === 1 ? userFilters[0] : `${userFilters.length} Users`}
+                {userFilters.length === 0 ? "Users" : userFilters.length === 1 ? formatIdentity(userFilters[0]) : `${userFilters.length} Users`}
                 {userFilters.length > 0 && (
                   <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
                     <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>

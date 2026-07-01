@@ -181,6 +181,9 @@ export function SKUBreakdown({ data, isLoading, workspaces, dateRange, workspace
               Filtered to: {selectedWorkspaceName}
             </p>
           )}
+          {workspaceFilters.length > 1 && (
+            <p className="text-xs text-amber-600 mt-1">Showing aggregate view — select one workspace to filter by workspace</p>
+          )}
         </div>
         {workspaceSelector}
       </div>

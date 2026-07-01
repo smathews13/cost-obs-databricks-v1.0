@@ -15,6 +15,12 @@ from server import cache_ttls
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Guard: skip system.lakeflow enriched queries for 2h after a timeout (matches TTLCache TTL).
+# Prevents every request from burning 45s waiting for a timeout when lakeflow is unavailable.
+_lakeflow_available: bool = True
+_lakeflow_last_failure: float = 0.0
+_LAKEFLOW_RETRY_INTERVAL: float = 7200.0
+
 
 def get_default_start_date() -> str:
     """Get default start date (last 30 days)."""
@@ -1091,12 +1097,20 @@ async def get_tagging_dashboard_bundle(
 
     def lakeflow_query(enriched_sql: str, fallback_sql: str, query_params: dict, flag: list) -> list[dict[str, Any]]:
         """Try lakeflow-enriched query with 45s timeout; fall back to billing-only on failure."""
+        global _lakeflow_available, _lakeflow_last_failure
+        if not _lakeflow_available and (_time.time() - _lakeflow_last_failure) < _LAKEFLOW_RETRY_INTERVAL:
+            flag[0] = False
+            return execute_query(fallback_sql, query_params)
         try:
             result = execute_queries_parallel([("lakeflow_enriched", lambda: execute_query(enriched_sql, query_params))], timeout=45.0)
             if result.get("lakeflow_enriched") is not None:
+                _lakeflow_available = True
                 return result["lakeflow_enriched"]
         except Exception as e:
             logger.warning(f"Lakeflow query failed/timed out ({type(e).__name__}); falling back to billing-only")
+        _lakeflow_available = False
+        _lakeflow_last_failure = _time.time()
+        logger.warning("system.lakeflow unavailable; skipping enriched queries for %.0fs", _LAKEFLOW_RETRY_INTERVAL)
         flag[0] = False
         return execute_query(fallback_sql, query_params)
 

@@ -208,7 +208,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
                 <>
                   {selectedRows.length > 0 && (
                     <>
-                      <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                      <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                         Selected
                       </p>
                       {selectedRows.map(renderRow)}
@@ -217,7 +217,7 @@ export function WorkspaceFilter({ workspaces, selectedIds, onChange, isLoading }
                   {unselectedRows.length > 0 && (
                     <>
                       {selectedRows.length > 0 && <div className="my-1 border-t border-gray-100" />}
-                      <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                      <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                         Others
                       </p>
                       {unselectedRows.map(renderRow)}

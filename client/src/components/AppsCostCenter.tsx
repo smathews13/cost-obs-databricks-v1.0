@@ -873,7 +873,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                     </div>
                     <div className="max-h-60 overflow-y-auto">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Workspaces</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspaces</span>
                         <div className="flex items-center gap-2 text-xs">
                           <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaces(availableWorkspaces.map(ws => ws.id)); }} className="text-gray-500 hover:text-gray-800">All</button>
                           <span className="text-gray-300">·</span>

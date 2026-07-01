@@ -816,7 +816,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                           {whSizeDropdownOpen && (
                             <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                               <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Workspace</span>
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</span>
                                 {warehouseSizeWsFilter !== "all" && (
                                   <button onClick={(e) => { e.stopPropagation(); setWarehouseSizeWsFilter("all"); setWhSizeDropdownOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
                                 )}
@@ -994,7 +994,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   {querySourceDropdownOpen && (
                     <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sources</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Sources</span>
                         <div className="flex items-center gap-2 text-xs">
                           <button onClick={(e) => { e.stopPropagation(); setQuerySourceFilters([...querySourceTypes]); setQueriesPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                           <span className="text-gray-300">·</span>
@@ -1471,7 +1471,7 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
                 {healthIssueDropdownOpen && (
                   <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                     <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Issues</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Issues</span>
                       <div className="flex items-center gap-2 text-xs">
                         <button onClick={(e) => { e.stopPropagation(); setHealthIssueFilter(HEALTH_ISSUE_OPTIONS.map(o => o.value)); setHealthPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                         <span className="text-gray-300">·</span>
@@ -1726,7 +1726,7 @@ export function WarehouseIdleTimeView({
                   {idleSizeDropdownOpen && (
                     <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sizes</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Sizes</span>
                         <div className="flex items-center gap-2 text-xs">
                           <button onClick={(e) => { e.stopPropagation(); setIdleSizeFilter([...distinctSizes]); setIdlePage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                           <span className="text-gray-300">·</span>
@@ -1763,7 +1763,7 @@ export function WarehouseIdleTimeView({
                   {idleTypeDropdownOpen && (
                     <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Types</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Types</span>
                         <div className="flex items-center gap-2 text-xs">
                           <button onClick={(e) => { e.stopPropagation(); setIdleTypeFilter([...distinctTypes]); setIdlePage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                           <span className="text-gray-300">·</span>

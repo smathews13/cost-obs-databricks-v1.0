@@ -598,7 +598,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   {endpointsWorkspaceDropdownOpen && (
                     <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Workspace</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</span>
                         {endpointsWorkspaceFilter && (
                           <button onClick={(e) => { e.stopPropagation(); setEndpointsWorkspaceFilter(null); setEndpointsPage(1); setEndpointsWorkspaceDropdownOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
                         )}
@@ -636,7 +636,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   {endpointsCostTypeDropdownOpen && (
                     <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Cost Type</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Cost Type</span>
                         {endpointsCostTypeFilter && (
                           <button onClick={(e) => { e.stopPropagation(); setEndpointsCostTypeFilter(null); setEndpointsPage(1); setEndpointsCostTypeDropdownOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
                         )}
@@ -782,7 +782,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                 {modelsTypeDropdownOpen && (
                   <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                     <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Types</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Types</span>
                       <div className="flex items-center gap-2 text-xs">
                         <button onClick={(e) => { e.stopPropagation(); setModelsTypeFilters([...distinctTypes]); setModelsPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                         <span className="text-gray-300">·</span>
@@ -918,7 +918,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       {mlRuntimeFilterOpen && (
                         <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                           <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Runtime</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Runtime</span>
                             {mlRuntimeFilter && (
                               <button onClick={(e) => { e.stopPropagation(); setMlRuntimeFilter(null); setMlClustersPage(1); setMlRuntimeFilterOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
                             )}
@@ -1085,7 +1085,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       {agentTypeDropdownOpen && (
                         <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                           <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Types</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Types</span>
                             <div className="flex items-center gap-2 text-xs">
                               <button onClick={(e) => { e.stopPropagation(); setAgentTypeFilter([...agentTypes]); setAgentsPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                               <span className="text-gray-300">·</span>

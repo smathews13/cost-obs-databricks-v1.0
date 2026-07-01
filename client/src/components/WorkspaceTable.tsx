@@ -162,7 +162,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
               {productDropdownOpen && (
                 <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Products</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Products</span>
                     <div className="flex items-center gap-2 text-xs">
                       <button onClick={(e) => { e.stopPropagation(); setProductFilters([...allProducts]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                       <span className="text-gray-300">·</span>
@@ -200,7 +200,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
               {userDropdownOpen && (
                 <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Users</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Users</span>
                     <div className="flex items-center gap-2 text-xs">
                       <button onClick={(e) => { e.stopPropagation(); setUserFilters([...allUsers]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                       <span className="text-gray-300">·</span>

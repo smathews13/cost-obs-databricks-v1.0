@@ -584,7 +584,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               {typeFilterOpen && (
                 <div className="absolute left-0 top-full z-[9999] mt-1 w-44 rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Type</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Type</span>
                     {typeFilter !== "all" && (
                       <button onClick={(e) => { e.stopPropagation(); setTypeFilter("all"); setPage(0); setTypeFilterOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
                     )}
@@ -621,7 +621,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               {productFilterOpen && (
                 <div className="absolute left-0 top-full z-[9999] mt-1 w-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg" style={{ maxHeight: 260 }}>
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Product</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Product</span>
                     {productFilter !== "all" && (
                       <button onClick={(e) => { e.stopPropagation(); setProductFilter("all"); setPage(0); setProductFilterOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
                     )}
@@ -653,7 +653,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               {sortOpen && (
                 <div className="absolute left-0 top-full z-[9999] mt-1 w-36 rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="sticky top-0 border-b border-gray-100 bg-white px-3 py-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sort by</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Sort by</span>
                   </div>
                   {(["spend", "dbus", "days"] as const).map(s => (
                     <button

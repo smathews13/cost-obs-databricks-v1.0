@@ -1340,24 +1340,23 @@ async def get_workspace_list(
     configured_ids = wf.get_configured_workspace_ids()
     ws_clause = wf.build_ws_filter_clause() if configured_ids else ""
 
+    # Primary query: workspaces_latest only — always succeeds, result is cached on success.
+    # Keeping this separate from the workspaces CDC table avoids TABLE_OR_VIEW_NOT_FOUND
+    # on environments that don't have system.access.workspaces (e.g. dogfood), which would
+    # prevent caching and cause every cold-start to stall while the warehouse wakes up.
     sql_with_names = f"""
         SELECT
             CAST(u.workspace_id AS STRING) as workspace_id,
-            COALESCE(MAX(wsl.workspace_name), MAX(ws_dedup.workspace_name)) as workspace_name
+            MAX(wsl.workspace_name) as workspace_name
         FROM system.billing.usage u
         LEFT JOIN system.access.workspaces_latest wsl
             ON CAST(u.workspace_id AS BIGINT) = CAST(wsl.workspace_id AS BIGINT)
-        LEFT JOIN (
-            SELECT workspace_id, MAX(workspace_name) as workspace_name
-            FROM system.access.workspaces
-            GROUP BY workspace_id
-        ) ws_dedup ON CAST(u.workspace_id AS BIGINT) = CAST(ws_dedup.workspace_id AS BIGINT)
         WHERE u.usage_date BETWEEN :start_date AND :end_date
           AND u.usage_quantity > 0
           AND u.workspace_id IS NOT NULL
           {ws_clause}
         GROUP BY u.workspace_id
-        ORDER BY COALESCE(MAX(wsl.workspace_name), MAX(ws_dedup.workspace_name), CAST(u.workspace_id AS STRING))
+        ORDER BY COALESCE(MAX(wsl.workspace_name), CAST(u.workspace_id AS STRING))
     """
     sql_ids_only = f"""
         SELECT
@@ -1371,13 +1370,29 @@ async def get_workspace_list(
         GROUP BY workspace_id
         ORDER BY workspace_id
     """
+    # Secondary enrichment: CDC log fallback for environments where workspaces_latest is empty.
+    # Queried without date params so its result is cached independently for 2h.
+    sql_workspaces_history = """
+        SELECT CAST(workspace_id AS STRING) as workspace_id, MAX(workspace_name) as workspace_name
+        FROM system.access.workspaces
+        GROUP BY workspace_id
+    """
 
     def _fetch_rows() -> list:
         try:
             rows = execute_query(sql_with_names, params)
         except Exception as e:
-            logger.warning("get_workspace_list: workspace name query failed (%s: %s), falling back to IDs only", type(e).__name__, e)
+            logger.warning("get_workspace_list: system.access.workspaces_latest unavailable (%s: %s), falling back to IDs only", type(e).__name__, e)
             rows = execute_query(sql_ids_only, params)
+        # If workspaces_latest was empty, try CDC history table as secondary enrichment
+        if rows and all(r["workspace_name"] is None for r in rows):
+            try:
+                history = execute_query(sql_workspaces_history)
+                history_map = {r["workspace_id"]: r["workspace_name"] for r in history}
+                if history_map:
+                    rows = [{**r, "workspace_name": history_map.get(r["workspace_id"]) or r["workspace_name"]} for r in rows]
+            except Exception:
+                pass
         # AccountClient names take priority over system table names
         if _account_ws_names:
             rows = [{**r, "workspace_name": _account_ws_names.get(r["workspace_id"]) or r["workspace_name"]} for r in rows]

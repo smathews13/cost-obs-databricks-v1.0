@@ -444,7 +444,7 @@ function FeaturePlaneReadiness({ result }: { result: ReadinessResult }) {
                   </p>
                 )}
                 {f.state === "unverified" && (
-                  <p className="text-gray-400 mt-0.5">Not yet verified — run a re-check to confirm</p>
+                  <p className="text-gray-500 mt-0.5">Not yet verified — run a re-check to confirm</p>
                 )}
               </div>
             </div>

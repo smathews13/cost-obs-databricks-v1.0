@@ -311,7 +311,7 @@ export function SettingsConfig({
                         setSpCopied(true);
                         setTimeout(() => setSpCopied(false), 2000);
                       }}
-                      className="rounded p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                      className="rounded p-1 text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors"
                     >
                       {spCopied ? (
                         <span className="text-[10px] font-medium text-green-600 px-0.5">Copied!</span>
@@ -572,7 +572,7 @@ export function SettingsConfig({
                           <td className="px-3 py-2 text-[11px]">
                             {t.owner ? (() => {
                               if (t.owner.toLowerCase() === "unknown") {
-                                return <span className="italic text-gray-400" title="Owner could not be resolved by Unity Catalog">unknown</span>;
+                                return <span className="italic text-gray-500" title="Owner could not be resolved by Unity Catalog">unknown</span>;
                               }
                               // UC stores owners as client ID (UUID) — compare against sp_client_id,
                               // not sp_display_name which is a human-readable name and won't match.
@@ -614,7 +614,7 @@ export function SettingsConfig({
                               return `${months}mo`;
                             })() : t.error ? <><span className="text-gray-300">—</span><ColWarn error={t.error} align="right" /></> : "—"}
                           </td>
-                          <td className="px-3 py-2 text-right text-gray-400 text-[11px]">
+                          <td className="px-3 py-2 text-right text-gray-500 text-[11px]">
                             {RETENTION[t.name] ?? "—"}
                           </td>
                           <td className="px-3 py-2 text-right font-mono text-gray-500">
@@ -675,10 +675,10 @@ export function SettingsConfig({
                 <div className="mt-4">
                   <div className="mb-2 flex items-baseline justify-between">
                     <p className="text-xs font-medium text-gray-600">Table History</p>
-                    <p className="text-[10px] text-gray-400">Last 10 operations tracked</p>
+                    <p className="text-[10px] text-gray-500">Last 10 operations tracked</p>
                   </div>
                   {history.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic px-1">No operations recorded yet. History will appear here after the first manual or nightly rebuild.</p>
+                    <p className="text-xs text-gray-500 italic px-1">No operations recorded yet. History will appear here after the first manual or nightly rebuild.</p>
                   ) : (
                     <div className="rounded-lg border border-gray-200 overflow-hidden">
                       <table className="min-w-full divide-y divide-gray-100 text-xs">

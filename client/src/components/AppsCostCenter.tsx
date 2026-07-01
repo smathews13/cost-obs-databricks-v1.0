@@ -1248,7 +1248,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                         </button>
                       ))}
                       {filteredAppNames.length === 0 && (
-                        <p className="px-3 py-2 text-xs text-gray-400">No apps found</p>
+                        <p className="px-3 py-2 text-xs text-gray-500">No apps found</p>
                       )}
                     </div>
                   </div>
@@ -1300,7 +1300,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                               {checked && <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                             </span>
                             <span className="flex-1 truncate">{type.replace(/_/g, ' ')}</span>
-                            <span className="text-gray-400">({count})</span>
+                            <span className="text-gray-500">({count})</span>
                           </button>
                         );
                       })}

@@ -189,7 +189,7 @@ function CheckRow({ check }: { check: DiagCheck }) {
               {detailTruncated && (
                 <button
                   onClick={() => setDetailExpanded(e => !e)}
-                  className="mt-0.5 text-[10px] text-gray-400 underline hover:text-gray-600"
+                  className="mt-0.5 text-[10px] text-gray-500 underline hover:text-gray-600"
                 >
                   {detailExpanded ? "show less" : "show more"}
                 </button>
@@ -324,7 +324,7 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
 
       {/* Deployment snapshot — two columns to minimise height */}
       <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Deployment Info</p>
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">Deployment Info</p>
         {(configLoading || authLoading) ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             {[...Array(6)].map((_, i) => (
@@ -354,7 +354,7 @@ export function SettingsDebugger({ onGoToConfig }: SettingsDebuggerProps) {
               <dd className="font-mono text-gray-700">
                 {installReport?.version?.commit_date || (installReport?.version?.commit_sha
                   ? <code className="rounded bg-gray-200 px-1 font-mono text-gray-700">{installReport.version.commit_sha}</code>
-                  : <span className="text-gray-400">—</span>)}
+                  : <span className="text-gray-500">—</span>)}
               </dd>
               <dt className="text-gray-500">Auth mode</dt>
               <dd className="font-medium text-gray-700">{authStatusSlim?.auth_mode ?? "—"}</dd>

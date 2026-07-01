@@ -1204,7 +1204,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                         <td className="whitespace-nowrap px-4 py-3 text-right">
                           {srcHistUrl
                             ? <a href={srcHistUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#FF3621] hover:underline">History ↗</a>
-                            : <span className="text-xs text-gray-400">—</span>
+                            : <span className="text-xs text-gray-500">—</span>
                           }
                         </td>
                       </tr>
@@ -1280,7 +1280,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                           <td className="whitespace-nowrap px-4 py-3 text-right">
                             {histUrl
                               ? <a href={histUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#FF3621] hover:underline">History ↗</a>
-                              : <span className="text-xs text-gray-400">—</span>}
+                              : <span className="text-xs text-gray-500">—</span>}
                           </td>
                         </tr>
                       );
@@ -1288,7 +1288,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     {staleUserQueries.length > 0 && (
                       <>
                         <tr>
-                          <td colSpan={6} className="bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wider text-gray-400">
+                          <td colSpan={6} className="bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wider text-gray-500">
                             Historical — profile links may be expired (25+ days ago)
                           </td>
                         </tr>
@@ -1309,9 +1309,9 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                               <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">{formatCurrency(q.cost)}</td>
                               <td className="whitespace-nowrap px-4 py-3 text-right">
                                 <div className="flex flex-col items-end gap-1">
-                                  <span className="text-xs text-gray-400" title="Databricks query history retention is ~30 days. Profile links for queries older than ~25 days may no longer be accessible.">Expired</span>
+                                  <span className="text-xs text-gray-500" title="Databricks query history retention is ~30 days. Profile links for queries older than ~25 days may no longer be accessible.">Expired</span>
                                   {q.statement_id && (
-                                    <button onClick={() => navigator.clipboard.writeText(q.statement_id!)} className="font-mono text-xs text-gray-400 hover:text-gray-600" title={`Copy statement ID: ${q.statement_id}`}>
+                                    <button onClick={() => navigator.clipboard.writeText(q.statement_id!)} className="font-mono text-xs text-gray-500 hover:text-gray-700" title={`Copy statement ID: ${q.statement_id}`}>
                                       {q.statement_id.slice(0, 8)}… ⎘
                                     </button>
                                   )}

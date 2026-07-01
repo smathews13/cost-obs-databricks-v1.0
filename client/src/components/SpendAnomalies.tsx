@@ -88,7 +88,7 @@ function CalendarView({
               <div className="grid grid-cols-7 gap-0.5">
                 {/* Day-of-week headers */}
                 {DAY_INITIALS.map((d, i) => (
-                  <div key={i} className="text-center text-[10px] font-medium text-gray-400 pb-1">
+                  <div key={i} className="text-center text-[10px] font-medium text-gray-500 pb-1">
                     {d}
                   </div>
                 ))}

@@ -47,3 +47,4 @@ app.*.yaml
 
 # Deploy script temp files
 *.deploy-bak
+.claude/

@@ -69,9 +69,9 @@ const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, ico
             <div className="opacity-30">{icon}</div>
           </div>
           <div className="ml-4 flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-400">{title}</p>
+            <p className="text-sm font-medium text-gray-500">{title}</p>
             <p className="mt-1 text-2xl font-semibold text-gray-300">—</p>
-            <p className="mt-0.5 text-xs text-gray-400">Unavailable — {unavailableReason}</p>
+            <p className="mt-0.5 text-xs text-gray-500">Unavailable — {unavailableReason}</p>
           </div>
         </div>
       </div>

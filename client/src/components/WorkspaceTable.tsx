@@ -151,7 +151,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 onClick={() => { setProductDropdownOpen((o) => !o); setUserDropdownOpen(false); }}
                 className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${productFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
               >
-                {productFilters.length === 0 ? "All Products" : productFilters.length === 1 ? formatProductName(productFilters[0]) : `${productFilters.length} Products`}
+                {productFilters.length === 0 ? "Products" : productFilters.length === 1 ? formatProductName(productFilters[0]) : `${productFilters.length} Products`}
                 {productFilters.length > 0 && (
                   <button onClick={(e) => { e.stopPropagation(); setProductFilters([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
                     <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -160,12 +160,20 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 <svg className={`h-3 w-3 transition-transform ${productDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {productDropdownOpen && (
-                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Products</span>
+                    <div className="flex items-center gap-2 text-xs">
+                      <button onClick={(e) => { e.stopPropagation(); setProductFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                      <span className="text-gray-300">·</span>
+                      <button onClick={(e) => { e.stopPropagation(); setProductFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                    </div>
+                  </div>
                   {allProducts.map((p) => (
                     <button key={p} onClick={() => { setProductFilters((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]); setCurrentPage(1); }}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50">
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilters.includes(p) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {productFilters.includes(p) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilters.length === 0 || productFilters.includes(p) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {(productFilters.length === 0 || productFilters.includes(p)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                       </div>
                       <span className="truncate text-gray-700">{formatProductName(p)}</span>
                     </button>
@@ -181,7 +189,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 onClick={() => { setUserDropdownOpen((o) => !o); setProductDropdownOpen(false); }}
                 className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${userFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
               >
-                {userFilters.length === 0 ? "All Users" : `${userFilters.length} User${userFilters.length > 1 ? "s" : ""}`}
+                {userFilters.length === 0 ? "Users" : userFilters.length === 1 ? userFilters[0] : `${userFilters.length} Users`}
                 {userFilters.length > 0 && (
                   <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
                     <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -190,12 +198,20 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 <svg className={`h-3 w-3 transition-transform ${userDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {userDropdownOpen && (
-                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Users</span>
+                    <div className="flex items-center gap-2 text-xs">
+                      <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                      <span className="text-gray-300">·</span>
+                      <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                    </div>
+                  </div>
                   {allUsers.map((u) => (
                     <button key={u} onClick={() => { setUserFilters((prev) => prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]); setCurrentPage(1); }}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50">
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.length === 0 || userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {(userFilters.length === 0 || userFilters.includes(u)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                       </div>
                       <span className="truncate text-gray-700">{u}</span>
                     </button>

@@ -109,7 +109,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const [modelsTypeDropdownOpen, setModelsTypeDropdownOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<import("@/types/billing").AIMLAgentBrick | null>(null);
   const [showHistoricalAgents, setShowHistoricalAgents] = useState(false);
-  const [agentTypeFilter, setAgentTypeFilter] = useState<string>("all");
+  const [agentTypeFilter, setAgentTypeFilter] = useState<string[]>([]);
   const [agentsPage, setAgentsPage] = useState(1);
   const [mlClustersPage, setMlClustersPage] = useState(1);
   const [showHistoricalMlClusters, setShowHistoricalMlClusters] = useState(false);
@@ -752,12 +752,9 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   onClick={() => setModelsTypeDropdownOpen((o) => !o)}
                   className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${modelsTypeFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                 >
-                  <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-                  </svg>
                   <span className="max-w-[140px] truncate">
                     {modelsTypeFilters.length === 0
-                      ? "All Types"
+                      ? "Types"
                       : modelsTypeFilters.length === 1
                       ? (TYPE_LABELS[modelsTypeFilters[0]] || modelsTypeFilters[0])
                       : `${modelsTypeFilters.length} Types`}
@@ -781,44 +778,29 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   </svg>
                 </button>
                 {modelsTypeDropdownOpen && (
-                  <div className="absolute right-0 z-20 mt-2 min-w-[200px] rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Model Type</span>
-                      <div className="flex gap-2">
-                        <button onClick={() => { setModelsTypeFilters([]); setModelsPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">All</button>
+                  <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Types</span>
+                      <div className="flex items-center gap-2 text-xs">
+                        <button onClick={(e) => { e.stopPropagation(); setModelsTypeFilters([]); setModelsPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                         <span className="text-gray-300">·</span>
-                        <button onClick={() => { setModelsTypeFilters([]); setModelsPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
+                        <button onClick={(e) => { e.stopPropagation(); setModelsTypeFilters([]); setModelsPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      {distinctTypes.map((t) => {
-                        const count = allModelRows.filter(m => m.model_type === t).length;
-                        const checked = modelsTypeFilters.includes(t);
-                        return (
-                          <label
-                            key={t}
-                            className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 ${checked ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => {
-                                setModelsTypeFilters((prev) =>
-                                  prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
-                                );
-                                setModelsPage(1);
-                              }}
-                              className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
-                            />
-                            <span className="flex-1 truncate text-sm text-gray-700">{TYPE_LABELS[t] || t}</span>
-                            <span className="text-xs text-gray-400">{count}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-3 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
-                      {modelsTypeFilters.length === 0 ? `All ${allModelRows.length}` : `${filteredModels.length} of ${allModelRows.length}`} models
-                    </div>
+                    {distinctTypes.map((t) => {
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => { setModelsTypeFilters((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]); setModelsPage(1); }}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
+                        >
+                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${modelsTypeFilters.length === 0 || modelsTypeFilters.includes(t) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                            {(modelsTypeFilters.length === 0 || modelsTypeFilters.includes(t)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                          </div>
+                          <span className="truncate text-gray-700">{TYPE_LABELS[t] || t}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1052,7 +1034,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
           const agentTypes = Array.from(new Set(allAgents.map(a => a.agent_type || "Agent")));
           const filteredAgents = allAgents
             .filter(a => showHistoricalAgents || !isHistoricalAgent(a))
-            .filter(a => agentTypeFilter === "all" || (a.agent_type || "Agent") === agentTypeFilter)
+            .filter(a => agentTypeFilter.length === 0 || agentTypeFilter.includes(a.agent_type || "Agent"))
             .filter(a => !agentSearch || (a.agent_name || "").toLowerCase().includes(agentSearch.toLowerCase()) || (a.endpoint_id || "").toLowerCase().includes(agentSearch.toLowerCase()));
           const agentTotalPages = Math.ceil(filteredAgents.length / PAGE_SIZE);
           const agentStart = (agentsPage - 1) * PAGE_SIZE;
@@ -1085,33 +1067,38 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     <div className="relative" ref={agentTypeDropdownRef}>
                       <button
                         onClick={() => setAgentTypeDropdownOpen((o) => !o)}
-                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${agentTypeFilter !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${agentTypeFilter.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                       >
-                        <svg className={`h-3 w-3 shrink-0 ${agentTypeFilter !== "all" ? "text-[#FF3621]" : "text-gray-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-                        </svg>
-                        <span>{agentTypeFilter === "all" ? "All Types" : agentTypeFilter}</span>
-                        <svg className={`h-3 w-3 text-gray-400 transition-transform ${agentTypeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <span>{agentTypeFilter.length === 0 ? "Types" : agentTypeFilter.length === 1 ? agentTypeFilter[0] : `${agentTypeFilter.length} Types`}</span>
+                        {agentTypeFilter.length > 0 && (
+                          <button onClick={(e) => { e.stopPropagation(); setAgentTypeFilter([]); setAgentsPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
+                            <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        )}
+                        <svg className={`h-3 w-3 transition-transform ${agentTypeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                       </button>
                       {agentTypeDropdownOpen && (
-                        <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[160px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                          <button
-                            onClick={() => { setAgentTypeFilter("all"); setAgentsPage(1); setAgentTypeDropdownOpen(false); }}
-                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
-                          >
-                            <span className={`h-2 w-2 rounded-full shrink-0 ${agentTypeFilter === "all" ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
-                            <span className={agentTypeFilter === "all" ? "font-medium text-[#FF3621]" : "text-gray-700"}>All Types</span>
-                          </button>
+                        <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                          <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Types</span>
+                            <div className="flex items-center gap-2 text-xs">
+                              <button onClick={(e) => { e.stopPropagation(); setAgentTypeFilter([]); setAgentsPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                              <span className="text-gray-300">·</span>
+                              <button onClick={(e) => { e.stopPropagation(); setAgentTypeFilter([]); setAgentsPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                            </div>
+                          </div>
                           {agentTypes.map(t => (
                             <button
                               key={t}
-                              onClick={() => { setAgentTypeFilter(t); setAgentsPage(1); setAgentTypeDropdownOpen(false); }}
-                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                              onClick={() => { setAgentTypeFilter((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]); setAgentsPage(1); }}
+                              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                             >
-                              <span className={`h-2 w-2 rounded-full shrink-0 ${agentTypeFilter === t ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
-                              <span className={agentTypeFilter === t ? "font-medium text-[#FF3621]" : "text-gray-700"}>{t}</span>
+                              <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${agentTypeFilter.length === 0 || agentTypeFilter.includes(t) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                                {(agentTypeFilter.length === 0 || agentTypeFilter.includes(t)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                              </div>
+                              <span className="truncate text-gray-700">{t}</span>
                             </button>
                           ))}
                         </div>

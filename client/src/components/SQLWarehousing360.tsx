@@ -804,10 +804,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                               onClick={() => setWhSizeDropdownOpen(!whSizeDropdownOpen)}
                               className="inline-flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                             >
-                              <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                              </svg>
-                              Filter
+                              Workspace
                               <svg className={`h-3 w-3 text-gray-500 transition-transform ${whSizeDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
@@ -978,12 +975,9 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     onClick={() => setQuerySourceDropdownOpen((o) => !o)}
                     className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${querySourceFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                   >
-                    <svg className={`h-3.5 w-3.5 shrink-0 ${querySourceFilters.length > 0 ? "text-[#FF3621]" : "text-gray-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-                    </svg>
                     <span className="max-w-[140px] truncate">
                       {querySourceFilters.length === 0
-                        ? "All Sources"
+                        ? "Sources"
                         : querySourceFilters.length === 1
                         ? querySourceFilters[0]
                         : `${querySourceFilters.length} Sources`}
@@ -1007,44 +1001,29 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     </svg>
                   </button>
                   {querySourceDropdownOpen && (
-                    <div className="absolute right-0 z-20 mt-2 min-w-[200px] rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Source Type</span>
-                        <div className="flex gap-2">
-                          <button onClick={() => { setQuerySourceFilters([]); setQueriesPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">All</button>
+                    <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                      <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sources</span>
+                        <div className="flex items-center gap-2 text-xs">
+                          <button onClick={(e) => { e.stopPropagation(); setQuerySourceFilters([]); setQueriesPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                           <span className="text-gray-300">·</span>
-                          <button onClick={() => { setQuerySourceFilters([]); setQueriesPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
+                          <button onClick={(e) => { e.stopPropagation(); setQuerySourceFilters([]); setQueriesPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
                       </div>
-                      <div className="space-y-1">
-                        {querySourceTypes.map((type) => {
-                          const count = topQueriesData?.queries?.filter((q) => q.query_source_type === type).length ?? 0;
-                          const checked = querySourceFilters.includes(type);
-                          return (
-                            <label
-                              key={type}
-                              className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 ${checked ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"}`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  setQuerySourceFilters((prev) =>
-                                    prev.includes(type) ? prev.filter((x) => x !== type) : [...prev, type]
-                                  );
-                                  setQueriesPage(1);
-                                }}
-                                className="h-3.5 w-3.5 rounded border-gray-300 accent-[#FF3621]"
-                              />
-                              <span className="flex-1 truncate text-sm text-gray-700">{type}</span>
-                              <span className="text-xs text-gray-400">{count}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-3 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
-                        {querySourceFilters.length === 0 ? `All ${topQueriesData?.queries?.length ?? 0}` : `${filteredQueries.length} of ${topQueriesData?.queries?.length ?? 0}`} queries
-                      </div>
+                      {querySourceTypes.map((type) => {
+                        return (
+                          <button
+                            key={type}
+                            onClick={() => { setQuerySourceFilters((prev) => prev.includes(type) ? prev.filter((x) => x !== type) : [...prev, type]); setQueriesPage(1); }}
+                            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
+                          >
+                            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${querySourceFilters.length === 0 || querySourceFilters.includes(type) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                              {(querySourceFilters.length === 0 || querySourceFilters.includes(type)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                            </div>
+                            <span className="truncate text-gray-700">{type}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1468,7 +1447,7 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
   }, [healthIssueDropdownOpen]);
 
   const HEALTH_ISSUE_OPTIONS = [
-    { value: "", label: "All Issues" },
+    { value: "", label: "Issue" },
     { value: "OVER_SCALED", label: "Over-Scaled" },
     { value: "OVERSIZED", label: "Oversized" },
   ];
@@ -1503,7 +1482,7 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
                   onClick={() => setHealthIssueDropdownOpen((o) => !o)}
                   className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${healthIssueFilter ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                 >
-                  {HEALTH_ISSUE_OPTIONS.find(o => o.value === healthIssueFilter)?.label ?? "All Issues"}
+                  {HEALTH_ISSUE_OPTIONS.find(o => o.value === healthIssueFilter)?.label ?? "Issue"}
                   <svg className={`h-3 w-3 transition-transform ${healthIssueDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
@@ -1748,7 +1727,7 @@ export function WarehouseIdleTimeView({
                     onClick={() => { setIdleSizeDropdownOpen(o => !o); setIdleTypeDropdownOpen(false); }}
                     className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${idleSizeFilter ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                   >
-                    <span>{idleSizeFilter ?? "All Sizes"}</span>
+                    <span>{idleSizeFilter ?? "Size"}</span>
                     <svg className={`h-3 w-3 text-gray-400 transition-transform ${idleSizeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
@@ -1775,7 +1754,7 @@ export function WarehouseIdleTimeView({
                     onClick={() => { setIdleTypeDropdownOpen(o => !o); setIdleSizeDropdownOpen(false); }}
                     className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${idleTypeFilter ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                   >
-                    <span>{idleTypeFilter ? (idleTypeFilter === "SERVERLESS" ? "Serverless" : "Classic") : "All Types"}</span>
+                    <span>{idleTypeFilter ? (idleTypeFilter === "SERVERLESS" ? "Serverless" : "Classic") : "Type"}</span>
                     <svg className={`h-3 w-3 text-gray-400 transition-transform ${idleTypeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>

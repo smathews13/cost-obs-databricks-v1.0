@@ -205,8 +205,8 @@ export function CloudCostsView({
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
   const [selectedFamilies, setSelectedFamilies] = useState<Set<string>>(new Set());
   useEffect(() => { setCurrentPage(1); }, [selectedFamilies]);
-  const [tableFamily, setTableFamily] = useState<string>("");
-  const [tableWorkspace, setTableWorkspace] = useState<string>("");
+  const [tableFamily, setTableFamily] = useState<string[]>([]);
+  const [tableWorkspace, setTableWorkspace] = useState<string[]>([]);
   const [clusterSearch, setClusterSearch] = useState("");
   const [familyFilterOpen, setFamilyFilterOpen] = useState(false);
   const [workspaceFilterOpen, setWorkspaceFilterOpen] = useState(false);
@@ -709,12 +709,12 @@ export function CloudCostsView({
   })();
 
   const tableFilteredClusters = familyFilteredClusters.filter(c => {
-    if (tableFamily) {
+    if (tableFamily.length > 0) {
       const df = getInstanceFamily(c.driver_instance_type);
       const wf = getInstanceFamily(c.worker_instance_type);
-      if (df !== tableFamily && wf !== tableFamily) return false;
+      if (!tableFamily.includes(df) && !tableFamily.includes(wf)) return false;
     }
-    if (tableWorkspace && c.workspace_id !== tableWorkspace) return false;
+    if (tableWorkspace.length > 0 && !tableWorkspace.includes(c.workspace_id || "")) return false;
     return true;
   });
 
@@ -1009,7 +1009,7 @@ export function CloudCostsView({
               </span>
             </h3>
             <p className="text-sm text-gray-500">
-              {sortedClusters.length} cluster{sortedClusters.length !== 1 ? "s" : ""}{selectedFamilies.size > 0 ? ` · ${[...selectedFamilies].join(", ")} only` : ""}
+              {sortedClusters.length} cluster{sortedClusters.length !== 1 ? "s" : ""}{selectedFamilies.size > 0 ? ` · ${[...selectedFamilies].join(", ")} only` : ""}{tableFamily.length > 0 ? ` · filtered to ${tableFamily.length} families` : ""}{tableWorkspace.length > 0 ? ` · filtered to ${tableWorkspace.length} workspaces` : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1035,33 +1035,40 @@ export function CloudCostsView({
               <div className="relative" ref={workspaceFilterRef}>
                 <button
                   onClick={() => { setWorkspaceFilterOpen(o => !o); setFamilyFilterOpen(false); }}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${tableWorkspace ? "border-transparent text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
-                  style={tableWorkspace ? { backgroundColor: '#FF3621' } : {}}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${tableWorkspace.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
                 >
-                  Workspace{tableWorkspace ? `: ${workspaceNameMap?.[tableWorkspace] || tableWorkspace}` : ""}
-                  {tableWorkspace ? (
-                    <span className="opacity-75 hover:opacity-100 ml-0.5 cursor-pointer" onClick={(e) => { e.stopPropagation(); setTableWorkspace(""); setCurrentPage(1); }}>×</span>
-                  ) : (
-                    <svg className={`h-3 w-3 text-gray-500 transition-transform ${workspaceFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
+                  {tableWorkspace.length === 0 ? "Workspaces" : tableWorkspace.length === 1 ? (workspaceNameMap?.[tableWorkspace[0]] || tableWorkspace[0]) : `${tableWorkspace.length} Workspaces`}
+                  {tableWorkspace.length > 0 && (
+                    <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
+                      <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
                   )}
+                  <svg className={`h-3 w-3 transition-transform ${workspaceFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </button>
                 {workspaceFilterOpen && (
-                  <div className="absolute right-0 top-full z-10 mt-1 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg" style={{ maxHeight: 260 }}>
+                  <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Workspaces</span>
+                      <div className="flex items-center gap-2 text-xs">
+                        <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                        <span className="text-gray-300">·</span>
+                        <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                      </div>
+                    </div>
                     {availableTableWorkspaces.map(w => {
                       const label = workspaceNameMap?.[w] || w;
                       return (
                         <button
                           key={w}
-                          onClick={() => { setTableWorkspace(tableWorkspace === w ? "" : w); setCurrentPage(1); setWorkspaceFilterOpen(false); }}
-                          className={`flex w-full items-center justify-between px-3 py-1.5 text-xs hover:bg-gray-50 ${tableWorkspace === w ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700"}`}
+                          onClick={() => { setTableWorkspace((prev) => prev.includes(w) ? prev.filter(x => x !== w) : [...prev, w]); setCurrentPage(1); }}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-xs hover:bg-gray-50"
                         >
-                          <span className="flex items-center gap-2">
-                            {tableWorkspace === w && <span className="h-1.5 w-1.5 rounded-full bg-orange-500 inline-block" />}
-                            {label}
-                          </span>
-                          {tableWorkspace === w && <svg className="h-3.5 w-3.5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${tableWorkspace.length === 0 || tableWorkspace.includes(w) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                            {(tableWorkspace.length === 0 || tableWorkspace.includes(w)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                          </div>
+                          <span className="truncate text-gray-700">{label}</span>
                         </button>
                       );
                     })}
@@ -1073,31 +1080,38 @@ export function CloudCostsView({
               <div className="relative" ref={familyFilterRef}>
                 <button
                   onClick={() => { setFamilyFilterOpen(o => !o); setWorkspaceFilterOpen(false); }}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${tableFamily ? "border-transparent text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
-                  style={tableFamily ? { backgroundColor: '#FF3621' } : {}}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${tableFamily.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
                 >
-                  Instance Family{tableFamily ? `: ${tableFamily}` : ""}
-                  {tableFamily ? (
-                    <span className="opacity-75 hover:opacity-100 ml-0.5 cursor-pointer" onClick={(e) => { e.stopPropagation(); setTableFamily(""); setCurrentPage(1); }}>×</span>
-                  ) : (
-                    <svg className={`h-3 w-3 text-gray-500 transition-transform ${familyFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
+                  {tableFamily.length === 0 ? "Families" : tableFamily.length === 1 ? tableFamily[0] : `${tableFamily.length} Families`}
+                  {tableFamily.length > 0 && (
+                    <button onClick={(e) => { e.stopPropagation(); setTableFamily([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
+                      <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
                   )}
+                  <svg className={`h-3 w-3 transition-transform ${familyFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </button>
                 {familyFilterOpen && (
-                  <div className="absolute right-0 top-full z-10 mt-1 w-52 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg" style={{ maxHeight: 260 }}>
+                  <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Families</span>
+                      <div className="flex items-center gap-2 text-xs">
+                        <button onClick={(e) => { e.stopPropagation(); setTableFamily([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                        <span className="text-gray-300">·</span>
+                        <button onClick={(e) => { e.stopPropagation(); setTableFamily([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                      </div>
+                    </div>
                     {availableTableFamilies.map(f => (
                       <button
                         key={f}
-                        onClick={() => { setTableFamily(tableFamily === f ? "" : f); setCurrentPage(1); setFamilyFilterOpen(false); }}
-                        className={`flex w-full items-center justify-between px-3 py-1.5 text-xs hover:bg-gray-50 ${tableFamily === f ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700"}`}
+                        onClick={() => { setTableFamily((prev) => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]); setCurrentPage(1); }}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-xs hover:bg-gray-50"
                       >
-                        <span className="flex items-center gap-2">
-                          {tableFamily === f && <span className="h-1.5 w-1.5 rounded-full bg-orange-500 inline-block" />}
-                          {f}
-                        </span>
-                        {tableFamily === f && <svg className="h-3.5 w-3.5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${tableFamily.length === 0 || tableFamily.includes(f) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                          {(tableFamily.length === 0 || tableFamily.includes(f)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="truncate text-gray-700">{f}</span>
                       </button>
                     ))}
                   </div>

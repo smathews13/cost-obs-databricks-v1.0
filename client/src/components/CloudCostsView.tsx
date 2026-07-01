@@ -1005,41 +1005,24 @@ export function CloudCostsView({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {availableTableFamilies.length > 0 && (
-              <div className="relative" ref={familyFilterRef}>
-                <button
-                  onClick={() => { setFamilyFilterOpen(o => !o); setWorkspaceFilterOpen(false); }}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${tableFamily ? "border-transparent text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
-                  style={tableFamily ? { backgroundColor: '#FF3621' } : {}}
-                >
-                  Instance Family{tableFamily ? `: ${tableFamily}` : ""}
-                  {tableFamily ? (
-                    <span className="opacity-75 hover:opacity-100 ml-0.5 cursor-pointer" onClick={(e) => { e.stopPropagation(); setTableFamily(""); setCurrentPage(1); }}>×</span>
-                  ) : (
-                    <svg className={`h-3 w-3 text-gray-500 transition-transform ${familyFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  )}
-                </button>
-                {familyFilterOpen && (
-                  <div className="absolute left-0 top-full z-10 mt-1 w-52 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg" style={{ maxHeight: 260 }}>
-                    {availableTableFamilies.map(f => (
-                      <button
-                        key={f}
-                        onClick={() => { setTableFamily(tableFamily === f ? "" : f); setCurrentPage(1); setFamilyFilterOpen(false); }}
-                        className={`flex w-full items-center justify-between px-3 py-1.5 text-xs hover:bg-gray-50 ${tableFamily === f ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700"}`}
-                      >
-                        <span className="flex items-center gap-2">
-                          {tableFamily === f && <span className="h-1.5 w-1.5 rounded-full bg-orange-500 inline-block" />}
-                          {f}
-                        </span>
-                        {tableFamily === f && <svg className="h-3.5 w-3.5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                      </button>
-                    ))}
-                  </div>
-                )}
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showHistoricalClusters}
+                onChange={(e) => { setShowHistoricalClusters(e.target.checked); setCurrentPage(1); }}
+                className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+              />
+              <span>Show historical clusters ({historicalClusterCount})</span>
+            </label>
+            <div className="group relative">
+              <svg className="h-4 w-4 cursor-help text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="invisible absolute right-0 top-6 z-10 w-72 rounded-lg bg-gray-900 p-3 text-xs text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100">
+                <p className="font-semibold mb-1.5">Historical Clusters</p>
+                <p className="text-gray-200">Historical clusters have no instance type information available. These are typically old or deleted clusters that no longer have detailed configuration data.</p>
               </div>
-            )}
+            </div>
             {availableTableWorkspaces.length > 1 && (
               <div className="relative" ref={workspaceFilterRef}>
                 <button
@@ -1057,7 +1040,7 @@ export function CloudCostsView({
                   )}
                 </button>
                 {workspaceFilterOpen && (
-                  <div className="absolute left-0 top-full z-10 mt-1 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg" style={{ maxHeight: 260 }}>
+                  <div className="absolute right-0 top-full z-10 mt-1 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg" style={{ maxHeight: 260 }}>
                     {availableTableWorkspaces.map(w => {
                       const label = workspaceNameMap?.[w] || w;
                       return (
@@ -1078,24 +1061,41 @@ export function CloudCostsView({
                 )}
               </div>
             )}
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showHistoricalClusters}
-                onChange={(e) => { setShowHistoricalClusters(e.target.checked); setCurrentPage(1); }}
-                className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-              />
-              <span>Show historical clusters ({historicalClusterCount})</span>
-            </label>
-            <div className="group relative">
-              <svg className="h-4 w-4 cursor-help text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div className="invisible absolute right-0 top-6 z-10 w-72 rounded-lg bg-gray-900 p-3 text-xs text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100">
-                <p className="font-semibold mb-1.5">Historical Clusters</p>
-                <p className="text-gray-200">Historical clusters have no instance type information available. These are typically old or deleted clusters that no longer have detailed configuration data.</p>
+            {availableTableFamilies.length > 0 && (
+              <div className="relative" ref={familyFilterRef}>
+                <button
+                  onClick={() => { setFamilyFilterOpen(o => !o); setWorkspaceFilterOpen(false); }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${tableFamily ? "border-transparent text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
+                  style={tableFamily ? { backgroundColor: '#FF3621' } : {}}
+                >
+                  Instance Family{tableFamily ? `: ${tableFamily}` : ""}
+                  {tableFamily ? (
+                    <span className="opacity-75 hover:opacity-100 ml-0.5 cursor-pointer" onClick={(e) => { e.stopPropagation(); setTableFamily(""); setCurrentPage(1); }}>×</span>
+                  ) : (
+                    <svg className={`h-3 w-3 text-gray-500 transition-transform ${familyFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </button>
+                {familyFilterOpen && (
+                  <div className="absolute right-0 top-full z-10 mt-1 w-52 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg" style={{ maxHeight: 260 }}>
+                    {availableTableFamilies.map(f => (
+                      <button
+                        key={f}
+                        onClick={() => { setTableFamily(tableFamily === f ? "" : f); setCurrentPage(1); setFamilyFilterOpen(false); }}
+                        className={`flex w-full items-center justify-between px-3 py-1.5 text-xs hover:bg-gray-50 ${tableFamily === f ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700"}`}
+                      >
+                        <span className="flex items-center gap-2">
+                          {tableFamily === f && <span className="h-1.5 w-1.5 rounded-full bg-orange-500 inline-block" />}
+                          {f}
+                        </span>
+                        {tableFamily === f && <svg className="h-3.5 w-3.5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
+            )}
           </div>
         </div>
 

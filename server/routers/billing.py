@@ -1343,19 +1343,19 @@ async def get_workspace_list(
     sql_with_names = f"""
         SELECT
             CAST(u.workspace_id AS STRING) as workspace_id,
-            ws.workspace_name as workspace_name
+            MAX(ws.workspace_name) as workspace_name
         FROM system.billing.usage u
         LEFT JOIN system.access.workspaces_latest ws ON CAST(u.workspace_id AS BIGINT) = CAST(ws.workspace_id AS BIGINT)
         WHERE u.usage_date BETWEEN :start_date AND :end_date
           AND u.usage_quantity > 0
           {ws_clause}
-        GROUP BY u.workspace_id, ws.workspace_name
-        ORDER BY COALESCE(ws.workspace_name, CAST(u.workspace_id AS STRING))
+        GROUP BY u.workspace_id
+        ORDER BY COALESCE(MAX(ws.workspace_name), CAST(u.workspace_id AS STRING))
     """
     sql_ids_only = f"""
         SELECT
             CAST(workspace_id AS STRING) as workspace_id,
-            CAST(workspace_id AS STRING) as workspace_name
+            CAST(NULL AS STRING) as workspace_name
         FROM system.billing.usage
         WHERE usage_date BETWEEN :start_date AND :end_date
           AND usage_quantity > 0
@@ -1370,9 +1370,9 @@ async def get_workspace_list(
         except Exception as e:
             logger.warning("get_workspace_list: system.access.workspaces_latest unavailable (%s), falling back to IDs only", e)
             rows = execute_query(sql_ids_only, params)
-        # Read cached value only — AccountClient refresh happens in background
+        # AccountClient names take priority over system table names
         if _account_ws_names:
-            rows = [{**r, "workspace_name": r["workspace_name"] or _account_ws_names.get(r["workspace_id"])} for r in rows]
+            rows = [{**r, "workspace_name": _account_ws_names.get(r["workspace_id"]) or r["workspace_name"]} for r in rows]
         return rows
 
     # Kick off background refresh if stale — never blocks the request path

@@ -10,7 +10,11 @@ type UntaggedItem = {
   days_active: number;
 } & Record<string, unknown>;
 
-export type UntaggedTab = "clusters" | "jobs" | "pipelines" | "warehouses" | "endpoints";
+export type UntaggedTab = "all" | "clusters" | "jobs" | "pipelines" | "warehouses" | "endpoints";
+
+const TYPE_LABELS: Record<string, string> = {
+  clusters: "Cluster", jobs: "Job", pipelines: "Pipeline", warehouses: "Warehouse", endpoints: "Endpoint",
+};
 
 function getClusterUrl(host: string | null | undefined, _clusterId: string, workspaceId?: string): string | null {
   if (!host) return null;
@@ -108,7 +112,9 @@ export function UntaggedResourcesTable({
     }
   }, []);
 
+  const totalUntaggedCount = untaggedCounts.clusters + untaggedCounts.jobs + untaggedCounts.pipelines + untaggedCounts.warehouses + untaggedCounts.endpoints;
   const tabs: { key: UntaggedTab; label: string; count: number }[] = [
+    { key: "all", label: "All Resources", count: totalUntaggedCount },
     { key: "clusters", label: "Clusters", count: untaggedCounts.clusters },
     { key: "jobs", label: "Jobs", count: untaggedCounts.jobs },
     { key: "pipelines", label: "SDP Pipelines", count: untaggedCounts.pipelines },
@@ -117,6 +123,15 @@ export function UntaggedResourcesTable({
   ];
 
   const getItems = () => {
+    if (activeUntaggedTab === "all") {
+      return [
+        ...(data.untagged.clusters?.items || []).map(i => ({ ...i, _name: i.cluster_name, _id: i.cluster_id, _type: "clusters" })),
+        ...(data.untagged.jobs?.items || []).map(i => ({ ...i, _name: i.job_name, _id: i.job_id, _type: "jobs" })),
+        ...(data.untagged.pipelines?.items || []).map(i => ({ ...i, _name: i.pipeline_name, _id: i.pipeline_id, _type: "pipelines" })),
+        ...(data.untagged.warehouses?.items || []).map(i => ({ ...i, _name: i.warehouse_name, _id: i.warehouse_id, _type: "warehouses" })),
+        ...(data.untagged.endpoints?.items || []).map(i => ({ ...i, _name: i.endpoint_name, _id: i.endpoint_name, _type: "endpoints" })),
+      ];
+    }
     switch (activeUntaggedTab) {
       case "clusters": return data.untagged.clusters?.items || [];
       case "jobs": return data.untagged.jobs?.items || [];
@@ -128,6 +143,7 @@ export function UntaggedResourcesTable({
   };
 
   const getResourceConfig = () => {
+    if (activeUntaggedTab === "all") return { nameKey: "_name", idKey: "_id", label: "Resource" };
     switch (activeUntaggedTab) {
       case "clusters": return { nameKey: "cluster_name", idKey: "cluster_id", label: "Cluster" };
       case "jobs": return { nameKey: "job_name", idKey: "job_id", label: "Job" };
@@ -139,6 +155,7 @@ export function UntaggedResourcesTable({
   };
 
   const getExtraColumns = (): { key: string; label: string }[] => {
+    if (activeUntaggedTab === "all") return [{ key: "_type", label: "Type" }];
     if (activeUntaggedTab === "clusters") return [{ key: "owner", label: "Owner" }];
     return [];
   };
@@ -148,7 +165,8 @@ export function UntaggedResourcesTable({
   const allItems = getItems() as unknown as UntaggedItem[];
 
   const isHistoricalItem = (item: UntaggedItem) => {
-    if (activeUntaggedTab === "pipelines") return false;
+    const effectiveType = activeUntaggedTab === "all" ? (item._type as string) : activeUntaggedTab;
+    if (effectiveType === "pipelines" || effectiveType === "endpoints") return false;
     const name = item[resourceConfig.nameKey];
     const id = item[resourceConfig.idKey];
     if (!resourceConfig.idKey || resourceConfig.nameKey === resourceConfig.idKey) return !name;
@@ -237,25 +255,16 @@ export function UntaggedResourcesTable({
       )}
 
       <div className="mb-4 flex items-center gap-4">
-        <div className="relative flex-1">
-          <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder={`Search untagged ${activeUntaggedTab}...`}
-            value={searchQuery}
-            onChange={(e) => { onSearchChange(e.target.value); onPageChange(1); }}
-            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
-          />
-          {searchQuery && (
-            <button onClick={() => { onSearchChange(""); onPageChange(1); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-600">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer whitespace-nowrap">
+          <input type="checkbox" checked={showHistoricalUntagged}
+            onChange={(e) => { onHistoricalToggle(e.target.checked); onPageChange(1); }}
+            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+          Show historical ({historicalCount})
+          <span className="relative group ml-0.5">
+            <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <span className="absolute bottom-full left-0 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Resources whose names could not be resolved — likely deleted or from inaccessible workspaces</span>
+          </span>
+        </label>
         <div className="relative" ref={tabDropdownRef}>
           <button
             onClick={() => setTabDropdownOpen((o) => !o)}
@@ -268,7 +277,7 @@ export function UntaggedResourcesTable({
             </svg>
           </button>
           {tabDropdownOpen && (
-            <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+            <div className="absolute left-0 top-full z-[9999] mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
@@ -289,16 +298,25 @@ export function UntaggedResourcesTable({
             </div>
           )}
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer whitespace-nowrap">
-          <input type="checkbox" checked={showHistoricalUntagged}
-            onChange={(e) => { onHistoricalToggle(e.target.checked); onPageChange(1); }}
-            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
-          Show historical ({historicalCount})
-          <span className="relative group ml-0.5">
-            <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <span className="absolute bottom-full right-0 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Resources whose names could not be resolved — likely deleted or from inaccessible workspaces</span>
-          </span>
-        </label>
+        <div className="relative flex-1">
+          <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder={activeUntaggedTab === "all" ? "Search all untagged resources..." : `Search untagged ${activeUntaggedTab}...`}
+            value={searchQuery}
+            onChange={(e) => { onSearchChange(e.target.value); onPageChange(1); }}
+            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          />
+          {searchQuery && (
+            <button onClick={() => { onSearchChange(""); onPageChange(1); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-600">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
       {searchQuery && (
         <p className="mb-2 text-xs text-gray-500">{filteredItems.length} result{filteredItems.length !== 1 ? "s" : ""} found</p>
@@ -334,7 +352,8 @@ export function UntaggedResourcesTable({
               {paginatedItems.map((item: UntaggedItem, idx: number) => {
                 let resourceUrl: string | null = null;
                 const workspaceId = item.workspace_id;
-                switch (activeUntaggedTab) {
+                const effectiveType = activeUntaggedTab === "all" ? (item._type as string) : activeUntaggedTab;
+                switch (effectiveType) {
                   case "clusters": resourceUrl = getClusterUrl(host, item.cluster_id as string, workspaceId); break;
                   case "jobs": resourceUrl = getJobUrl(host, item.job_id as string, workspaceId); break;
                   case "pipelines": resourceUrl = getPipelineUrl(host, item.pipeline_id as string, workspaceId); break;
@@ -346,6 +365,7 @@ export function UntaggedResourcesTable({
                 const displayId = item[resourceConfig.idKey] as string | null | undefined;
                 const displayName = rawName || displayId || "-";
                 const hasDistinctName = rawName && rawName !== displayId;
+                const showId = displayId && (hasDistinctName || effectiveType === "clusters" || effectiveType === "warehouses");
 
                 return (
                   <tr key={idx} className="hover:bg-gray-50">
@@ -358,16 +378,12 @@ export function UntaggedResourcesTable({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
                           </a>
-                          {displayId && (hasDistinctName || activeUntaggedTab === "clusters" || activeUntaggedTab === "warehouses") && (
-                            <span className="max-w-xs truncate text-xs text-gray-500">{displayId}</span>
-                          )}
+                          {showId && <span className="max-w-xs truncate text-xs text-gray-500">{displayId}</span>}
                         </div>
                       ) : (
                         <div className="flex flex-col gap-0.5">
                           <span className="max-w-xs truncate font-medium text-gray-900">{displayName}</span>
-                          {displayId && (hasDistinctName || activeUntaggedTab === "clusters" || activeUntaggedTab === "warehouses") && (
-                            <span className="max-w-xs truncate text-xs text-gray-500">{displayId}</span>
-                          )}
+                          {showId && <span className="max-w-xs truncate text-xs text-gray-500">{displayId}</span>}
                         </div>
                       )}
                     </td>
@@ -376,7 +392,11 @@ export function UntaggedResourcesTable({
                       return (
                       <td key={col.key} className="px-6 py-4 text-sm text-gray-600">
                         {colVal ? (
-                          col.key === "owner" ? (
+                          col.key === "_type" ? (
+                            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                              {TYPE_LABELS[colVal] || colVal}
+                            </span>
+                          ) : col.key === "owner" ? (
                             <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={colVal}>
                               {formatIdentity(colVal)}
                             </span>
@@ -396,13 +416,15 @@ export function UntaggedResourcesTable({
                       <div className="flex flex-wrap gap-1">
                         {(() => {
                           const tagMap: Record<string, string[]> = {
+                            all: ["team", "environment", "project"],
                             clusters: ["team", "environment", "project"],
                             jobs: ["pipeline", "owner", "schedule"],
                             pipelines: ["data_domain", "tier", "team"],
                             warehouses: ["department", "cost_center", "environment"],
                             endpoints: ["model", "use_case", "team"],
                           };
-                          return (tagMap[activeUntaggedTab] || ["team", "environment", "project"]).map((tag) => (
+                          const key = activeUntaggedTab === "all" ? (item._type as string) : activeUntaggedTab;
+                          return (tagMap[key] || ["team", "environment", "project"]).map((tag) => (
                             <span key={tag} className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{tag}</span>
                           ));
                         })()}

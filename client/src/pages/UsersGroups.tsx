@@ -55,6 +55,12 @@ function fmt(n: number) {
   return `$${n.toFixed(2)}`;
 }
 
+function formatNumber(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
 
 // ── User Detail Modal ─────────────────────────────────────────────────────────
 
@@ -668,6 +674,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
                 <th className="px-5 py-3 text-left font-medium">User</th>
                 <th className="px-4 py-3 text-right font-medium">Share</th>
                 <th className="px-4 py-3 text-right font-medium">Spend</th>
+                <th className="px-4 py-3 text-right font-medium">DBUs</th>
                 <th className="px-4 py-3 text-right font-medium">Active days</th>
                 <th className="px-4 py-3 text-left font-medium">Primary product</th>
                 <th className="px-4 py-3" />
@@ -698,6 +705,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-gray-600">{fmt(u.total_spend)}</td>
+                    <td className="px-4 py-3 text-right text-gray-600">{formatNumber(u.total_dbus ?? 0)}</td>
                     <td className="px-4 py-3 text-right text-gray-600">{u.active_days}</td>
                     <td className="px-4 py-3">
                       <span className="rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">{u.primary_product}</span>
@@ -712,7 +720,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-500">
                     {searchQuery || typeFilter !== "all" || productFilter !== "all" ? "No users match your filters." : "No user spend data found for this date range."}
                   </td>
                 </tr>

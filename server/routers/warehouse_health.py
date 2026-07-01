@@ -28,9 +28,9 @@ _HEALTH_CACHE_TTL = 30 * 60  # 30 minutes — recommendations don't change rapid
 _IDLE_LOOKBACK_HOURS = 2
 _IDLE_NO_QUERY_HOURS = 24
 _OVER_SCALED_CONCURRENCY_PER_CLUSTER = 10
-_OVERSIZED_MAX_QUEUE_MS = 5000
-_OVERSIZED_MAX_MEDIAN_DURATION_S = 30
-_OVERSIZED_MIN_QUERIES = 10
+_OVERSIZED_MAX_QUEUE_MS = 15000     # 15 s avg queue — warehouse is not under pressure
+_OVERSIZED_MAX_MEDIAN_DURATION_S = 180  # 3 min execution — queries don't need Large
+_OVERSIZED_MIN_QUERIES = 5
 _LARGE_SIZES = ("Large", "X-Large", "2X-Large", "3X-Large", "4X-Large")
 
 _SQL_IDLE = f"""
@@ -111,7 +111,7 @@ WHERE COALESCE(mc.max_concurrent, 0) < (cse.max_clusters_observed * {_OVER_SCALE
 
 _SQL_OVERSIZED = f"""
 WITH current_warehouses AS (
-  SELECT warehouse_id, warehouse_name, warehouse_size, workspace_id
+  SELECT warehouse_id, warehouse_name, warehouse_size, workspace_id, warehouse_type
   FROM system.compute.warehouses
   WHERE warehouse_size IN {_LARGE_SIZES}
   QUALIFY ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY change_time DESC) = 1
@@ -119,6 +119,7 @@ WITH current_warehouses AS (
 large_warehouses AS (
   SELECT warehouse_id, warehouse_name, warehouse_size, workspace_id
   FROM current_warehouses
+  WHERE COALESCE(warehouse_type, 'CLASSIC') != 'SERVERLESS'
 ),
 qstats AS (
   SELECT
@@ -126,12 +127,15 @@ qstats AS (
     COUNT(*) AS query_count,
     AVG(COALESCE(waiting_at_capacity_duration_ms, 0) + COALESCE(waiting_for_compute_duration_ms, 0)) AS avg_queue_ms,
     PERCENTILE_APPROX(
-      UNIX_TIMESTAMP(end_time) - UNIX_TIMESTAMP(start_time), 0.5
+      GREATEST(0.0,
+        (UNIX_TIMESTAMP(end_time) - UNIX_TIMESTAMP(start_time))
+        - (COALESCE(waiting_at_capacity_duration_ms, 0) + COALESCE(waiting_for_compute_duration_ms, 0)) / 1000.0
+      ),
+      0.5
     ) AS median_duration_seconds
   FROM system.query.history
   WHERE start_time >= NOW() - INTERVAL 30 DAY
     AND compute.warehouse_id IN (SELECT warehouse_id FROM large_warehouses)
-    AND total_task_duration_ms > 0
     AND end_time IS NOT NULL
   GROUP BY compute.warehouse_id
   HAVING COUNT(*) >= {_OVERSIZED_MIN_QUERIES}

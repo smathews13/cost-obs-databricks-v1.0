@@ -84,7 +84,7 @@ const formatNumber = (value: number) =>
   }).format(value);
 
 export function TaggingHub({ data, isLoading, host, startDate, endDate, workspaceIds, workspaceNameMap }: TaggingHubProps) {
-  const [activeUntaggedTab, setActiveUntaggedTab] = useState<UntaggedTab>("clusters");
+  const [activeUntaggedTab, setActiveUntaggedTab] = useState<UntaggedTab>("all");
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string} | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("total_spend");

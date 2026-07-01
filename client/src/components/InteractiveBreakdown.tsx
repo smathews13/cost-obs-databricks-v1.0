@@ -255,7 +255,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                     return (
                       <button
                         key={v}
-                        onClick={() => { setViewMode(v); setViewDropdownOpen(false); setCurrentPage(1); }}
+                        onClick={() => { setViewMode(v); setViewDropdownOpen(false); setCurrentPage(1); setSearch(""); }}
                         className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${viewMode === v ? "bg-orange-50 font-medium text-[#FF3621]" : "text-gray-700 hover:bg-gray-50"}`}
                       >
                         <span className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${viewMode === v ? "border-transparent" : "border-gray-300"}`} style={viewMode === v ? { backgroundColor: '#FF3621' } : undefined}>
@@ -274,7 +274,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
               </svg>
               <input
                 type="text"
-                placeholder="Search clusters..."
+                placeholder={viewMode === "by-user" ? "Search users..." : viewMode === "by-notebook" ? "Search notebooks..." : "Search clusters..."}
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
                 className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] w-full"

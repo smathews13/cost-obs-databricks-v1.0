@@ -1076,7 +1076,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
           const filteredAgents = allAgents
             .filter(a => showHistoricalAgents || !isHistoricalAgent(a))
             .filter(a => agentTypeFilter === "all" || (a.agent_type || "Agent") === agentTypeFilter)
-            .filter(a => !agentSearch || a.agent_name.toLowerCase().includes(agentSearch.toLowerCase()) || (a.endpoint_id || "").toLowerCase().includes(agentSearch.toLowerCase()));
+            .filter(a => !agentSearch || (a.agent_name || "").toLowerCase().includes(agentSearch.toLowerCase()) || (a.endpoint_id || "").toLowerCase().includes(agentSearch.toLowerCase()));
           const agentTotalPages = Math.ceil(filteredAgents.length / PAGE_SIZE);
           const agentStart = (agentsPage - 1) * PAGE_SIZE;
           const paginatedAgents = filteredAgents.slice(agentStart, agentStart + PAGE_SIZE);

@@ -110,7 +110,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
     (obj) => (filter === "all" || obj.object_type === filter) &&
       (showHistorical || !isHistorical(obj)) &&
       (!search || (obj.object_name || "").toLowerCase().includes(searchLower) ||
-        obj.object_id.toLowerCase().includes(searchLower) ||
+        (obj.object_id || "").toLowerCase().includes(searchLower) ||
         (obj.owner || "").toLowerCase().includes(searchLower))
   );
 

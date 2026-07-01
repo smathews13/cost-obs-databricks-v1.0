@@ -1348,15 +1348,9 @@ async def get_workspace_list(
         LEFT JOIN system.access.workspaces_latest wsl
             ON CAST(u.workspace_id AS BIGINT) = CAST(wsl.workspace_id AS BIGINT)
         LEFT JOIN (
-            SELECT workspace_id, workspace_name
-            FROM (
-                SELECT workspace_id, workspace_name,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY workspace_id
-                           ORDER BY COALESCE(workspace_last_modified_at, workspace_created_at) DESC
-                       ) AS rn
-                FROM system.access.workspaces
-            ) t WHERE rn = 1
+            SELECT workspace_id, MAX(workspace_name) as workspace_name
+            FROM system.access.workspaces
+            GROUP BY workspace_id
         ) ws_dedup ON CAST(u.workspace_id AS BIGINT) = CAST(ws_dedup.workspace_id AS BIGINT)
         WHERE u.usage_date BETWEEN :start_date AND :end_date
           AND u.usage_quantity > 0

@@ -416,7 +416,6 @@ export function UntaggedResourcesTable({
                       <div className="flex flex-wrap gap-1">
                         {(() => {
                           const tagMap: Record<string, string[]> = {
-                            all: ["team", "environment", "project"],
                             clusters: ["team", "environment", "project"],
                             jobs: ["pipeline", "owner", "schedule"],
                             pipelines: ["data_domain", "tier", "team"],

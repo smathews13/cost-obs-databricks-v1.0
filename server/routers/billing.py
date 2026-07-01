@@ -1353,7 +1353,7 @@ async def get_workspace_list(
                 SELECT workspace_id, workspace_name,
                        ROW_NUMBER() OVER (
                            PARTITION BY workspace_id
-                           ORDER BY COALESCE(change_time, update_time, create_time) DESC
+                           ORDER BY COALESCE(workspace_last_modified_at, workspace_created_at) DESC
                        ) AS rn
                 FROM system.access.workspaces
             ) t WHERE rn = 1
@@ -1382,7 +1382,7 @@ async def get_workspace_list(
         try:
             rows = execute_query(sql_with_names, params)
         except Exception as e:
-            logger.warning("get_workspace_list: system.access unavailable (%s), falling back to IDs only", e)
+            logger.warning("get_workspace_list: workspace name query failed (%s: %s), falling back to IDs only", type(e).__name__, e)
             rows = execute_query(sql_ids_only, params)
         # AccountClient names take priority over system table names
         if _account_ws_names:

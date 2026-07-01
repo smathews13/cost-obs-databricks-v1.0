@@ -80,8 +80,8 @@ const KPICard = memo(function KPICard({ title, value, subtitle, infoTooltip, ico
 
   return (
     <div
-      className={`rounded-lg bg-white p-6 border shadow-sm transition-all ${
-        onClick ? "cursor-pointer hover:shadow-md hover:scale-[1.01]" : ""
+      className={`rounded-lg bg-white p-6 border transition-all ${
+        onClick ? "shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.01]" : ""
       }`}
       style={{ borderColor: '#E5E5E5' }}
       onClick={onClick}

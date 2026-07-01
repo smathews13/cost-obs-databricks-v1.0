@@ -849,17 +849,15 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               <div className="relative" data-ws-filter-dropdown>
                 <button
                   onClick={() => { setWsFilterOpen(!wsFilterOpen); setWsFilterSearch(""); }}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${selectedWorkspaces.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                 >
-                  <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                  </svg>
-                  Workspace
+                  {selectedWorkspaces.length === 0 ? "Workspace" : selectedWorkspaces.length === 1 ? (availableWorkspaces.find(ws => ws.id === selectedWorkspaces[0])?.name ?? selectedWorkspaces[0]) : `${selectedWorkspaces.length} Workspaces`}
                   {selectedWorkspaces.length > 0 && (
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: '#FF3621' }}>
-                      {selectedWorkspaces.length}
-                    </span>
+                    <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaces([]); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
+                      <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
                   )}
+                  <svg className={`h-3 w-3 transition-transform ${wsFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                 </button>
                 {wsFilterOpen && (
                   <div className="absolute right-0 top-full z-50 mt-1 w-72 rounded-lg border border-gray-200 bg-white shadow-lg">
@@ -873,14 +871,22 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                         autoFocus
                       />
                     </div>
-                    <div className="max-h-60 overflow-y-auto py-1">
+                    <div className="max-h-60 overflow-y-auto">
+                      <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Workspaces</span>
+                        <div className="flex items-center gap-2 text-xs">
+                          <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaces(availableWorkspaces.map(ws => ws.id)); }} className="text-gray-500 hover:text-gray-800">All</button>
+                          <span className="text-gray-300">·</span>
+                          <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaces([]); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                        </div>
+                      </div>
                       {availableWorkspaces
                         .filter(ws => !wsFilterSearch || ws.name.toLowerCase().includes(wsFilterSearch.toLowerCase()))
                         .map(ws => (
                           <button
                             key={ws.id}
                             onClick={() => handleToggleWorkspace(ws.id)}
-                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50"
+                            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-gray-50"
                           >
                             <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selectedWorkspaces.includes(ws.id) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
                               {selectedWorkspaces.includes(ws.id) && (
@@ -896,13 +902,6 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                         <div className="px-3 py-2 text-sm text-gray-500">No matching workspaces</div>
                       )}
                     </div>
-                    {selectedWorkspaces.length > 0 && (
-                      <div className="border-t border-gray-200 p-2">
-                        <button onClick={() => setSelectedWorkspaces([])} className="w-full rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100">
-                          Clear all
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

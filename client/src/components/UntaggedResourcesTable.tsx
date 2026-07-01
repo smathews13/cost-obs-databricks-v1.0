@@ -254,7 +254,7 @@ export function UntaggedResourcesTable({
         </div>
       )}
 
-      <div className="mb-4 flex items-center gap-4">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer whitespace-nowrap">
           <input type="checkbox" checked={showHistoricalUntagged}
             onChange={(e) => { onHistoricalToggle(e.target.checked); onPageChange(1); }}
@@ -268,28 +268,36 @@ export function UntaggedResourcesTable({
         <div className="relative" ref={tabDropdownRef}>
           <button
             onClick={() => setTabDropdownOpen((o) => !o)}
-            className="flex items-center gap-1.5 rounded-full border border-[#FF3621] px-3 py-1 text-xs font-medium text-[#FF3621] transition-colors"
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${activeUntaggedTab !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
           >
             {tabs.find((t) => t.key === activeUntaggedTab)?.label ?? "Select"}
-            {(() => { const c = tabs.find((t) => t.key === activeUntaggedTab)?.count ?? 0; return c > 0 ? <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600">{c >= 1000 ? "1000+" : c}</span> : null; })()}
+            {activeUntaggedTab !== "all" && (() => { const c = tabs.find((t) => t.key === activeUntaggedTab)?.count ?? 0; return c > 0 ? <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: '#FF3621' }}>{c >= 1000 ? "1k+" : c}</span> : null; })()}
             <svg className={`h-3 w-3 transition-transform ${tabDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
           {tabDropdownOpen && (
-            <div className="absolute left-0 top-full z-[9999] mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+            <div className="absolute left-0 top-full z-[9999] mt-1 min-w-[190px] rounded-lg border border-gray-200 bg-white shadow-lg">
+              <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Resource type</span>
+                {activeUntaggedTab !== "all" && (
+                  <button onClick={(e) => { e.stopPropagation(); onTabChange("all"); setTabDropdownOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
+                )}
+              </div>
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => { onTabChange(tab.key); setTabDropdownOpen(false); }}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                 >
                   <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full shrink-0 ${activeUntaggedTab === tab.key ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
-                    <span className={activeUntaggedTab === tab.key ? "font-medium text-[#FF3621]" : "text-gray-700"}>{tab.label}</span>
+                    <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${activeUntaggedTab === tab.key ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                      {activeUntaggedTab === tab.key && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                    </div>
+                    <span className={activeUntaggedTab === tab.key ? "font-medium text-gray-900" : "text-gray-700"}>{tab.label}</span>
                   </div>
                   {tab.count > 0 && (
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${activeUntaggedTab === tab.key ? "bg-orange-100 text-orange-600" : "bg-gray-100 text-gray-600"}`}>
+                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
                       {tab.count >= 1000 ? "1000+" : tab.count}
                     </span>
                   )}
@@ -298,7 +306,7 @@ export function UntaggedResourcesTable({
             </div>
           )}
         </div>
-        <div className="relative w-56">
+        <div className="relative ml-auto">
           <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -307,7 +315,7 @@ export function UntaggedResourcesTable({
             placeholder={activeUntaggedTab === "all" ? "Search all untagged resources..." : `Search untagged ${activeUntaggedTab}...`}
             value={searchQuery}
             onChange={(e) => { onSearchChange(e.target.value); onPageChange(1); }}
-            className="w-full rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+            className="w-64 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
           />
           {searchQuery && (
             <button onClick={() => { onSearchChange(""); onPageChange(1); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-600">

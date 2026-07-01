@@ -1053,7 +1053,7 @@ export function CloudCostsView({
                     <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Workspaces</span>
                       <div className="flex items-center gap-2 text-xs">
-                        <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                        <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([...availableTableWorkspaces]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                         <span className="text-gray-300">·</span>
                         <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                       </div>
@@ -1066,8 +1066,8 @@ export function CloudCostsView({
                           onClick={() => { setTableWorkspace((prev) => prev.includes(w) ? prev.filter(x => x !== w) : [...prev, w]); setCurrentPage(1); }}
                           className="flex w-full items-center gap-2 px-3 py-2.5 text-xs hover:bg-gray-50"
                         >
-                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${tableWorkspace.length === 0 || tableWorkspace.includes(w) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                            {(tableWorkspace.length === 0 || tableWorkspace.includes(w)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${tableWorkspace.includes(w) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                            {tableWorkspace.includes(w) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                           </div>
                           <span className="truncate text-gray-700">{label}</span>
                         </button>
@@ -1098,7 +1098,7 @@ export function CloudCostsView({
                     <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Families</span>
                       <div className="flex items-center gap-2 text-xs">
-                        <button onClick={(e) => { e.stopPropagation(); setTableFamily([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                        <button onClick={(e) => { e.stopPropagation(); setTableFamily([...availableTableFamilies]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                         <span className="text-gray-300">·</span>
                         <button onClick={(e) => { e.stopPropagation(); setTableFamily([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                       </div>
@@ -1109,8 +1109,8 @@ export function CloudCostsView({
                         onClick={() => { setTableFamily((prev) => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]); setCurrentPage(1); }}
                         className="flex w-full items-center gap-2 px-3 py-2.5 text-xs hover:bg-gray-50"
                       >
-                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${tableFamily.length === 0 || tableFamily.includes(f) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                          {(tableFamily.length === 0 || tableFamily.includes(f)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${tableFamily.includes(f) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                          {tableFamily.includes(f) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                         </div>
                         <span className="truncate text-gray-700">{f}</span>
                       </button>

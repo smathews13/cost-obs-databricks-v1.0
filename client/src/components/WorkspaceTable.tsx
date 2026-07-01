@@ -164,7 +164,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Products</span>
                     <div className="flex items-center gap-2 text-xs">
-                      <button onClick={(e) => { e.stopPropagation(); setProductFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                      <button onClick={(e) => { e.stopPropagation(); setProductFilters([...allProducts]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                       <span className="text-gray-300">·</span>
                       <button onClick={(e) => { e.stopPropagation(); setProductFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                     </div>
@@ -172,8 +172,8 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                   {allProducts.map((p) => (
                     <button key={p} onClick={() => { setProductFilters((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]); setCurrentPage(1); }}
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilters.length === 0 || productFilters.includes(p) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {(productFilters.length === 0 || productFilters.includes(p)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilters.includes(p) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {productFilters.includes(p) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                       </div>
                       <span className="truncate text-gray-700">{formatProductName(p)}</span>
                     </button>
@@ -202,7 +202,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Users</span>
                     <div className="flex items-center gap-2 text-xs">
-                      <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                      <button onClick={(e) => { e.stopPropagation(); setUserFilters([...allUsers]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                       <span className="text-gray-300">·</span>
                       <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                     </div>
@@ -210,8 +210,8 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                   {allUsers.map((u) => (
                     <button key={u} onClick={() => { setUserFilters((prev) => prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]); setCurrentPage(1); }}
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.length === 0 || userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {(userFilters.length === 0 || userFilters.includes(u)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                       </div>
                       <span className="truncate text-gray-700">{u}</span>
                     </button>

@@ -799,47 +799,38 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       </div>
                       {wsEntries.length > 1 && (
                         <div className="relative" ref={whSizeDropdownRef}>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setWhSizeDropdownOpen(!whSizeDropdownOpen)}
-                              className="inline-flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                            >
-                              Workspace
-                              <svg className={`h-3 w-3 text-gray-500 transition-transform ${whSizeDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </button>
-                            {selectedWsName && (
-                              <span
-                                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white cursor-pointer"
-                                style={{ backgroundColor: '#FF3621' }}
-                                onClick={() => setWarehouseSizeWsFilter("all")}
-                                title="Click to clear filter"
-                              >
-                                {selectedWsName.length > 15 ? selectedWsName.substring(0, 15) + "..." : selectedWsName}
-                                <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </span>
-                            )}
-                          </div>
-                          {whSizeDropdownOpen && (
-                            <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                              <button
-                                onClick={() => { setWarehouseSizeWsFilter("all"); setWhSizeDropdownOpen(false); }}
-                                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${warehouseSizeWsFilter === "all" ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}
-                              >
-                                <span className={`h-2 w-2 rounded-full ${warehouseSizeWsFilter === "all" ? "bg-orange-500" : "bg-transparent"}`} />
-                                All Workspaces
+                          <button
+                            onClick={() => setWhSizeDropdownOpen(!whSizeDropdownOpen)}
+                            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${warehouseSizeWsFilter !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                          >
+                            {warehouseSizeWsFilter !== "all" && selectedWsName ? (selectedWsName.length > 20 ? selectedWsName.substring(0, 20) + "…" : selectedWsName) : "Workspace"}
+                            {warehouseSizeWsFilter !== "all" && (
+                              <button onClick={(e) => { e.stopPropagation(); setWarehouseSizeWsFilter("all"); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
+                                <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
                               </button>
+                            )}
+                            <svg className={`h-3 w-3 transition-transform ${whSizeDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {whSizeDropdownOpen && (
+                            <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                              <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Workspace</span>
+                                {warehouseSizeWsFilter !== "all" && (
+                                  <button onClick={(e) => { e.stopPropagation(); setWarehouseSizeWsFilter("all"); setWhSizeDropdownOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
+                                )}
+                              </div>
                               {wsEntries.map(([wsId, wsName]) => (
                                 <button
                                   key={wsId}
                                   onClick={() => { setWarehouseSizeWsFilter(wsId); setWhSizeDropdownOpen(false); }}
-                                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${warehouseSizeWsFilter === wsId ? "bg-orange-50 text-orange-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                                 >
-                                  <span className={`h-2 w-2 rounded-full ${warehouseSizeWsFilter === wsId ? "bg-orange-500" : "bg-transparent"}`} />
-                                  <span className="truncate">{wsName}</span>
+                                  <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${warehouseSizeWsFilter === wsId ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                                    {warehouseSizeWsFilter === wsId && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                  </div>
+                                  <span className="truncate text-gray-700">{wsName}</span>
                                 </button>
                               ))}
                             </div>
@@ -1005,7 +996,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sources</span>
                         <div className="flex items-center gap-2 text-xs">
-                          <button onClick={(e) => { e.stopPropagation(); setQuerySourceFilters([]); setQueriesPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                          <button onClick={(e) => { e.stopPropagation(); setQuerySourceFilters([...querySourceTypes]); setQueriesPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                           <span className="text-gray-300">·</span>
                           <button onClick={(e) => { e.stopPropagation(); setQuerySourceFilters([]); setQueriesPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
@@ -1017,8 +1008,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                             onClick={() => { setQuerySourceFilters((prev) => prev.includes(type) ? prev.filter((x) => x !== type) : [...prev, type]); setQueriesPage(1); }}
                             className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                           >
-                            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${querySourceFilters.length === 0 || querySourceFilters.includes(type) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                              {(querySourceFilters.length === 0 || querySourceFilters.includes(type)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${querySourceFilters.includes(type) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                              {querySourceFilters.includes(type) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                             </div>
                             <span className="truncate text-gray-700">{type}</span>
                           </button>
@@ -1464,18 +1455,6 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
           )}
           {warehouseHealth?.recommendations?.length ? (
             <>
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search warehouses..."
-                  value={healthSearch}
-                  onChange={(e) => { setHealthSearch(e.target.value); setHealthPage(1); }}
-                  className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-                />
-              </div>
               <div className="relative" ref={healthIssueDropdownRef}>
                 <button
                   onClick={() => { setHealthIssueDropdownOpen((o) => !o); }}
@@ -1494,7 +1473,7 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
                     <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Issues</span>
                       <div className="flex items-center gap-2 text-xs">
-                        <button onClick={(e) => { e.stopPropagation(); setHealthIssueFilter([]); setHealthPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                        <button onClick={(e) => { e.stopPropagation(); setHealthIssueFilter(HEALTH_ISSUE_OPTIONS.map(o => o.value)); setHealthPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                         <span className="text-gray-300">·</span>
                         <button onClick={(e) => { e.stopPropagation(); setHealthIssueFilter([]); setHealthPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                       </div>
@@ -1502,14 +1481,26 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
                     {HEALTH_ISSUE_OPTIONS.map((opt) => (
                       <button key={opt.value} onClick={() => { setHealthIssueFilter((prev) => prev.includes(opt.value) ? prev.filter(x => x !== opt.value) : [...prev, opt.value]); setHealthPage(1); }}
                         className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
-                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${healthIssueFilter.length === 0 || healthIssueFilter.includes(opt.value) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                          {(healthIssueFilter.length === 0 || healthIssueFilter.includes(opt.value)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${healthIssueFilter.includes(opt.value) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                          {healthIssueFilter.includes(opt.value) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                         </div>
                         <span className="truncate text-gray-700">{opt.label}</span>
                       </button>
                     ))}
                   </div>
                 )}
+              </div>
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search warehouses..."
+                  value={healthSearch}
+                  onChange={(e) => { setHealthSearch(e.target.value); setHealthPage(1); }}
+                  className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                />
               </div>
             </>
           ) : null}
@@ -1718,18 +1709,6 @@ export function WarehouseIdleTimeView({
           const distinctTypes = Array.from(new Set(data.warehouses.map(w => w.warehouse_type))).filter(Boolean);
           return (
             <div className="flex items-center gap-2 shrink-0">
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search warehouses..."
-                  value={idleSearch}
-                  onChange={(e) => { setIdleSearch(e.target.value); setIdlePage(1); }}
-                  className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
-                />
-              </div>
               {distinctSizes.length > 1 && (
                 <div className="relative" ref={idleSizeDropdownRef}>
                   <button
@@ -1749,7 +1728,7 @@ export function WarehouseIdleTimeView({
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sizes</span>
                         <div className="flex items-center gap-2 text-xs">
-                          <button onClick={(e) => { e.stopPropagation(); setIdleSizeFilter([]); setIdlePage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                          <button onClick={(e) => { e.stopPropagation(); setIdleSizeFilter([...distinctSizes]); setIdlePage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                           <span className="text-gray-300">·</span>
                           <button onClick={(e) => { e.stopPropagation(); setIdleSizeFilter([]); setIdlePage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
@@ -1757,8 +1736,8 @@ export function WarehouseIdleTimeView({
                       {distinctSizes.map(s => (
                         <button key={s} onClick={() => { setIdleSizeFilter((prev) => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]); setIdlePage(1); }}
                           className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
-                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${idleSizeFilter.length === 0 || idleSizeFilter.includes(s) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                            {(idleSizeFilter.length === 0 || idleSizeFilter.includes(s)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${idleSizeFilter.includes(s) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                            {idleSizeFilter.includes(s) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                           </div>
                           <span className="truncate text-gray-700">{s}</span>
                         </button>
@@ -1786,7 +1765,7 @@ export function WarehouseIdleTimeView({
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Types</span>
                         <div className="flex items-center gap-2 text-xs">
-                          <button onClick={(e) => { e.stopPropagation(); setIdleTypeFilter([]); setIdlePage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                          <button onClick={(e) => { e.stopPropagation(); setIdleTypeFilter([...distinctTypes]); setIdlePage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
                           <span className="text-gray-300">·</span>
                           <button onClick={(e) => { e.stopPropagation(); setIdleTypeFilter([]); setIdlePage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
@@ -1794,8 +1773,8 @@ export function WarehouseIdleTimeView({
                       {distinctTypes.map(t => (
                         <button key={t} onClick={() => { setIdleTypeFilter((prev) => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]); setIdlePage(1); }}
                           className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
-                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${idleTypeFilter.length === 0 || idleTypeFilter.includes(t) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                            {(idleTypeFilter.length === 0 || idleTypeFilter.includes(t)) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${idleTypeFilter.includes(t) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                            {idleTypeFilter.includes(t) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                           </div>
                           <span className="truncate text-gray-700">{t === "SERVERLESS" ? "Serverless" : "Classic"}</span>
                         </button>
@@ -1804,6 +1783,18 @@ export function WarehouseIdleTimeView({
                   )}
                 </div>
               )}
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search warehouses..."
+                  value={idleSearch}
+                  onChange={(e) => { setIdleSearch(e.target.value); setIdlePage(1); }}
+                  className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                />
+              </div>
             </div>
           );
         })()}

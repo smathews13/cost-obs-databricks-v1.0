@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import threading
+import time as _time
 from datetime import date, timedelta
 from typing import Any
 
@@ -33,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 _aiml_bundle_inflight: set[str] = set()
 _aiml_bundle_inflight_lock = threading.Lock()
+_aiml_available: bool = True
+_aiml_last_failure: float = 0.0
+_AIML_RETRY_INTERVAL: float = 1800.0  # skip new computes for 30 min after a mass timeout
 
 
 def get_default_start_date() -> str:
@@ -1008,6 +1012,7 @@ async def get_aiml_sku_catalog(
 
 def _compute_aiml_bundle(params: dict, id_list: list | None, ws_clause: str, dkey: str) -> None:
     """Background worker: run all 8 AIML queries, build response, write to Delta cache."""
+    global _aiml_available, _aiml_last_failure
     try:
         def _ws(sql: str) -> str:
             return wf.inject_ws_filter(sql, ws_clause)
@@ -1024,6 +1029,17 @@ def _compute_aiml_bundle(params: dict, id_list: list | None, ws_clause: str, dke
         ]
 
         results = execute_queries_parallel(queries, timeout=90.0)
+
+        timed_out = sum(1 for v in results.values() if v is None)
+        if timed_out >= 4:
+            _aiml_available = False
+            _aiml_last_failure = _time.time()
+            logger.warning(
+                "aiml bundle: %d/%d queries timed out; skipping new computes for %.0fs",
+                timed_out, len(queries), _AIML_RETRY_INTERVAL,
+            )
+        else:
+            _aiml_available = True
 
         # Format summary
         summary_data = results.get("summary", [])
@@ -1219,6 +1235,10 @@ async def get_aiml_dashboard_bundle(
         if isinstance(_dcached, dict) and "_error" in _dcached:
             raise HTTPException(status_code=500, detail=_dcached.get("_error", "Bundle compute failed"))
         return _dcached
+
+    if not _aiml_available and (_time.time() - _aiml_last_failure) < _AIML_RETRY_INTERVAL:
+        logger.info("aiml bundle: queries recently timed out; returning 503 (retry in %.0fs)", _AIML_RETRY_INTERVAL - (_time.time() - _aiml_last_failure))
+        raise HTTPException(status_code=503, detail="AI/ML data temporarily unavailable — warehouse queries timed out recently")
 
     ws_clause = wf.build_ws_filter_clause(id_list=id_list)
 

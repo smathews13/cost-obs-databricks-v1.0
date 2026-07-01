@@ -1048,13 +1048,18 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     </div>
                   )}
                 </div>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={querySearch}
-                  onChange={(e) => { setQuerySearch(e.target.value); setQueriesPage(1); }}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-[#FF3621] focus:ring-1 focus:ring-[#FF3621] w-44 shrink-0"
-                />
+                <div className="relative shrink-0">
+                  <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search queries..."
+                    value={querySearch}
+                    onChange={(e) => { setQuerySearch(e.target.value); setQueriesPage(1); }}
+                    className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                  />
+                </div>
               </div>
             </div>
             {topQueriesLoading && sortedQueries.length === 0 ? (
@@ -1446,6 +1451,7 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
     retry: false,
   });
   const [healthIssueFilter, setHealthIssueFilter] = useState<string>("");
+  const [healthSearch, setHealthSearch] = useState("");
   const [healthPage, setHealthPage] = useState(1);
   const HEALTH_PAGE_SIZE = 10;
   const [healthIssueDropdownOpen, setHealthIssueDropdownOpen] = useState(false);
@@ -1479,31 +1485,45 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
             <span className="text-xs text-gray-500">{warehouseHealth.warehouses_analyzed} warehouse{warehouseHealth.warehouses_analyzed !== 1 ? "s" : ""} analyzed</span>
           )}
           {warehouseHealth?.recommendations?.length ? (
-            <div className="relative" ref={healthIssueDropdownRef}>
-              <button
-                onClick={() => setHealthIssueDropdownOpen((o) => !o)}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${healthIssueFilter ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
-              >
-                {HEALTH_ISSUE_OPTIONS.find(o => o.value === healthIssueFilter)?.label ?? "All Issues"}
-                <svg className={`h-3 w-3 transition-transform ${healthIssueDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            <>
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-              </button>
-              {healthIssueDropdownOpen && (
-                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[140px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                  {HEALTH_ISSUE_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => { setHealthIssueFilter(opt.value); setHealthPage(1); setHealthIssueDropdownOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
-                    >
-                      <span className={`h-2 w-2 rounded-full shrink-0 ${healthIssueFilter === opt.value ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
-                      <span className={healthIssueFilter === opt.value ? "font-medium text-[#FF3621]" : "text-gray-700"}>{opt.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                <input
+                  type="text"
+                  placeholder="Search warehouses..."
+                  value={healthSearch}
+                  onChange={(e) => { setHealthSearch(e.target.value); setHealthPage(1); }}
+                  className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                />
+              </div>
+              <div className="relative" ref={healthIssueDropdownRef}>
+                <button
+                  onClick={() => setHealthIssueDropdownOpen((o) => !o)}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${healthIssueFilter ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                >
+                  {HEALTH_ISSUE_OPTIONS.find(o => o.value === healthIssueFilter)?.label ?? "All Issues"}
+                  <svg className={`h-3 w-3 transition-transform ${healthIssueDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {healthIssueDropdownOpen && (
+                  <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[140px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                    {HEALTH_ISSUE_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => { setHealthIssueFilter(opt.value); setHealthPage(1); setHealthIssueDropdownOpen(false); }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                      >
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${healthIssueFilter === opt.value ? "bg-[#FF3621]" : "bg-transparent border border-gray-300"}`} />
+                        <span className={healthIssueFilter === opt.value ? "font-medium text-[#FF3621]" : "text-gray-700"}>{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           ) : null}
         </div>
       </div>
@@ -1531,7 +1551,8 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
         };
         const filtered = warehouseHealth.recommendations
           .filter((r) => r.recommendation_type !== "IDLE_RUNNING")
-          .filter((r) => !healthIssueFilter || r.recommendation_type === healthIssueFilter);
+          .filter((r) => !healthIssueFilter || r.recommendation_type === healthIssueFilter)
+          .filter((r) => !healthSearch || (r.warehouse_name || r.warehouse_id).toLowerCase().includes(healthSearch.toLowerCase()));
         const totalPages = Math.max(1, Math.ceil(filtered.length / HEALTH_PAGE_SIZE));
         const safePage = Math.min(healthPage, totalPages);
         const pageRecs = filtered.slice((safePage - 1) * HEALTH_PAGE_SIZE, safePage * HEALTH_PAGE_SIZE);
@@ -1548,6 +1569,13 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
+                  {pageRecs.length === 0 && healthSearch && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500">
+                        No warehouses match your search.
+                      </td>
+                    </tr>
+                  )}
                   {pageRecs.map((rec, i) => (
                     <tr key={`${rec.warehouse_id}-${rec.recommendation_type}-${i}`} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-900">
@@ -1657,6 +1685,7 @@ export function WarehouseIdleTimeView({
     retry: false,
   });
   const [idlePage, setIdlePage] = useState(1);
+  const [idleSearch, setIdleSearch] = useState("");
   const [idleSizeFilter, setIdleSizeFilter] = useState<string | null>(null);
   const [idleTypeFilter, setIdleTypeFilter] = useState<string | null>(null);
   const [idleSizeDropdownOpen, setIdleSizeDropdownOpen] = useState(false);
@@ -1701,6 +1730,18 @@ export function WarehouseIdleTimeView({
           const distinctTypes = Array.from(new Set(data.warehouses.map(w => w.warehouse_type))).filter(Boolean);
           return (
             <div className="flex items-center gap-2 shrink-0">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search warehouses..."
+                  value={idleSearch}
+                  onChange={(e) => { setIdleSearch(e.target.value); setIdlePage(1); }}
+                  className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                />
+              </div>
               {distinctSizes.length > 1 && (
                 <div className="relative" ref={idleSizeDropdownRef}>
                   <button
@@ -1777,7 +1818,8 @@ export function WarehouseIdleTimeView({
       ) : (() => {
         const filteredWarehouses = data.warehouses
           .filter(w => !idleSizeFilter || w.warehouse_size === idleSizeFilter)
-          .filter(w => !idleTypeFilter || w.warehouse_type === idleTypeFilter);
+          .filter(w => !idleTypeFilter || w.warehouse_type === idleTypeFilter)
+          .filter(w => !idleSearch || w.warehouse_name.toLowerCase().includes(idleSearch.toLowerCase()));
         const totalIdlePages = Math.max(1, Math.ceil(filteredWarehouses.length / IDLE_PAGE_SIZE));
         const safeIdlePage = Math.min(idlePage, totalIdlePages);
         const pageWarehouses = filteredWarehouses.slice((safeIdlePage - 1) * IDLE_PAGE_SIZE, safeIdlePage * IDLE_PAGE_SIZE);
@@ -1798,6 +1840,13 @@ export function WarehouseIdleTimeView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
+                  {pageWarehouses.length === 0 && idleSearch && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
+                        No warehouses match your search.
+                      </td>
+                    </tr>
+                  )}
                   {pageWarehouses.map((wh, i) => (
                     <tr key={`${wh.warehouse_id}-${i}`} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-900">

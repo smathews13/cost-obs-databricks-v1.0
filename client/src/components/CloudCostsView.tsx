@@ -207,6 +207,7 @@ export function CloudCostsView({
   useEffect(() => { setCurrentPage(1); }, [selectedFamilies]);
   const [tableFamily, setTableFamily] = useState<string>("");
   const [tableWorkspace, setTableWorkspace] = useState<string>("");
+  const [clusterSearch, setClusterSearch] = useState("");
   const [familyFilterOpen, setFamilyFilterOpen] = useState(false);
   const [workspaceFilterOpen, setWorkspaceFilterOpen] = useState(false);
   const familyFilterRef = useRef<HTMLDivElement>(null);
@@ -717,7 +718,14 @@ export function CloudCostsView({
     return true;
   });
 
-  const sortedClusters = [...tableFilteredClusters].sort((a, b) => {
+  const searchFilteredClusters = clusterSearch
+    ? tableFilteredClusters.filter(c =>
+        (c.cluster_name || "").toLowerCase().includes(clusterSearch.toLowerCase()) ||
+        (c.cluster_id || "").toLowerCase().includes(clusterSearch.toLowerCase())
+      )
+    : tableFilteredClusters;
+
+  const sortedClusters = [...searchFilteredClusters].sort((a, b) => {
     const modifier = sortDirection === "asc" ? 1 : -1;
     if (sortField === "cluster_name") {
       return ((a.cluster_name || "").localeCompare(b.cluster_name || "")) * modifier;
@@ -1005,6 +1013,18 @@ export function CloudCostsView({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search clusters..."
+                value={clusterSearch}
+                onChange={(e) => { setClusterSearch(e.target.value); setCurrentPage(1); }}
+                className="w-52 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+              />
+            </div>
             <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
@@ -1138,6 +1158,13 @@ export function CloudCostsView({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
+              {paginatedClusters.length === 0 && clusterSearch && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-500">
+                    No clusters match your search.
+                  </td>
+                </tr>
+              )}
               {paginatedClusters.map((cluster, idx) => {
                 const url = getClusterUrl(_host, cluster.cluster_id, cluster.workspace_id);
                 return (

@@ -115,6 +115,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const [showHistoricalMlClusters, setShowHistoricalMlClusters] = useState(false);
   const [mlClusterSearch, setMlClusterSearch] = useState("");
   const [mlRuntimeFilter, setMlRuntimeFilter] = useState<string | null>(null);
+  const [endpointSearch, setEndpointSearch] = useState("");
   const [endpointsCostTypeFilter, setEndpointsCostTypeFilter] = useState<string | null>(null);
   const [endpointsWorkspaceFilter, setEndpointsWorkspaceFilter] = useState<string | null>(null);
   const [endpointsWorkspaceDropdownOpen, setEndpointsWorkspaceDropdownOpen] = useState(false);
@@ -295,6 +296,10 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
     }
     return Object.values(byEndpoint).sort((a, b) => b.total_spend - a.total_spend);
   }, [endpointsWorkspaceFiltered, endpointsCostTypeFilter]);
+
+  const searchedEndpointsData = endpointSearch
+    ? endpointsData.filter(e => e.endpoint_name.toLowerCase().includes(endpointSearch.toLowerCase()))
+    : endpointsData;
 
   useEffect(() => {
     if (endpointsPage !== 1) {
@@ -654,6 +659,18 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                   )}
                 </div>
               )}
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search endpoints..."
+                  value={endpointSearch}
+                  onChange={(e) => { setEndpointSearch(e.target.value); setEndpointsPage(1); }}
+                  className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                />
+              </div>
             </div>
           </div>
           {endpointsData.length > 0 ? (() => {
@@ -676,34 +693,42 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 bg-white">
-                      {endpointsData.slice((endpointsPage - 1) * PAGE_SIZE, endpointsPage * PAGE_SIZE).map((endpoint, idx) => (
-                        <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                          <td className="px-3 py-2 text-sm font-medium truncate max-w-[200px]" title={endpoint.endpoint_name}>
-                            {epUrl ? (
-                              <a href={epUrl} target="_blank" rel="noopener noreferrer" className="text-[#FF3621] hover:underline">
-                                {endpoint.endpoint_name}
-                              </a>
-                            ) : endpoint.endpoint_name}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-500">
-                            {formatNumber(endpoint.total_dbus)}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
-                            {formatCurrency(endpoint.total_spend)}
+                      {searchedEndpointsData.length === 0 && endpointSearch ? (
+                        <tr>
+                          <td colSpan={3} className="px-3 py-8 text-center text-sm text-gray-500">
+                            No endpoints match your search.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        searchedEndpointsData.slice((endpointsPage - 1) * PAGE_SIZE, endpointsPage * PAGE_SIZE).map((endpoint, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                            <td className="px-3 py-2 text-sm font-medium truncate max-w-[200px]" title={endpoint.endpoint_name}>
+                              {epUrl ? (
+                                <a href={epUrl} target="_blank" rel="noopener noreferrer" className="text-[#FF3621] hover:underline">
+                                  {endpoint.endpoint_name}
+                                </a>
+                              ) : endpoint.endpoint_name}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-500">
+                              {formatNumber(endpoint.total_dbus)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
+                              {formatCurrency(endpoint.total_spend)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
-                {endpointsData.length > PAGE_SIZE && (
+                {searchedEndpointsData.length > PAGE_SIZE && (
                   <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
                     <p className="text-xs text-gray-500">
-                      {(endpointsPage - 1) * PAGE_SIZE + 1}–{Math.min(endpointsPage * PAGE_SIZE, endpointsData.length)} of {endpointsData.length}
+                      {(endpointsPage - 1) * PAGE_SIZE + 1}–{Math.min(endpointsPage * PAGE_SIZE, searchedEndpointsData.length)} of {searchedEndpointsData.length}
                     </p>
                     <div className="flex gap-1">
                       <button onClick={() => setEndpointsPage(p => Math.max(1, p - 1))} disabled={endpointsPage === 1} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Prev</button>
-                      <button onClick={() => setEndpointsPage(p => Math.min(Math.ceil(endpointsData.length / PAGE_SIZE), p + 1))} disabled={endpointsPage >= Math.ceil(endpointsData.length / PAGE_SIZE)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
+                      <button onClick={() => setEndpointsPage(p => Math.min(Math.ceil(searchedEndpointsData.length / PAGE_SIZE), p + 1))} disabled={endpointsPage >= Math.ceil(searchedEndpointsData.length / PAGE_SIZE)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
                     </div>
                   </div>
                 )}
@@ -952,13 +977,18 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       )}
                     </div>
                   )}
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={mlClusterSearch}
-                    onChange={(e) => { setMlClusterSearch(e.target.value); setMlClustersPage(1); }}
-                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-44"
-                  />
+                  <div className="relative w-44">
+                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search clusters..."
+                      value={mlClusterSearch}
+                      onChange={(e) => { setMlClusterSearch(e.target.value); setMlClustersPage(1); }}
+                      className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] w-full"
+                    />
+                  </div>
                 </div>
               </div>
               {paginatedMlClusters.length > 0 ? (
@@ -1111,13 +1141,18 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       )}
                     </div>
                   )}
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={agentSearch}
-                    onChange={(e) => { setAgentSearch(e.target.value); setAgentsPage(1); }}
-                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-44"
-                  />
+                  <div className="relative w-44">
+                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search agents..."
+                      value={agentSearch}
+                      onChange={(e) => { setAgentSearch(e.target.value); setAgentsPage(1); }}
+                      className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] w-full"
+                    />
+                  </div>
                 </div>
               </div>
               {paginatedAgents.length > 0 ? (

@@ -640,6 +640,8 @@ def delta_cache_invalidate(pattern: str | None = None) -> None:
 
 # Singleton WorkspaceClient instance
 _workspace_client: WorkspaceClient | None = None
+_workspace_client_lock = threading.Lock()
+_workspace_client_error: Exception | None = None
 
 
 def get_workspace_client() -> WorkspaceClient:
@@ -647,21 +649,31 @@ def get_workspace_client() -> WorkspaceClient:
 
     This prevents creating a new client on every request, which is expensive.
     The client is thread-safe and can be shared across requests.
+    Lock ensures only one thread initializes the client on startup — prevents
+    multiple concurrent auth/token fetches that delay the MV availability check.
     """
-    global _workspace_client
+    global _workspace_client, _workspace_client_error
 
-    if _workspace_client is None:
-        token = os.getenv("DATABRICKS_TOKEN")
-        host = os.getenv("DATABRICKS_HOST")
+    if _workspace_client is not None:
+        return _workspace_client
 
-        if token and host:
-            # Local development with explicit credentials
-            _workspace_client = WorkspaceClient(host=host, token=token)
-        else:
-            # Databricks App environment - use default auth
-            _workspace_client = WorkspaceClient()
-
-        logger.info("Created WorkspaceClient singleton")
+    with _workspace_client_lock:
+        if _workspace_client is not None:
+            return _workspace_client
+        if _workspace_client_error is not None:
+            raise _workspace_client_error
+        try:
+            token = os.getenv("DATABRICKS_TOKEN")
+            host = os.getenv("DATABRICKS_HOST")
+            if token and host:
+                _workspace_client = WorkspaceClient(host=host, token=token)
+            else:
+                _workspace_client = WorkspaceClient()
+            logger.info("Created WorkspaceClient singleton")
+        except Exception as e:
+            _workspace_client_error = e
+            logger.error("WorkspaceClient initialization failed: %s", e)
+            raise
 
     return _workspace_client
 

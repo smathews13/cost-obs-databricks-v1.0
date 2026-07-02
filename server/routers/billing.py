@@ -106,7 +106,7 @@ _MV_CHECK_INTERVAL = 1800  # 30 minutes
 def _check_mv_available() -> bool:
     """Check if materialized views are available (with caching).
 
-    Runs the SQL check in a thread with a 10-second timeout so a slow or
+    Runs the SQL check in a thread with a 30-second timeout so a slow or
     starting warehouse never blocks a bundle endpoint indefinitely.
     """
     now = time.time()
@@ -131,11 +131,11 @@ def _check_mv_available() -> bool:
             f.set_exception(e)
 
     threading.Thread(target=_daemon_run, daemon=True, name="sql-mv-check").start()
-    done, _ = _cfwait([future], timeout=10.0)
+    done, _ = _cfwait([future], timeout=30.0)
     if not done:
         # Don't lock out MVs for 30 min on a transient timeout (e.g. cold SDK init after
         # restart). Cache the negative result for only 15s so the next request retries.
-        logger.debug("MV availability check timed out after 10s — retrying in 15s")
+        logger.debug("MV availability check timed out after 30s — retrying in 15s")
         _mv_cache["available"] = False
         _mv_cache["checked_at"] = now - (_MV_CHECK_INTERVAL - 15)
         return False

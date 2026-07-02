@@ -17,9 +17,31 @@ logger = logging.getLogger(__name__)
 
 # Guard: skip system.lakeflow enriched queries for 2h after a timeout (matches TTLCache TTL).
 # Prevents every request from burning 45s waiting for a timeout when lakeflow is unavailable.
+# Circuit-breaker state is shared across worker threads — guard with a lock so we never
+# read a torn (available, last_failure) pair or flip-flop the flag on interleaved writes.
+import threading as _threading
+_lakeflow_lock = _threading.Lock()
 _lakeflow_available: bool = True
 _lakeflow_last_failure: float = 0.0
 _LAKEFLOW_RETRY_INTERVAL: float = 7200.0
+
+
+def _lakeflow_in_cooldown() -> bool:
+    with _lakeflow_lock:
+        return (not _lakeflow_available) and (_time.time() - _lakeflow_last_failure) < _LAKEFLOW_RETRY_INTERVAL
+
+
+def _lakeflow_mark_success() -> None:
+    global _lakeflow_available
+    with _lakeflow_lock:
+        _lakeflow_available = True
+
+
+def _lakeflow_mark_failure() -> None:
+    global _lakeflow_available, _lakeflow_last_failure
+    with _lakeflow_lock:
+        _lakeflow_available = False
+        _lakeflow_last_failure = _time.time()
 
 
 def get_default_start_date() -> str:
@@ -174,19 +196,25 @@ WITH job_usage AS (
     AND u.usage_metadata.job_id IS NOT NULL
     AND (u.custom_tags IS NULL OR size(u.custom_tags) = 0)
   GROUP BY u.usage_metadata.job_id
+),
+-- system.lakeflow.jobs is SCD Type 2 (~2.9x rows per job). Dedupe to latest live
+-- row per job so the LEFT JOIN doesn't fan out. job_id is STRING on both sides;
+-- avoid TRY_CAST-to-BIGINT which broke data-skipping and forced a shuffle-cast.
+jobs_latest AS (
+  SELECT job_id, name
+  FROM system.lakeflow.jobs
+  WHERE delete_time IS NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY change_time DESC) = 1
 )
 SELECT
   ju.job_id,
-  COALESCE(MAX(lj.name), MAX(ju.usage_job_name), ju.job_id) AS job_name,
-  MAX(ju.workspace_id) AS workspace_id,
-  MAX(ju.total_dbus) AS total_dbus,
-  MAX(ju.total_spend) AS total_spend,
-  MAX(ju.days_active) AS days_active
+  COALESCE(jl.name, ju.usage_job_name, ju.job_id) AS job_name,
+  ju.workspace_id,
+  ju.total_dbus,
+  ju.total_spend,
+  ju.days_active
 FROM job_usage ju
-LEFT JOIN system.lakeflow.jobs lj
-  ON TRY_CAST(ju.job_id AS BIGINT) = lj.job_id
-  AND lj.delete_time IS NULL
-GROUP BY ju.job_id
+LEFT JOIN jobs_latest jl ON ju.job_id = jl.job_id
 ORDER BY total_spend DESC
 LIMIT 1000
 """
@@ -231,17 +259,23 @@ WITH pipeline_usage AS (
     AND u.usage_metadata.dlt_pipeline_id IS NOT NULL
     AND (u.custom_tags IS NULL OR size(u.custom_tags) = 0)
   GROUP BY u.usage_metadata.dlt_pipeline_id
+),
+-- Dedupe SCD2 pipelines (~2x rows per pipeline) to latest live row per pipeline.
+pipelines_latest AS (
+  SELECT pipeline_id, name
+  FROM system.lakeflow.pipelines
+  WHERE delete_time IS NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY pipeline_id ORDER BY change_time DESC) = 1
 )
 SELECT
   pu.pipeline_id,
-  COALESCE(MAX(lp.name), pu.pipeline_id) AS pipeline_name,
-  MAX(pu.workspace_id) AS workspace_id,
-  MAX(pu.total_dbus) AS total_dbus,
-  MAX(pu.total_spend) AS total_spend,
-  MAX(pu.days_active) AS days_active
+  COALESCE(pl.name, pu.pipeline_id) AS pipeline_name,
+  pu.workspace_id,
+  pu.total_dbus,
+  pu.total_spend,
+  pu.days_active
 FROM pipeline_usage pu
-LEFT JOIN system.lakeflow.pipelines lp ON pu.pipeline_id = lp.pipeline_id
-GROUP BY pu.pipeline_id
+LEFT JOIN pipelines_latest pl ON pu.pipeline_id = pl.pipeline_id
 ORDER BY total_spend DESC
 LIMIT 1000
 """
@@ -1097,19 +1131,17 @@ async def get_tagging_dashboard_bundle(
 
     def lakeflow_query(enriched_sql: str, fallback_sql: str, query_params: dict, flag: list) -> list[dict[str, Any]]:
         """Try lakeflow-enriched query with 45s timeout; fall back to billing-only on failure."""
-        global _lakeflow_available, _lakeflow_last_failure
-        if not _lakeflow_available and (_time.time() - _lakeflow_last_failure) < _LAKEFLOW_RETRY_INTERVAL:
+        if _lakeflow_in_cooldown():
             flag[0] = False
             return execute_query(fallback_sql, query_params)
         try:
             result = execute_queries_parallel([("lakeflow_enriched", lambda: execute_query(enriched_sql, query_params))], timeout=45.0)
             if result.get("lakeflow_enriched") is not None:
-                _lakeflow_available = True
+                _lakeflow_mark_success()
                 return result["lakeflow_enriched"]
         except Exception as e:
             logger.warning(f"Lakeflow query failed/timed out ({type(e).__name__}); falling back to billing-only")
-        _lakeflow_available = False
-        _lakeflow_last_failure = _time.time()
+        _lakeflow_mark_failure()
         logger.warning("system.lakeflow unavailable; skipping enriched queries for %.0fs", _LAKEFLOW_RETRY_INTERVAL)
         flag[0] = False
         return execute_query(fallback_sql, query_params)

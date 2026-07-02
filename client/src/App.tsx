@@ -368,11 +368,11 @@ function Dashboard() {
   const { applyPricing, multiplier: pricingMultiplier } = usePricing();
 
   // Central warehouse warming poller — single source of truth for warehouse state.
-  // Polls every 5s while warming_up, backs off to 60s once warm.
+  // Polls every 5s while warming_up, 15s once warm (catches post-idle auto-stop within ~15s).
   const { data: warehouseStatus } = useQuery<{ status: "warm" | "warming_up" | "unavailable"; state?: string }>({
     queryKey: ["health", "sql-warehouse"],
     queryFn: () => fetch("/api/health/sql-warehouse").then(r => r.ok ? r.json().catch(() => ({ status: "warm" })) : { status: "warm" }).catch(() => ({ status: "warm" })),
-    refetchInterval: (query) => (query.state.data?.status === "warming_up") ? 5000 : 60000,
+    refetchInterval: (query) => (query.state.data?.status === "warming_up") ? 5000 : 15000,
     staleTime: 0,
   });
   const warehouseWarming = warehouseStatus?.status === "warming_up";

@@ -463,12 +463,14 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
     return map;
   }, [data?.apps, data?.timeseries]);
 
-  // Resolve workspace names: prefer billing-wide name map (most complete), then backend name, then raw ID
+  // Resolve workspace names: prefer billing-wide name map (most complete), then
+  // backend name, then a formatted "Workspace <id>" so filter rows never show
+  // a bare workspace ID when the name is missing (matches the top-nav pattern).
   const resolveWsName = useCallback((wsId: string) => {
     if (workspaceNameMap?.[wsId]) return workspaceNameMap[wsId];
     const backendWs = data?.workspaces?.find(w => w.id === wsId);
     if (backendWs?.name && backendWs.name !== wsId) return backendWs.name;
-    return wsId;
+    return `Workspace ${wsId}`;
   }, [data?.workspaces, workspaceNameMap]);
 
   // Available workspaces for filtering (resolved to names)
@@ -476,10 +478,9 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
     if (!data?.workspaces) return [];
     return data.workspaces.map(ws => ({
       id: ws.id,
-      // prefer billing-wide name map (most complete), then backend-resolved name, then ID
-      name: workspaceNameMap?.[ws.id] || (ws.name !== ws.id ? ws.name : null) || ws.id,
+      name: resolveWsName(ws.id),
     })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [data?.workspaces, workspaceNameMap]);
+  }, [data?.workspaces, resolveWsName]);
 
   // Sync-add: unseen workspace IDs get added to the filter automatically.
   useEffect(() => {

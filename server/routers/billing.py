@@ -133,9 +133,11 @@ def _check_mv_available() -> bool:
     threading.Thread(target=_daemon_run, daemon=True, name="sql-mv-check").start()
     done, _ = _cfwait([future], timeout=10.0)
     if not done:
-        logger.debug("MV availability check timed out after 10s — assuming unavailable")
+        # Don't lock out MVs for 30 min on a transient timeout (e.g. cold SDK init after
+        # restart). Cache the negative result for only 15s so the next request retries.
+        logger.debug("MV availability check timed out after 10s — retrying in 15s")
         _mv_cache["available"] = False
-        _mv_cache["checked_at"] = now
+        _mv_cache["checked_at"] = now - (_MV_CHECK_INTERVAL - 15)
         return False
     try:
         available = future.result()

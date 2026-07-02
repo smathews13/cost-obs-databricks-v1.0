@@ -344,7 +344,9 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
     if (!showHistoricalQueries) {
       queries = queries.filter((q) => !isHistoricalQuery(q));
     }
-    queries = queries.filter((q) => querySourceFilters.includes(q.query_source_type));
+    if (querySourceFilters.length > 0) {
+      queries = queries.filter((q) => querySourceFilters.includes(q.query_source_type));
+    }
     queries.sort((a, b) => {
       let aVal: number | string = 0;
       let bVal: number | string = 0;
@@ -789,7 +791,9 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                 const isPartialWs = warehouseSizeWsFilter.length > 0 && warehouseSizeWsFilter.length < wsEntries.length;
                 const selectedWsName = warehouseSizeWsFilter.length === 1 ? (wsMap.get(warehouseSizeWsFilter[0]) || warehouseSizeWsFilter[0]) : null;
 
-                const warehouses = allWh.filter((w: QueryCostByWarehouse) => !!w.workspace_id && warehouseSizeWsFilter.includes(w.workspace_id));
+                const warehouses = warehouseSizeWsFilter.length === 0
+                  ? allWh
+                  : allWh.filter((w: QueryCostByWarehouse) => !!w.workspace_id && warehouseSizeWsFilter.includes(w.workspace_id));
 
                 const bySize: Record<string, number> = {};
                 for (const w of warehouses) {

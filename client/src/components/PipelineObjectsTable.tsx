@@ -107,7 +107,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
     return !obj.object_name || obj.object_name === obj.object_id;
   };
   const filteredObjects = data.objects.filter(
-    (obj) => filter.includes(obj.object_type as "Job" | "SDP Pipeline") &&
+    (obj) => (filter.length === 0 || filter.includes(obj.object_type as "Job" | "SDP Pipeline")) &&
       (showHistorical || !isHistorical(obj)) &&
       (!search || (obj.object_name || "").toLowerCase().includes(searchLower) ||
         (obj.object_id || "").toLowerCase().includes(searchLower) ||

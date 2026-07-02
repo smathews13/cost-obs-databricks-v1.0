@@ -1103,7 +1103,11 @@ export function CloudCostsView({
                     <div className="max-h-64 overflow-y-auto">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspaces</span>
-                        <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([...availableTableWorkspaces]); setCurrentPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">Reset</button>
+                        <div className="flex items-center gap-2 text-xs">
+                          <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([...availableTableWorkspaces]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                          <span className="text-gray-300">·</span>
+                          <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                        </div>
                       </div>
                       {availableTableWorkspaces
                         .filter(w => {
@@ -1158,7 +1162,11 @@ export function CloudCostsView({
                   <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                     <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Families</span>
-                      <button onClick={(e) => { e.stopPropagation(); setTableFamily([...availableTableFamilies]); setCurrentPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">Reset</button>
+                      <div className="flex items-center gap-2 text-xs">
+                        <button onClick={(e) => { e.stopPropagation(); setTableFamily([...availableTableFamilies]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                        <span className="text-gray-300">·</span>
+                        <button onClick={(e) => { e.stopPropagation(); setTableFamily([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                      </div>
                     </div>
                     {availableTableFamilies.map(f => (
                       <button

@@ -132,7 +132,8 @@ export function UntaggedResourcesTable({
   const getItems = () => {
     if (!singleTypeSelected) {
       const items: any[] = [];
-      const has = (t: Exclude<UntaggedTab, "all">) => selectedResourceTypes.includes(t);
+      // Empty selection (from Clear) is treated as "show all" so Clear doesn't hide every row.
+      const has = (t: Exclude<UntaggedTab, "all">) => selectedResourceTypes.length === 0 || selectedResourceTypes.includes(t);
       if (has("clusters")) items.push(...(data.untagged.clusters?.items || []).map(i => ({ ...i, _name: i.cluster_name, _id: i.cluster_id, _type: "clusters" })));
       if (has("jobs")) items.push(...(data.untagged.jobs?.items || []).map(i => ({ ...i, _name: i.job_name, _id: i.job_id, _type: "jobs" })));
       if (has("pipelines")) items.push(...(data.untagged.pipelines?.items || []).map(i => ({ ...i, _name: i.pipeline_name, _id: i.pipeline_id, _type: "pipelines" })));

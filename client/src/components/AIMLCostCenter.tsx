@@ -338,6 +338,10 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
   const endpointsWorkspaceFiltered = useMemo(() => {
     if (!data?.endpoints?.endpoints) return [];
     const rows = data.endpoints.endpoints.filter(e => e.endpoint_name && e.endpoint_name !== 'UNKNOWN');
+    // Empty selection (from Clear) is treated as "show all" so Clear doesn't
+    // silently hide every endpoint. Only apply the workspace filter when there
+    // is an actual partial selection.
+    if (endpointsWorkspaceFilter.length === 0) return rows;
     return rows.filter(e => !!e.workspace_id && endpointsWorkspaceFilter.includes(e.workspace_id));
   }, [data, endpointsWorkspaceFilter]);
 
@@ -666,7 +670,11 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</span>
-                        <button onClick={(e) => { e.stopPropagation(); setEndpointsWorkspaceFilter([...endpointWorkspaces]); setEndpointsPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">Reset</button>
+                        <div className="flex items-center gap-2 text-xs">
+                          <button onClick={(e) => { e.stopPropagation(); setEndpointsWorkspaceFilter([...endpointWorkspaces]); setEndpointsPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                          <span className="text-gray-300">·</span>
+                          <button onClick={(e) => { e.stopPropagation(); setEndpointsWorkspaceFilter([]); setEndpointsPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                        </div>
                       </div>
                       {endpointWorkspaces.map(wsId => (
                         <button
@@ -795,7 +803,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
             };
             const allModelRows = data.models?.models || [];
             const distinctTypes = Array.from(new Set(allModelRows.map(m => m.model_type))).filter(Boolean);
-            const filteredModels = allModelRows.filter(m => modelsTypeFilters.includes(m.model_type));
+            const filteredModels = modelsTypeFilters.length === 0 ? allModelRows : allModelRows.filter(m => modelsTypeFilters.includes(m.model_type));
             const pageModels = filteredModels.slice((modelsPage - 1) * PAGE_SIZE, modelsPage * PAGE_SIZE);
             return (
               <>
@@ -924,7 +932,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
           const historicalMlCount = allMlClusters.filter(isHistoricalMlCluster).length;
           const availableRuntimes = Array.from(new Set(allMlClusters.map(c => c.runtime_version).filter(Boolean))).sort() as string[];
           const searchedMlClusters = allMlClusters.filter(c => showHistoricalMlClusters || !isHistoricalMlCluster(c));
-          const runtimeFilteredClusters = searchedMlClusters.filter(c => mlRuntimeFilter.includes(c.runtime_version));
+          const runtimeFilteredClusters = mlRuntimeFilter.length === 0 ? searchedMlClusters : searchedMlClusters.filter(c => mlRuntimeFilter.includes(c.runtime_version));
           const filteredMlClusters = mlClusterSearch
             ? runtimeFilteredClusters.filter(c =>
                 (c.cluster_name || "").toLowerCase().includes(mlClusterSearch.toLowerCase()) ||
@@ -1095,7 +1103,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
           const agentTypes = Array.from(new Set(allAgents.map(a => a.agent_type || "Agent")));
           const filteredAgents = allAgents
             .filter(a => showHistoricalAgents || !isHistoricalAgent(a))
-            .filter(a => agentTypeFilter.includes(a.agent_type || "Agent"))
+            .filter(a => agentTypeFilter.length === 0 || agentTypeFilter.includes(a.agent_type || "Agent"))
             .filter(a => !agentSearch || (a.agent_name || "").toLowerCase().includes(agentSearch.toLowerCase()) || (a.endpoint_id || "").toLowerCase().includes(agentSearch.toLowerCase()));
           const agentTotalPages = Math.ceil(filteredAgents.length / PAGE_SIZE);
           const agentStart = (agentsPage - 1) * PAGE_SIZE;

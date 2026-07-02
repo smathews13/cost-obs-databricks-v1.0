@@ -1,4 +1,4 @@
-import { Fragment, useState, useRef, useEffect, memo } from "react";
+import { Fragment, useState, useRef, useEffect, useMemo, memo } from "react";
 import type { WorkspaceBreakdownResponse } from "@/types/billing";
 import { formatCurrency, formatNumber, workspaceUrl } from "@/utils/formatters";
 import { formatIdentity } from "@/utils/identity";
@@ -44,7 +44,9 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
   const [productFilters, setProductFilters] = useState<string[]>([]);
+  const productFiltersSeen = useRef<Set<string>>(new Set());
   const [userFilters, setUserFilters] = useState<string[]>([]);
+  const userFiltersSeen = useRef<Set<string>>(new Set());
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const productDropdownRef = useRef<HTMLDivElement>(null);
@@ -58,6 +60,32 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [productDropdownOpen, userDropdownOpen]);
+
+  const workspaces = data?.workspaces;
+  const allProducts = useMemo(
+    () => [...new Set((workspaces || []).flatMap((ws) => ws.top_products || []))].sort(),
+    [workspaces],
+  );
+  const allUsers = useMemo(
+    () => [...new Set((workspaces || []).flatMap((ws) => ws.top_users || []))].sort(),
+    [workspaces],
+  );
+
+  useEffect(() => {
+    const seen = productFiltersSeen.current;
+    const fresh = allProducts.filter((x) => !seen.has(x));
+    if (fresh.length === 0) return;
+    setProductFilters((prev) => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach((x) => seen.add(x));
+  }, [allProducts]);
+
+  useEffect(() => {
+    const seen = userFiltersSeen.current;
+    const fresh = allUsers.filter((x) => !seen.has(x));
+    if (fresh.length === 0) return;
+    setUserFilters((prev) => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach((x) => seen.add(x));
+  }, [allUsers]);
 
   const itemsPerPage = 10;
   if (isLoading) {
@@ -93,16 +121,17 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
   const allHistorical = historicalCount === data.workspaces.length;
   const activeWorkspaces = (showHistorical || allHistorical) ? data.workspaces : data.workspaces.filter((ws) => !isHistoricalWs(ws));
 
-  const allProducts = [...new Set(activeWorkspaces.flatMap((ws) => ws.top_products || []))].sort();
-  const allUsers = [...new Set(activeWorkspaces.flatMap((ws) => ws.top_users || []))].sort();
-
-  const filterActive = productFilters.length > 0 || userFilters.length > 0;
+  // Clear sets the filter to []; treat empty as "show all" (not "hide everything")
+  // so the Clear button matches the All button's effect on visible rows.
+  const isProductFilterActive = productFilters.length > 0 && productFilters.length < allProducts.length;
+  const isUserFilterActive = userFilters.length > 0 && userFilters.length < allUsers.length;
+  const filterActive = isProductFilterActive || isUserFilterActive;
   const filteredByDropdowns = filterActive
     ? activeWorkspaces.filter((ws) => {
         const products = ws.top_products || [];
         const users = ws.top_users || [];
-        const productMatch = productFilters.length === 0 || productFilters.some((p) => products.includes(p));
-        const userMatch = userFilters.length === 0 || userFilters.some((u) => users.includes(u));
+        const productMatch = !isProductFilterActive || productFilters.some((p) => products.includes(p));
+        const userMatch = !isUserFilterActive || userFilters.some((u) => users.includes(u));
         return productMatch && userMatch;
       })
     : activeWorkspaces;
@@ -149,14 +178,9 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
             <div className="relative" ref={productDropdownRef}>
               <button
                 onClick={() => { setProductDropdownOpen((o) => !o); setUserDropdownOpen(false); }}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${productFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${isProductFilterActive ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
               >
-                {productFilters.length === 0 ? "Products" : productFilters.length === 1 ? formatProductName(productFilters[0]) : `${productFilters.length} Products`}
-                {productFilters.length > 0 && (
-                  <button onClick={(e) => { e.stopPropagation(); setProductFilters([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
-                    <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                )}
+                {productFilters.length === 1 ? formatProductName(productFilters[0]) : isProductFilterActive ? `${productFilters.length} Products` : "Products"}
                 <svg className={`h-3 w-3 transition-transform ${productDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {productDropdownOpen && (
@@ -187,14 +211,9 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
             <div className="relative" ref={userDropdownRef}>
               <button
                 onClick={() => { setUserDropdownOpen((o) => !o); setProductDropdownOpen(false); }}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${userFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${isUserFilterActive ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
               >
-                {userFilters.length === 0 ? "Users" : userFilters.length === 1 ? formatIdentity(userFilters[0]) : `${userFilters.length} Users`}
-                {userFilters.length > 0 && (
-                  <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
-                    <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                )}
+                {userFilters.length === 1 ? formatIdentity(userFilters[0]) : isUserFilterActive ? `${userFilters.length} Users` : "Users"}
                 <svg className={`h-3 w-3 transition-transform ${userDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {userDropdownOpen && (

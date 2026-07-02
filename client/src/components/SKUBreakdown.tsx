@@ -28,12 +28,35 @@ const SKU_COLORS = [
 export function SKUBreakdown({ data, isLoading, workspaces, dateRange, workspaceNameMap }: SKUBreakdownProps) {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>("all");
   const [workspaceFilters, setWorkspaceFilters] = useState<string[]>([]);
+  const workspaceFiltersSeen = useRef<Set<string>>(new Set());
   const [filteredData, setFilteredData] = useState<SKUBreakdownResponse | undefined>(undefined);
   const [filterLoading, setFilterLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Sync workspaceFilters → selectedWorkspace for the existing fetch logic
+  const allWorkspaceIds = useMemo(
+    () => (workspaces || []).map((ws) => String(ws.workspace_id)),
+    [workspaces],
+  );
+
+  // Sync-add: unseen workspaces get added to the filter automatically, preserving user
+  // unselections of items already seen. First load acts as default-all init.
+  useEffect(() => {
+    const seen = workspaceFiltersSeen.current;
+    const fresh = allWorkspaceIds.filter((x) => !seen.has(x));
+    if (fresh.length === 0) return;
+    setWorkspaceFilters((prev) => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach((x) => seen.add(x));
+  }, [allWorkspaceIds]);
+
+  // Clear sets the filter to []; length === 1 routes through the scoped endpoint,
+  // otherwise (empty or partial multi-select) we show the account-wide view. So
+  // an empty selection is functionally "all" — don't flag it as an active filter.
+  const isWorkspaceFilterActive = workspaceFilters.length > 0 && workspaceFilters.length < allWorkspaceIds.length;
+
+  // Sync workspaceFilters → selectedWorkspace for the existing fetch logic.
+  // Only route through the workspace-scoped endpoint when the user has selected exactly one;
+  // "all selected" (default) and any partial multi-selection use the account-wide payload.
   useEffect(() => {
     setSelectedWorkspace(workspaceFilters.length === 1 ? workspaceFilters[0] : "all");
   }, [workspaceFilters]);
@@ -85,14 +108,13 @@ export function SKUBreakdown({ data, isLoading, workspaces, dateRange, workspace
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setDropdownOpen(!dropdownOpen)}
-        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${workspaceFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${isWorkspaceFilterActive ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
       >
-        {workspaceFilters.length === 0 ? "Workspaces" : workspaceFilters.length === 1 ? (selectedWorkspaceName || workspaceFilters[0]) : `${workspaceFilters.length} Workspaces`}
-        {workspaceFilters.length > 0 && (
-          <button onClick={(e) => { e.stopPropagation(); setWorkspaceFilters([]); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
-            <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        )}
+        {workspaceFilters.length === 1
+          ? (selectedWorkspaceName || workspaceFilters[0])
+          : isWorkspaceFilterActive
+          ? `${workspaceFilters.length} Workspaces`
+          : "Workspaces"}
         <svg className={`h-3 w-3 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
@@ -181,7 +203,7 @@ export function SKUBreakdown({ data, isLoading, workspaces, dateRange, workspace
               Filtered to: {selectedWorkspaceName}
             </p>
           )}
-          {workspaceFilters.length > 1 && (
+          {workspaceFilters.length > 1 && isWorkspaceFilterActive && (
             <p className="text-xs text-amber-600 mt-1">Showing aggregate view — select one workspace to filter by workspace</p>
           )}
         </div>

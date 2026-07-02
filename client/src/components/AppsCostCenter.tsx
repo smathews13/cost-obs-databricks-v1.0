@@ -498,15 +498,20 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   // Filter apps by search query and workspace
   const filteredApps = useMemo(() => {
     if (!data?.apps?.apps) return [];
-    let apps = data.apps.apps.filter(a =>
-      a.workspace_names?.some(ws => selectedWorkspaceNames.has(ws))
-    );
+    // Empty selection (from Clear) is treated as "show all" so Clear doesn't
+    // silently hide every row. Only apply the workspace filter when there is
+    // an actual partial selection.
+    let apps = selectedWorkspaces.length === 0
+      ? data.apps.apps
+      : data.apps.apps.filter(a =>
+          a.workspace_names?.some(ws => selectedWorkspaceNames.has(ws))
+        );
     if (!searchQuery.trim()) return apps;
     const q = searchQuery.toLowerCase();
     return apps.filter(
       (a) => a.app_name.toLowerCase().includes(q) || a.app_id.toLowerCase().includes(q)
     );
-  }, [data?.apps, searchQuery, selectedWorkspaceNames]);
+  }, [data?.apps, searchQuery, selectedWorkspaces.length, selectedWorkspaceNames]);
 
   // Reset to page 1 whenever filters change
   useEffect(() => {
@@ -986,7 +991,11 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               <span className="rounded-full bg-orange-50 px-2.5 py-0.5 font-medium text-[#FF3621]">
                 {selectedWorkspaces.length} of {availableWorkspaces.length} workspaces selected
               </span>
-              <button onClick={() => setSelectedWorkspaces([...availableWorkspaces.map(w => w.id)])} className="text-gray-500 hover:text-gray-700 underline">Reset to all</button>
+              <span className="inline-flex items-center gap-2">
+                <button onClick={() => setSelectedWorkspaces([...availableWorkspaces.map(w => w.id)])} className="text-gray-500 hover:text-gray-700 underline">All</button>
+                <span className="text-gray-300">·</span>
+                <button onClick={() => setSelectedWorkspaces([])} className="text-gray-500 hover:text-gray-700 underline">Clear</button>
+              </span>
             </div>
           ) : (
             <div className="mb-4 flex max-h-20 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
@@ -1000,7 +1009,11 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   </button>
                 </span>
               ))}
-              <button onClick={() => setSelectedWorkspaces([...availableWorkspaces.map(w => w.id)])} className="text-xs text-gray-500 hover:text-gray-700">Reset</button>
+              <span className="inline-flex items-center gap-2 text-xs">
+                <button onClick={() => setSelectedWorkspaces([...availableWorkspaces.map(w => w.id)])} className="text-gray-500 hover:text-gray-700">All</button>
+                <span className="text-gray-300">·</span>
+                <button onClick={() => setSelectedWorkspaces([])} className="text-gray-500 hover:text-gray-700">Clear</button>
+              </span>
             </div>
           )
         )}
@@ -1226,8 +1239,12 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
       {data?.connected_artifacts && data.connected_artifacts.length > 0 && (() => {
         const artifactTypes = [...new Set(data.connected_artifacts.map((a: AppsConnectedArtifact) => a.artifact_type))].filter((t: string) => t && t !== 'UNKNOWN' && t !== 'Unknown').sort();
         const allAppNames = [...new Set(data.connected_artifacts.map((a: AppsConnectedArtifact) => a.app_name).filter(Boolean))].sort() as string[];
-        let filteredArtifacts = data.connected_artifacts.filter((a: AppsConnectedArtifact) => artifactTypeFilters.includes(a.artifact_type));
-        filteredArtifacts = filteredArtifacts.filter((a: AppsConnectedArtifact) => artifactAppFilter.includes(a.app_name || ''));
+        let filteredArtifacts = artifactTypeFilters.length === 0
+          ? data.connected_artifacts
+          : data.connected_artifacts.filter((a: AppsConnectedArtifact) => artifactTypeFilters.includes(a.artifact_type));
+        if (artifactAppFilter.length > 0) {
+          filteredArtifacts = filteredArtifacts.filter((a: AppsConnectedArtifact) => artifactAppFilter.includes(a.app_name || ''));
+        }
         if (artifactSearch) {
           const q = artifactSearch.toLowerCase();
           filteredArtifacts = filteredArtifacts.filter((a: AppsConnectedArtifact) =>

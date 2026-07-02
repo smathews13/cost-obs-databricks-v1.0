@@ -901,7 +901,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   {selectedWorkspaces.length === 0 || selectedWorkspaces.length === availableWorkspaces.length
                     ? "Workspace"
                     : selectedWorkspaces.length === 1
-                    ? (availableWorkspaces.find(ws => ws.id === selectedWorkspaces[0])?.name ?? selectedWorkspaces[0])
+                    ? resolveWsName(selectedWorkspaces[0])
                     : `${selectedWorkspaces.length} Workspaces`}
                   <svg className={`h-3 w-3 transition-transform ${wsFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                 </button>

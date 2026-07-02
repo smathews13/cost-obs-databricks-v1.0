@@ -280,7 +280,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                 placeholder={viewMode === "by-user" ? "Search users..." : viewMode === "by-notebook" ? "Search notebooks..." : "Search clusters..."}
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-                className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] w-full"
+                className="w-full rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
               />
             </div>
           </div>

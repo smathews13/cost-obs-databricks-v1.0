@@ -1660,6 +1660,7 @@ export function WarehouseIdleTimeView({
       warehouse_size: string;
       warehouse_type: string;
       workspace_id: string;
+      uptime_source?: string;
       total_running_minutes: number;
       total_query_minutes: number;
       idle_minutes: number;
@@ -1739,7 +1740,7 @@ export function WarehouseIdleTimeView({
         <div>
           <h3 className="text-base font-semibold text-gray-900">Top Warehouses by Idle Time</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Idle time = warehouse uptime (from lifecycle events) minus active query time. Estimated idle spend is prorated from total billed spend.
+            Idle time = warehouse uptime minus active query time. Uptime is derived from warehouse lifecycle events, or falls back to hourly billing buckets (badged <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-1 py-0 text-[10px] font-medium text-amber-700 align-middle">est.</span>) when no events are emitted. Estimated idle spend is prorated from total billed spend; est. rows are directionally noisy.
           </p>
         </div>
         {data?.available && data.warehouses.length > 0 && (() => {
@@ -1889,7 +1890,19 @@ export function WarehouseIdleTimeView({
                           {wh.warehouse_type === 'SERVERLESS' ? 'Serverless' : 'Classic'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.total_running_minutes)}</td>
+                      <td className="px-4 py-3 text-right text-gray-700">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>{fmtHours(wh.total_running_minutes)}</span>
+                          {wh.uptime_source === "billing" && (
+                            <span
+                              className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+                              title="Approximate — derived from hourly billing buckets because no lifecycle events were emitted in the window. Sub-hour bursts inflate uptime, which in turn inflates idle time and idle spend."
+                            >
+                              est.
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.idle_minutes)}</td>
                       <td className="px-4 py-3 text-right">
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${wh.idle_pct >= 80 ? "bg-red-100 text-red-700" : wh.idle_pct >= 50 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-700"}`}>
@@ -1897,7 +1910,15 @@ export function WarehouseIdleTimeView({
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right text-gray-700">{fmt$(wh.total_spend)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-red-600">{fmt$(wh.estimated_idle_spend)}</td>
+                      <td className={`px-4 py-3 text-right ${wh.uptime_source === "billing" ? "text-red-500" : "font-medium text-red-600"}`}>
+                        {wh.uptime_source === "billing" ? (
+                          <span title="Approximate — uptime for this warehouse comes from billing buckets, so the idle-spend proration is directionally noisy.">
+                            ~{fmt$(wh.estimated_idle_spend)}
+                          </span>
+                        ) : (
+                          fmt$(wh.estimated_idle_spend)
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

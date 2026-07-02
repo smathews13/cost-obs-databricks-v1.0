@@ -80,6 +80,7 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
   const [filteredData, setFilteredData] = useState<ProductBreakdownResponse | undefined>(undefined);
   const [filterLoading, setFilterLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [wsSearch, setWsSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Seed with all workspaces on first data load
@@ -154,14 +155,18 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
     return () => { cancelled = true; };
   }, [wsKey, dateRange?.startDate, dateRange?.endDate, isAll, isEmpty, selectedWorkspaces]);
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click; reset search on close so reopening starts fresh
   useEffect(() => {
+    if (!dropdownOpen) {
+      setWsSearch("");
+      return;
+    }
     const handleClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
       }
     };
-    if (dropdownOpen) document.addEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [dropdownOpen]);
 
@@ -190,6 +195,11 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
     }),
     [workspaces, workspaceNameMap],
   );
+  const filteredWsItems = useMemo(() => {
+    if (!wsSearch.trim()) return wsItems;
+    const q = wsSearch.toLowerCase();
+    return wsItems.filter((it) => it.wsName.toLowerCase().includes(q) || it.wsId.toLowerCase().includes(q));
+  }, [wsItems, wsSearch]);
 
   const workspaceSelector = workspaces && workspaces.length > 1 ? (
     <div className="relative" ref={dropdownRef}>
@@ -216,15 +226,29 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
               <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaces([]); }} className="text-gray-500 hover:text-gray-800">Clear</button>
             </div>
           </div>
-          <VirtualizedList
-            items={wsItems}
-            itemHeight={36}
-            maxHeight={256}
-            getKey={(it) => it.wsId}
-            renderItem={(it) => (
-              <WsRow wsId={it.wsId} wsName={it.wsName} selected={selectedSet.has(it.wsId)} onToggle={toggleWs} />
-            )}
-          />
+          <div className="border-b border-gray-100 p-2">
+            <input
+              type="text"
+              value={wsSearch}
+              onChange={(e) => setWsSearch(e.target.value)}
+              placeholder="Search workspaces..."
+              className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+              autoFocus
+            />
+          </div>
+          {filteredWsItems.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-gray-500">No matching workspaces</div>
+          ) : (
+            <VirtualizedList
+              items={filteredWsItems}
+              itemHeight={36}
+              maxHeight={256}
+              getKey={(it) => it.wsId}
+              renderItem={(it) => (
+                <WsRow wsId={it.wsId} wsName={it.wsName} selected={selectedSet.has(it.wsId)} onToggle={toggleWs} />
+              )}
+            />
+          )}
         </div>
       )}
     </div>

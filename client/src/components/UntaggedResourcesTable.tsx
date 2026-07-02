@@ -218,25 +218,25 @@ export function UntaggedResourcesTable({
       </div>
 
       {suggestedTags.length > 0 && allItems.length > 0 && (
-        <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-4">
-          <div className="flex items-start gap-3">
-            <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+          <div className="flex items-start gap-2">
+            <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
             <div className="flex-1">
               <button className="flex w-full items-center justify-between" onClick={() => handleSuggestedTagsMinimize(!suggestedTagsMinimized)}>
-                <p className="text-sm font-medium text-orange-800">Suggested Tags for Your Environment</p>
-                <svg className={`h-4 w-4 text-orange-500 transition-transform ${suggestedTagsMinimized ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <p className="text-xs font-medium text-orange-800">Suggested Tags for Your Environment</p>
+                <svg className={`h-3.5 w-3.5 text-orange-500 transition-transform ${suggestedTagsMinimized ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
               {!suggestedTagsMinimized && (
                 <>
-                  <p className="mt-1 text-xs text-orange-700">Based on tags already in use across your resources:</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <p className="mt-0.5 text-[11px] text-orange-700">Based on tags already in use across your resources:</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {suggestedTags.map((tag) => (
                       <div key={tag.key} className="group relative">
-                        <span className="inline-flex items-center rounded-full bg-orange-100 px-3 py-1 text-sm font-medium text-orange-800 cursor-help">
+                        <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 cursor-help">
                           {tag.key}
                         </span>
                         <div className="invisible absolute bottom-full left-0 z-10 mb-2 w-64 rounded-lg bg-gray-900 p-3 text-xs text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100">
@@ -331,7 +331,7 @@ export function UntaggedResourcesTable({
             placeholder={activeUntaggedTab === "all" ? "Search all untagged resources..." : `Search untagged ${activeUntaggedTab}...`}
             value={searchQuery}
             onChange={(e) => { onSearchChange(e.target.value); onPageChange(1); }}
-            className="w-64 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+            className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
           />
           {searchQuery && (
             <button onClick={() => { onSearchChange(""); onPageChange(1); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-600">

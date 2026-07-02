@@ -7,17 +7,17 @@ export interface ExportSections {
   products: boolean;
   workspaces: boolean;
   skus: boolean;
-  anomalies: boolean;
   pipelines: boolean;
   interactive: boolean;
-  awsCosts: boolean;
+  query360: boolean;
   aiml: boolean;
   apps: boolean;
   tagging: boolean;
-  platformKPIs: boolean;
-  query360: boolean;
   users: boolean;
-  useCases: boolean;
+  platformKPIs: boolean;
+  anomalies: boolean;
+  awsCosts: boolean;
+  optimize: boolean;
 }
 
 export type ExportFormat = "pdf" | "csv";
@@ -29,13 +29,13 @@ interface ExportDialogProps {
   tabVisibility: TabVisibility;
 }
 
-// Map export sections to the tab that owns them — order matches tab layout
+// Map export sections to the tab that owns them — order matches tab nav so the
+// PDF reads in the same order as the app.
 const sectionToTab: Record<keyof ExportSections, keyof TabVisibility | null> = {
   summary: "dbu",
   products: "dbu",
   workspaces: "dbu",
   skus: "dbu",
-  anomalies: "dbu",
   pipelines: "dbu",
   interactive: "dbu",
   query360: "sql",
@@ -43,9 +43,10 @@ const sectionToTab: Record<keyof ExportSections, keyof TabVisibility | null> = {
   apps: "apps",
   tagging: "tagging",
   users: "users-groups",
-  useCases: "use-cases",
   platformKPIs: "kpis",
+  anomalies: "kpis",
   awsCosts: "infra",
+  optimize: "optimizer",
 };
 
 const sectionLabels: Record<keyof ExportSections, { label: string; description: string }> = {
@@ -53,17 +54,17 @@ const sectionLabels: Record<keyof ExportSections, { label: string; description: 
   products: { label: "Product Breakdown", description: "Spend by product category" },
   workspaces: { label: "Workspace Breakdown", description: "Top workspaces by spend" },
   skus: { label: "SKU Breakdown", description: "Spend by SKU/billing type" },
-  anomalies: { label: "Spend Anomalies", description: "Day-over-day spend changes" },
   pipelines: { label: "Jobs & Pipelines", description: "Top jobs and SDP pipelines" },
   interactive: { label: "Interactive Compute", description: "Notebook and cluster usage" },
   query360: { label: "Query", description: "SQL warehouse efficiency and query costs" },
-  aiml: { label: "AI/ML", description: "FMAPI providers and inference endpoints" },
-  apps: { label: "Apps", description: "Databricks Apps compute costs and per-app breakdown" },
-  tagging: { label: "Tagging", description: "Tag coverage and untagged resources" },
+  aiml: { label: "AI/ML", description: "Endpoints, models, ML clusters, and Agent Bricks" },
+  apps: { label: "Apps", description: "Databricks Apps costs and connected artifacts" },
+  tagging: { label: "Tagging", description: "Tag KPIs, coverage, top tags, untagged resources" },
   users: { label: "Users", description: "Top users by spend and product breakdown" },
-  useCases: { label: "Use Cases", description: "Use case spend attribution and go-live tracking" },
   platformKPIs: { label: "Platform KPIs & Trends", description: "Platform-wide metrics and trends" },
+  anomalies: { label: "Spend Anomalies", description: "Day-over-day spend changes" },
   awsCosts: { label: "Cloud Costs", description: "Estimated cloud infrastructure costs" },
+  optimize: { label: "Optimize", description: "Warehouse rightsizing and idle-time opportunities" },
 };
 
 export function ExportDialog({ isOpen, onClose, onExport, tabVisibility }: ExportDialogProps) {

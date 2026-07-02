@@ -656,7 +656,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
                 placeholder="Search users..."
                 value={searchQuery}
                 onChange={e => { setSearchQuery(e.target.value); setPage(0); }}
-                className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] w-full"
+                className="w-full rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
               />
             </div>
           </div>

@@ -24,6 +24,39 @@ import type { UsersGroupsBundle } from "@/hooks/useBillingData";
 import type { ExportSections } from "@/components/ExportDialog";
 import { formatCurrency, formatNumber } from "./formatters";
 
+// Optimize tab exports — pulled from /api/sql/warehouse-health and
+// /api/sql/warehouse-health/idle-time; kept structural so the two views
+// can evolve independently without churning the PDF payload.
+export interface OptimizeExport {
+  rightsizing?: {
+    available: boolean;
+    warehouses_analyzed: number;
+    recommendations: Array<{
+      warehouse_id: string;
+      warehouse_name: string | null;
+      warehouse_size: string | null;
+      workspace_id: string;
+      recommendation_type: string;
+      recommendation_text: string;
+    }>;
+  };
+  idle?: {
+    available: boolean;
+    serverless_detected: boolean;
+    warehouses: Array<{
+      warehouse_id: string;
+      warehouse_name: string;
+      warehouse_size: string;
+      warehouse_type: string;
+      workspace_id: string;
+      idle_minutes: number;
+      idle_pct: number;
+      total_spend: number;
+      estimated_idle_spend: number;
+    }>;
+  };
+}
+
 // Databricks navy — unified header color for all PDF tables
 const DB_HEADER: [number, number, number] = [27, 49, 57];
 // Databricks brand orange — section titles and accent elements
@@ -35,22 +68,6 @@ const DB_ALT_ROW: [number, number, number] = [248, 249, 250];
 // scattering `(doc as any)` casts throughout the file.
 function getLastTableY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
-}
-
-export interface UseCaseSummaryExport {
-  use_cases: Array<{
-    use_case_id: string;
-    name: string;
-    owner: string;
-    stage: string;
-    live_date: string | null;
-    total_spend: number;
-    total_dbus: number;
-    object_count: number;
-    percentage: number;
-  }>;
-  total_spend: number;
-  count: number;
 }
 
 export interface ExportData {
@@ -68,7 +85,7 @@ export interface ExportData {
   platformKPIs: PlatformKPIsResponse | undefined;
   query360: DBSQLDashboardBundle | undefined;
   users: UsersGroupsBundle | undefined;
-  useCases: UseCaseSummaryExport | undefined;
+  optimize: OptimizeExport | undefined;
   dateRange: { start: string; end: string };
   workspaceFilter?: { ids: string[]; names?: string[] };
 }
@@ -84,17 +101,17 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
     products: true,
     workspaces: true,
     skus: true,
-    anomalies: true,
     pipelines: true,
     interactive: true,
-    awsCosts: true,
+    query360: true,
     aiml: true,
     apps: true,
     tagging: true,
-    platformKPIs: true,
-    query360: true,
     users: true,
-    useCases: true,
+    platformKPIs: true,
+    anomalies: true,
+    awsCosts: true,
+    optimize: true,
   };
 
   // Read company name from settings for branding
@@ -286,42 +303,6 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
       columnStyles: {
         0: { cellWidth: 80 },
       },
-    });
-
-    yPos = getLastTableY(doc) + 12;
-  }
-
-  // Top 10 Spend Anomalies
-  if (includeSections.anomalies && data.anomalies && data.anomalies.anomalies.length > 0) {
-    if (yPos > 180) {
-      doc.addPage();
-      yPos = 20;
-    }
-
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(DB_ORANGE[0], DB_ORANGE[1], DB_ORANGE[2]);
-    doc.text("Top 10 Spend Changes (Day-over-Day)", 14, yPos);
-    doc.setTextColor(0, 0, 0);
-    yPos += 8;
-
-    const anomalyData = data.anomalies.anomalies.slice(0, 10).map((a) => [
-      format(new Date(a.usage_date), "MMM d, yyyy"),
-      formatCurrency(a.daily_spend),
-      formatCurrency(a.prev_day_spend),
-      formatCurrency(Math.abs(a.change_amount ?? 0)),
-      `${Math.abs(a.change_percent ?? 0).toFixed(1)}%`,
-    ]);
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [["Date", "Daily Spend", "Prev Day", "Change $", "Change %"]],
-      body: anomalyData,
-      theme: "striped",
-      headStyles: { fillColor: DB_HEADER, fontSize: 9 },
-      alternateRowStyles: { fillColor: DB_ALT_ROW },
-      bodyStyles: { fontSize: 9 },
-      margin: { left: 14, right: 14 },
     });
 
     yPos = getLastTableY(doc) + 12;
@@ -642,6 +623,120 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
 
       yPos = getLastTableY(doc) + 12;
     }
+
+    // Top Models
+    if (data.aiml.models?.models?.length && data.aiml.models.models.length > 0) {
+      if (yPos > 200) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
+      doc.text("Top 10 Models by Spend", 14, yPos);
+      doc.setTextColor(0, 0, 0);
+      yPos += 6;
+
+      const modelRows = data.aiml.models.models.slice(0, 10).map((m) => [
+        m.model_name.length > 32 ? m.model_name.substring(0, 29) + "..." : m.model_name,
+        m.model_type,
+        formatNumber(m.total_dbus),
+        formatCurrency(m.total_spend),
+        m.days_active.toString(),
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [["Model", "Type", "DBUs", "Spend", "Days"]],
+        body: modelRows,
+        theme: "striped",
+        headStyles: { fillColor: DB_HEADER, fontSize: 9 },
+        alternateRowStyles: { fillColor: DB_ALT_ROW },
+        bodyStyles: { fontSize: 8 },
+        margin: { left: 14, right: 14 },
+        columnStyles: {
+          0: { cellWidth: 60 },
+        },
+      });
+
+      yPos = getLastTableY(doc) + 12;
+    }
+
+    // Top ML Clusters
+    if (data.aiml.ml_clusters?.clusters?.length && data.aiml.ml_clusters.clusters.length > 0) {
+      if (yPos > 200) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
+      doc.text("Top 10 ML Clusters by Spend", 14, yPos);
+      doc.setTextColor(0, 0, 0);
+      yPos += 6;
+
+      const clusterRows = data.aiml.ml_clusters.clusters.slice(0, 10).map((c) => [
+        c.cluster_name.length > 28 ? c.cluster_name.substring(0, 25) + "..." : c.cluster_name,
+        c.runtime_version || "—",
+        (c.owner || "—").length > 20 ? (c.owner || "—").substring(0, 17) + "..." : c.owner || "—",
+        formatCurrency(c.total_spend),
+        c.days_active.toString(),
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [["Cluster", "Runtime", "Owner", "Spend", "Days"]],
+        body: clusterRows,
+        theme: "striped",
+        headStyles: { fillColor: DB_HEADER, fontSize: 9 },
+        alternateRowStyles: { fillColor: DB_ALT_ROW },
+        bodyStyles: { fontSize: 8 },
+        margin: { left: 14, right: 14 },
+      });
+
+      yPos = getLastTableY(doc) + 12;
+    }
+
+    // Top Agent Bricks
+    if (data.aiml.agent_bricks?.agents?.length && data.aiml.agent_bricks.agents.length > 0) {
+      if (yPos > 200) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
+      doc.text("Top 10 Agents by Spend", 14, yPos);
+      doc.setTextColor(0, 0, 0);
+      yPos += 6;
+
+      const agentRows = data.aiml.agent_bricks.agents.slice(0, 10).map((a) => [
+        (a.agent_name || "—").length > 28 ? (a.agent_name || "—").substring(0, 25) + "..." : a.agent_name || "—",
+        a.agent_type || "Agent",
+        formatCurrency(a.total_spend),
+        formatCurrency(a.avg_daily_spend),
+        a.days_active.toString(),
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [["Agent", "Type", "Spend", "Avg/Day", "Days"]],
+        body: agentRows,
+        theme: "striped",
+        headStyles: { fillColor: DB_HEADER, fontSize: 9 },
+        alternateRowStyles: { fillColor: DB_ALT_ROW },
+        bodyStyles: { fontSize: 8 },
+        margin: { left: 14, right: 14 },
+        columnStyles: {
+          0: { cellWidth: 60 },
+        },
+      });
+
+      yPos = getLastTableY(doc) + 12;
+    }
   }
 
   // Apps
@@ -704,6 +799,65 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
 
       yPos = getLastTableY(doc) + 12;
     }
+
+    // Connected Artifacts / Resources
+    if (data.apps.connected_artifacts && data.apps.connected_artifacts.length > 0) {
+      if (yPos > 200) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
+      doc.text("Connected Resources", 14, yPos);
+      doc.setTextColor(0, 0, 0);
+      yPos += 6;
+
+      // Group by (app_name, artifact_type) to keep the table compact — one row
+      // per bucket with a count column, sorted by resource count.
+      const grouped = new Map<string, { app: string; type: string; count: number; sample: string }>();
+      for (const a of data.apps.connected_artifacts) {
+        const key = `${a.app_name || "Unknown"}::${a.artifact_type || "Unknown"}`;
+        const existing = grouped.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          grouped.set(key, {
+            app: a.app_name || "Unknown",
+            type: a.artifact_type || "Unknown",
+            count: 1,
+            sample: a.artifact_name || "",
+          });
+        }
+      }
+      const artifactRows = Array.from(grouped.values())
+        .sort((x, y) => y.count - x.count)
+        .slice(0, 20)
+        .map((r) => [
+          r.app.length > 28 ? r.app.substring(0, 25) + "..." : r.app,
+          r.type,
+          r.count.toString(),
+          r.sample.length > 40 ? r.sample.substring(0, 37) + "..." : r.sample,
+        ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [["App", "Resource Type", "Count", "Sample"]],
+        body: artifactRows,
+        theme: "striped",
+        headStyles: { fillColor: DB_HEADER, fontSize: 9 },
+        alternateRowStyles: { fillColor: DB_ALT_ROW },
+        bodyStyles: { fontSize: 8 },
+        margin: { left: 14, right: 14 },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          3: { cellWidth: 70 },
+        },
+      });
+
+      yPos = getLastTableY(doc) + 12;
+    }
   }
 
   // Tagging
@@ -730,7 +884,17 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
     doc.setTextColor(239, 68, 68); // red
     doc.text(`Untagged Spend: ${formatCurrency(taggingSummary.untagged_spend)} (${taggingSummary.untagged_percentage.toFixed(1)}%)`, 14, yPos);
     doc.setTextColor(0, 0, 0);
-    yPos += 12;
+    yPos += 5;
+    // Cost Per-Tag + Total Tags KPIs (populated by the MV fast path on daily_tag_summary).
+    if (typeof data.tagging.avg_cost_per_tag === "number" && data.tagging.avg_cost_per_tag != null) {
+      doc.text(`Avg Cost Per Tag: ${formatCurrency(data.tagging.avg_cost_per_tag)} (over ${taggingSummary.total_spend ? "date range" : "—"})`, 14, yPos);
+      yPos += 5;
+    }
+    if (typeof data.tagging.total_tag_count === "number" && data.tagging.total_tag_count != null) {
+      doc.text(`Total Unique Tags (key:value): ${formatNumber(data.tagging.total_tag_count)}`, 14, yPos);
+      yPos += 5;
+    }
+    yPos += 7;
 
     // Tag Coverage Summary
     doc.setFontSize(12);
@@ -924,6 +1088,44 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
       body: platformMetrics,
       theme: "grid",
       headStyles: { fillColor: DB_HEADER, fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      margin: { left: 14, right: 14 },
+    });
+
+    yPos = getLastTableY(doc) + 12;
+  }
+
+  // Spend Anomalies — moved here from the DBU section because SpendAnomalies
+  // actually renders inside PlatformKPIsView in the app; the PDF should mirror
+  // the tab it lives under.
+  if (includeSections.anomalies && data.anomalies && data.anomalies.anomalies.length > 0) {
+    if (yPos > 180) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(DB_ORANGE[0], DB_ORANGE[1], DB_ORANGE[2]);
+    doc.text("Top 10 Spend Changes (Day-over-Day)", 14, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 8;
+
+    const anomalyData = data.anomalies.anomalies.slice(0, 10).map((a) => [
+      format(new Date(a.usage_date), "MMM d, yyyy"),
+      formatCurrency(a.daily_spend),
+      formatCurrency(a.prev_day_spend),
+      formatCurrency(Math.abs(a.change_amount ?? 0)),
+      `${Math.abs(a.change_percent ?? 0).toFixed(1)}%`,
+    ]);
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [["Date", "Daily Spend", "Prev Day", "Change $", "Change %"]],
+      body: anomalyData,
+      theme: "striped",
+      headStyles: { fillColor: DB_HEADER, fontSize: 9 },
+      alternateRowStyles: { fillColor: DB_ALT_ROW },
       bodyStyles: { fontSize: 9 },
       margin: { left: 14, right: 14 },
     });
@@ -1201,57 +1403,127 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
     }
   }
 
-  // Use Cases
-  if (includeSections.useCases && data.useCases && data.useCases.use_cases.length > 0) {
-    doc.addPage();
-    yPos = 20;
+  // Optimize — Warehouse Rightsizing + Idle Time summary tables (new tab, no PDF section before).
+  if (includeSections.optimize && data.optimize) {
+    const hasRightsizing = (data.optimize.rightsizing?.recommendations?.length ?? 0) > 0;
+    const hasIdle = (data.optimize.idle?.warehouses?.length ?? 0) > 0;
+    if (hasRightsizing || hasIdle) {
+      doc.addPage();
+      yPos = 20;
 
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(DB_ORANGE[0], DB_ORANGE[1], DB_ORANGE[2]);
-    doc.text("Use Cases", 14, yPos);
-    doc.setTextColor(0, 0, 0);
-    yPos += 8;
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(DB_ORANGE[0], DB_ORANGE[1], DB_ORANGE[2]);
+      doc.text("Optimize", 14, yPos);
+      doc.setTextColor(0, 0, 0);
+      yPos += 6;
 
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Total Use Case Spend: ${formatCurrency(data.useCases.total_spend)}`, 14, yPos);
-    yPos += 5;
-    doc.text(`Active Use Cases: ${data.useCases.count}`, 14, yPos);
-    yPos += 12;
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(107, 114, 128);
+      doc.text(
+        "Rightsizing and idle-time opportunities across your SQL warehouses.",
+        14,
+        yPos,
+      );
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "normal");
+      yPos += 8;
 
-    // Use Cases table
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
-    doc.text("Use Cases by Spend", 14, yPos);
-    doc.setTextColor(0, 0, 0);
-    yPos += 6;
+      // Top 10 Warehouse Rightsizing Opportunities
+      if (hasRightsizing && data.optimize.rightsizing) {
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
+        doc.text("Top 10 Warehouse Rightsizing Opportunities", 14, yPos);
+        doc.setTextColor(0, 0, 0);
+        yPos += 6;
 
-    const useCaseData = data.useCases.use_cases.map((uc) => [
-      uc.name.length > 25 ? uc.name.substring(0, 22) + "..." : uc.name,
-      uc.owner.length > 15 ? uc.owner.substring(0, 12) + "..." : uc.owner,
-      uc.stage,
-      uc.live_date || "-",
-      formatCurrency(uc.total_spend),
-      uc.object_count.toString(),
-    ]);
+        const rows = data.optimize.rightsizing.recommendations.slice(0, 10).map((r) => [
+          r.warehouse_name || r.warehouse_id,
+          r.warehouse_size || "—",
+          r.recommendation_type,
+          r.recommendation_text.length > 80
+            ? r.recommendation_text.substring(0, 77) + "..."
+            : r.recommendation_text,
+        ]);
 
-    autoTable(doc, {
-      startY: yPos,
-      head: [["Name", "Owner", "Stage", "Go-Live", "Spend", "Objects"]],
-      body: useCaseData,
-      theme: "striped",
-      headStyles: { fillColor: DB_HEADER, fontSize: 9 },
-      alternateRowStyles: { fillColor: DB_ALT_ROW },
-      bodyStyles: { fontSize: 8 },
-      margin: { left: 14, right: 14 },
-      columnStyles: {
-        0: { cellWidth: 50 },
-      },
-    });
+        autoTable(doc, {
+          startY: yPos,
+          head: [["Warehouse", "Size", "Issue", "Recommendation"]],
+          body: rows,
+          theme: "striped",
+          headStyles: { fillColor: DB_HEADER, fontSize: 9 },
+          alternateRowStyles: { fillColor: DB_ALT_ROW },
+          bodyStyles: { fontSize: 8 },
+          margin: { left: 14, right: 14 },
+          columnStyles: {
+            0: { cellWidth: 40 },
+            3: { cellWidth: 90 },
+          },
+        });
 
-    yPos = getLastTableY(doc) + 12;
+        yPos = getLastTableY(doc) + 5;
+        doc.setFontSize(8);
+        doc.setTextColor(107, 114, 128);
+        doc.text(
+          `Analyzed ${data.optimize.rightsizing.warehouses_analyzed} warehouse${data.optimize.rightsizing.warehouses_analyzed === 1 ? "" : "s"}.`,
+          14,
+          yPos,
+        );
+        doc.setTextColor(0, 0, 0);
+        yPos += 10;
+      }
+
+      if (yPos > 200) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      // Top 10 Warehouses by Idle Time
+      if (hasIdle && data.optimize.idle) {
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
+        doc.text("Top 10 Warehouses by Idle Time", 14, yPos);
+        doc.setTextColor(0, 0, 0);
+        yPos += 6;
+
+        const rows = [...data.optimize.idle.warehouses]
+          .sort((a, b) => b.estimated_idle_spend - a.estimated_idle_spend)
+          .slice(0, 10)
+          .map((w) => [
+            w.warehouse_name || w.warehouse_id,
+            w.warehouse_size || "—",
+            w.warehouse_type || "—",
+            `${(w.idle_minutes / 60).toFixed(1)} h`,
+            `${w.idle_pct.toFixed(1)}%`,
+            formatCurrency(w.estimated_idle_spend),
+          ]);
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [["Warehouse", "Size", "Type", "Idle", "Idle %", "Est. Idle Spend"]],
+          body: rows,
+          theme: "striped",
+          headStyles: { fillColor: DB_HEADER, fontSize: 9 },
+          alternateRowStyles: { fillColor: DB_ALT_ROW },
+          bodyStyles: { fontSize: 8 },
+          margin: { left: 14, right: 14 },
+        });
+
+        yPos = getLastTableY(doc) + 5;
+        doc.setFontSize(8);
+        doc.setTextColor(107, 114, 128);
+        doc.text(
+          "Idle time = warehouse uptime (from lifecycle events) minus active query time.",
+          14,
+          yPos,
+        );
+        doc.setTextColor(0, 0, 0);
+        yPos += 10;
+      }
+    }
   }
 
   // Footer on every page

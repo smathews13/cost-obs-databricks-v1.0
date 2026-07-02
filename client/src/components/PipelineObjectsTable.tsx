@@ -208,7 +208,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
             <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            <input type="text" placeholder="Search jobs & pipelines..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]" />
+            <input type="text" placeholder="Search ETLs..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]" />
           </div>
         </div>
       </div>

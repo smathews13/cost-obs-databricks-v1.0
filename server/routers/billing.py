@@ -147,9 +147,11 @@ def _check_mv_available() -> bool:
             logger.info("Materialized views available - using optimized queries")
         return available
     except Exception as e:
-        logger.debug("MV check failed: %s", e)
+        # Treat exceptions the same as timeouts: retry in 15s, not 30 min.
+        # A transient SDK error on startup should not lock out MVs for half an hour.
+        logger.debug("MV check failed (retrying in 15s): %s", e)
         _mv_cache["available"] = False
-        _mv_cache["checked_at"] = now
+        _mv_cache["checked_at"] = now - (_MV_CHECK_INTERVAL - 15)
         return False
 
 

@@ -824,6 +824,7 @@ WITH tagged_usage AS (
     u.usage_date,
     u.workspace_id,
     u.usage_quantity,
+    u.custom_tags,
     COALESCE(p.pricing.default, 0) AS price_per_dbu
   FROM system.billing.usage u
   LEFT JOIN system.billing.list_prices p
@@ -867,6 +868,7 @@ USING (
       u.usage_date,
       u.workspace_id,
       u.usage_quantity,
+      u.custom_tags,
       COALESCE(p.pricing.default, 0) AS price_per_dbu
     FROM system.billing.usage u
     LEFT JOIN system.billing.list_prices p

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { VirtualizedList } from "./VirtualizedList";
 
 function InfoTooltip({ text }: { text: string }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -667,7 +668,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     <svg className={`h-3 w-3 transition-transform ${endpointsWorkspaceDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                   </button>
                   {endpointsWorkspaceDropdownOpen && (
-                    <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <div className="absolute right-0 top-full z-[9999] mt-1 w-56 rounded-lg border border-gray-200 bg-white shadow-lg">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</span>
                         <div className="flex items-center gap-2 text-xs">
@@ -676,18 +677,23 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                           <button onClick={(e) => { e.stopPropagation(); setEndpointsWorkspaceFilter([]); setEndpointsPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
                       </div>
-                      {endpointWorkspaces.map(wsId => (
-                        <button
-                          key={wsId}
-                          onClick={() => { setEndpointsWorkspaceFilter(prev => prev.includes(wsId) ? prev.filter(x => x !== wsId) : [...prev, wsId]); setEndpointsPage(1); }}
-                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
-                        >
-                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${endpointsWorkspaceFilter.includes(wsId) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                            {endpointsWorkspaceFilter.includes(wsId) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                          </div>
-                          <span className="truncate text-gray-700">{resolveWsName(wsId)}</span>
-                        </button>
-                      ))}
+                      <VirtualizedList
+                        items={endpointWorkspaces}
+                        itemHeight={36}
+                        maxHeight={256}
+                        getKey={(wsId) => wsId}
+                        renderItem={(wsId) => (
+                          <button
+                            onClick={() => { setEndpointsWorkspaceFilter(prev => prev.includes(wsId) ? prev.filter(x => x !== wsId) : [...prev, wsId]); setEndpointsPage(1); }}
+                            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
+                          >
+                            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${endpointsWorkspaceFilter.includes(wsId) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                              {endpointsWorkspaceFilter.includes(wsId) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                            </div>
+                            <span className="truncate text-gray-700">{resolveWsName(wsId)}</span>
+                          </button>
+                        )}
+                      />
                     </div>
                   )}
                 </div>
@@ -1014,7 +1020,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       placeholder="Search clusters..."
                       value={mlClusterSearch}
                       onChange={(e) => { setMlClusterSearch(e.target.value); setMlClustersPage(1); }}
-                      className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] w-full"
+                      className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
                     />
                   </div>
                 </div>
@@ -1187,7 +1193,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       placeholder="Search agents..."
                       value={agentSearch}
                       onChange={(e) => { setAgentSearch(e.target.value); setAgentsPage(1); }}
-                      className="rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621] w-full"
+                      className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
                     />
                   </div>
                 </div>

@@ -570,7 +570,7 @@ LEFT JOIN pipeline_info pi ON pu.pipeline_id = pi.pipeline_id
 WHERE pu.pipeline_id IS NOT NULL OR pu.job_id IS NOT NULL
 GROUP BY 1, 2, 3
 ORDER BY total_spend DESC
-LIMIT 100
+LIMIT 200
 """
 
 # Pipeline objects query - fallback (billing-only, no system.lakeflow.pipelines)
@@ -615,7 +615,7 @@ FROM pipeline_usage pu
 WHERE pu.pipeline_id IS NOT NULL OR pu.job_id IS NOT NULL
 GROUP BY 1, 2, 3
 ORDER BY total_spend DESC
-LIMIT 100
+LIMIT 200
 """
 
 # ETL breakdown query (Batch vs Streaming)

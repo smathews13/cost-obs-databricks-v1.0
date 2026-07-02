@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Spinner } from "./Spinner";
 import { ReadinessChecks, normalizeReadinessResult } from "./settings/ReadinessChecks";
 import type { ReadinessResult } from "./settings/ReadinessChecks";
+import { VirtualizedList } from "./VirtualizedList";
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -1247,28 +1248,34 @@ function WorkspaceFilterStep({
             />
           )}
 
-          <div className="max-h-52 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-2">
-            {workspaces.filter(ws => {
-              if (!search.trim()) return true;
-              const q = search.toLowerCase();
-              return ws.name.toLowerCase().includes(q) || ws.id.toLowerCase().includes(q);
-            }).map((ws) => {
-              const checked = selectedIds.has(ws.id);
-              return (
-                <label key={ws.id} className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors ${checked ? "bg-orange-50" : "hover:bg-gray-50"}`}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => onToggle(ws.id)}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
-                  />
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-800 truncate">{ws.name}</div>
-                    <div className="text-xs font-mono text-gray-500">{ws.id}</div>
-                  </div>
-                </label>
-              );
-            })}
+          <div className="rounded-lg border border-gray-200 p-2">
+            <VirtualizedList
+              items={workspaces.filter(ws => {
+                if (!search.trim()) return true;
+                const q = search.toLowerCase();
+                return ws.name.toLowerCase().includes(q) || ws.id.toLowerCase().includes(q);
+              })}
+              itemHeight={48}
+              maxHeight={192}
+              getKey={(ws) => ws.id}
+              renderItem={(ws) => {
+                const checked = selectedIds.has(ws.id);
+                return (
+                  <label className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors ${checked ? "bg-orange-50" : "hover:bg-gray-50"}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggle(ws.id)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-gray-800 truncate">{ws.name}</div>
+                      <div className="text-xs font-mono text-gray-500">{ws.id}</div>
+                    </div>
+                  </label>
+                );
+              }}
+            />
           </div>
 
           {selectedIds.size === 0 && (

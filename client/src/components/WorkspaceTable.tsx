@@ -2,6 +2,7 @@ import { Fragment, useState, useRef, useEffect, useMemo, memo } from "react";
 import type { WorkspaceBreakdownResponse } from "@/types/billing";
 import { formatCurrency, formatNumber, workspaceUrl } from "@/utils/formatters";
 import { formatIdentity } from "@/utils/identity";
+import { VirtualizedList } from "./VirtualizedList";
 
 interface WorkspaceTableProps {
   data: WorkspaceBreakdownResponse | undefined;
@@ -184,7 +185,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 <svg className={`h-3 w-3 transition-transform ${productDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {productDropdownOpen && (
-                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Products</span>
                     <div className="flex items-center gap-2 text-xs">
@@ -193,15 +194,21 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                       <button onClick={(e) => { e.stopPropagation(); setProductFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                     </div>
                   </div>
-                  {allProducts.map((p) => (
-                    <button key={p} onClick={() => { setProductFilters((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]); setCurrentPage(1); }}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilters.includes(p) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {productFilters.includes(p) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="truncate text-gray-700">{formatProductName(p)}</span>
-                    </button>
-                  ))}
+                  <VirtualizedList
+                    items={allProducts}
+                    itemHeight={36}
+                    maxHeight={256}
+                    getKey={(p) => p}
+                    renderItem={(p) => (
+                      <button onClick={() => { setProductFilters((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]); setCurrentPage(1); }}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
+                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilters.includes(p) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                          {productFilters.includes(p) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="truncate text-gray-700">{formatProductName(p)}</span>
+                      </button>
+                    )}
+                  />
                 </div>
               )}
             </div>
@@ -217,7 +224,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 <svg className={`h-3 w-3 transition-transform ${userDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {userDropdownOpen && (
-                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Users</span>
                     <div className="flex items-center gap-2 text-xs">
@@ -226,15 +233,21 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                       <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                     </div>
                   </div>
-                  {allUsers.map((u) => (
-                    <button key={u} onClick={() => { setUserFilters((prev) => prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]); setCurrentPage(1); }}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="truncate text-gray-700">{formatIdentity(u)}</span>
-                    </button>
-                  ))}
+                  <VirtualizedList
+                    items={allUsers}
+                    itemHeight={36}
+                    maxHeight={256}
+                    getKey={(u) => u}
+                    renderItem={(u) => (
+                      <button onClick={() => { setUserFilters((prev) => prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]); setCurrentPage(1); }}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
+                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                          {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="truncate text-gray-700">{formatIdentity(u)}</span>
+                      </button>
+                    )}
+                  />
                 </div>
               )}
             </div>
@@ -248,7 +261,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
               placeholder="Search workspaces..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-              className="w-52 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+              className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
             />
           </div>
         </div>

@@ -202,11 +202,15 @@ WITH job_usage AS (
 -- system.lakeflow.jobs is SCD Type 2 (~2.9x rows per job). Dedupe to latest live
 -- row per job so the LEFT JOIN doesn't fan out. job_id is STRING on both sides;
 -- avoid TRY_CAST-to-BIGINT which broke data-skipping and forced a shuffle-cast.
+-- LEFT SEMI JOIN restricts the dedup to jobs that actually show up in the usage
+-- window — on accounts with a large historical catalog but few active jobs,
+-- this drops the window sort from 100k+ rows to a few thousand.
 jobs_latest AS (
-  SELECT job_id, name
-  FROM system.lakeflow.jobs
-  WHERE delete_time IS NULL
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY change_time DESC) = 1
+  SELECT lj.job_id, lj.name
+  FROM system.lakeflow.jobs lj
+  LEFT SEMI JOIN job_usage ju ON lj.job_id = ju.job_id
+  WHERE lj.delete_time IS NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY lj.job_id ORDER BY lj.change_time DESC) = 1
 )
 SELECT
   ju.job_id,
@@ -263,11 +267,14 @@ WITH pipeline_usage AS (
   GROUP BY u.usage_metadata.dlt_pipeline_id
 ),
 -- Dedupe SCD2 pipelines (~2x rows per pipeline) to latest live row per pipeline.
+-- LEFT SEMI JOIN restricts the dedup to pipelines that actually show up in the
+-- usage window — same optimization as jobs_latest above.
 pipelines_latest AS (
-  SELECT pipeline_id, name
-  FROM system.lakeflow.pipelines
-  WHERE delete_time IS NULL
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY pipeline_id ORDER BY change_time DESC) = 1
+  SELECT lp.pipeline_id, lp.name
+  FROM system.lakeflow.pipelines lp
+  LEFT SEMI JOIN pipeline_usage pu ON lp.pipeline_id = pu.pipeline_id
+  WHERE lp.delete_time IS NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY lp.pipeline_id ORDER BY lp.change_time DESC) = 1
 )
 SELECT
   pu.pipeline_id,
@@ -1150,18 +1157,22 @@ async def get_tagging_dashboard_bundle(
                 logger.warning("tag_stats MV path failed (%s); falling back to raw scan", type(e).__name__)
         return execute_query(_ws(TAG_STATS), query_params)
 
-    def lakeflow_query(enriched_sql: str, fallback_sql: str, query_params: dict, flag: list) -> list[dict[str, Any]]:
-        """Try lakeflow-enriched query with 45s timeout; fall back to billing-only on failure."""
+    def lakeflow_query(name: str, enriched_sql: str, fallback_sql: str, query_params: dict, flag: list) -> list[dict[str, Any]]:
+        """Try lakeflow-enriched query with 45s timeout; fall back to billing-only on failure.
+
+        `name` (e.g. "lakeflow_jobs" / "lakeflow_pipelines") is used as the label in
+        execute_queries_parallel so the timeout log message identifies which query stalled.
+        """
         if _lakeflow_in_cooldown():
             flag[0] = False
             return execute_query(fallback_sql, query_params)
         try:
-            result = execute_queries_parallel([("lakeflow_enriched", lambda: execute_query(enriched_sql, query_params))], timeout=45.0)
-            if result.get("lakeflow_enriched") is not None:
+            result = execute_queries_parallel([(name, lambda: execute_query(enriched_sql, query_params))], timeout=45.0)
+            if result.get(name) is not None:
                 _lakeflow_mark_success()
-                return result["lakeflow_enriched"]
+                return result[name]
         except Exception as e:
-            logger.warning(f"Lakeflow query failed/timed out ({type(e).__name__}); falling back to billing-only")
+            logger.warning(f"{name} failed/timed out ({type(e).__name__}); falling back to billing-only")
         _lakeflow_mark_failure()
         logger.warning("system.lakeflow unavailable; skipping enriched queries for %.0fs", _LAKEFLOW_RETRY_INTERVAL)
         flag[0] = False
@@ -1170,8 +1181,8 @@ async def get_tagging_dashboard_bundle(
     queries = [
         ("summary", lambda: execute_query(_ws(TAGGING_SUMMARY), params)),
         ("clusters", lambda: query_with_fallback(_ws(UNTAGGED_CLUSTERS_ENRICHED), _ws(UNTAGGED_CLUSTERS), params)),
-        ("jobs", lambda: lakeflow_query(_ws(UNTAGGED_JOBS_ENRICHED), _ws(UNTAGGED_JOBS), params, jobs_ok)),
-        ("pipelines", lambda: lakeflow_query(_ws(UNTAGGED_PIPELINES_ENRICHED), _ws(UNTAGGED_PIPELINES), params, pipelines_ok)),
+        ("jobs", lambda: lakeflow_query("lakeflow_jobs", _ws(UNTAGGED_JOBS_ENRICHED), _ws(UNTAGGED_JOBS), params, jobs_ok)),
+        ("pipelines", lambda: lakeflow_query("lakeflow_pipelines", _ws(UNTAGGED_PIPELINES_ENRICHED), _ws(UNTAGGED_PIPELINES), params, pipelines_ok)),
         ("warehouses", lambda: query_with_fallback(_ws(UNTAGGED_WAREHOUSES_ENRICHED), _ws(UNTAGGED_WAREHOUSES), params)),
         ("endpoints", lambda: execute_query(_ws(UNTAGGED_ENDPOINTS), params)),
         ("cost_by_tag", lambda: execute_query(_ws(COST_BY_TAG), params)),

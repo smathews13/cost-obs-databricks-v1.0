@@ -15,6 +15,7 @@ import {
 import type { AppsDashboardBundle, AppsApp, AppsConnectedArtifact, DateRange } from "@/types/billing";
 import { useAppsDashboardBundle } from "@/hooks/useBillingData";
 import { KPITrendModal } from "./KPITrendModal";
+import { VirtualizedList } from "./VirtualizedList";
 import { formatIdentity } from "@/utils/identity";
 
 interface AppsCostCenterProps {
@@ -915,7 +916,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                         autoFocus
                       />
                     </div>
-                    <div className="max-h-60 overflow-y-auto">
+                    <div>
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspaces</span>
                         <div className="flex items-center gap-2 text-xs">
@@ -924,27 +925,35 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                           <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaces([]); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
                       </div>
-                      {availableWorkspaces
-                        .filter(ws => !wsFilterSearch || ws.name.toLowerCase().includes(wsFilterSearch.toLowerCase()))
-                        .map(ws => (
-                          <button
-                            key={ws.id}
-                            onClick={() => handleToggleWorkspace(ws.id)}
-                            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-gray-50"
-                          >
-                            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selectedWorkspaces.includes(ws.id) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                              {selectedWorkspaces.includes(ws.id) && (
-                                <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </div>
-                            <span className="truncate text-xs text-gray-700">{ws.name}</span>
-                          </button>
-                        ))}
-                      {availableWorkspaces.filter(ws => !wsFilterSearch || ws.name.toLowerCase().includes(wsFilterSearch.toLowerCase())).length === 0 && (
-                        <div className="px-3 py-2 text-sm text-gray-500">No matching workspaces</div>
-                      )}
+                      {(() => {
+                        const filtered = availableWorkspaces.filter(ws => !wsFilterSearch || ws.name.toLowerCase().includes(wsFilterSearch.toLowerCase()));
+                        if (filtered.length === 0) {
+                          return <div className="px-3 py-2 text-sm text-gray-500">No matching workspaces</div>;
+                        }
+                        return (
+                          <VirtualizedList
+                            items={filtered}
+                            itemHeight={40}
+                            maxHeight={240}
+                            getKey={(ws) => ws.id}
+                            renderItem={(ws) => (
+                              <button
+                                onClick={() => handleToggleWorkspace(ws.id)}
+                                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-gray-50"
+                              >
+                                <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selectedWorkspaces.includes(ws.id) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                                  {selectedWorkspaces.includes(ws.id) && (
+                                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <span className="truncate text-xs text-gray-700">{ws.name}</span>
+                              </button>
+                            )}
+                          />
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -960,7 +969,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search apps..."
-                className="w-48 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
               />
               {searchQuery && (
                 <button
@@ -1304,23 +1313,29 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                         className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
                       />
                     </div>
-                    {filteredAppNames.map(name => (
-                      <button
-                        key={name}
-                        onClick={() => {
-                          setArtifactAppFilter(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name]);
-                          setArtifactPage(1);
-                        }}
-                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
-                      >
-                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${artifactAppFilter.includes(name) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                          {artifactAppFilter.includes(name) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                        </div>
-                        <span className="truncate text-gray-700">{name}</span>
-                      </button>
-                    ))}
-                    {filteredAppNames.length === 0 && (
+                    {filteredAppNames.length === 0 ? (
                       <p className="px-3 py-2 text-xs text-gray-500">No apps found</p>
+                    ) : (
+                      <VirtualizedList
+                        items={filteredAppNames}
+                        itemHeight={36}
+                        maxHeight={240}
+                        getKey={(n) => n}
+                        renderItem={(name) => (
+                          <button
+                            onClick={() => {
+                              setArtifactAppFilter(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name]);
+                              setArtifactPage(1);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
+                          >
+                            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${artifactAppFilter.includes(name) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                              {artifactAppFilter.includes(name) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                            </div>
+                            <span className="truncate text-gray-700">{name}</span>
+                          </button>
+                        )}
+                      />
                     )}
                   </div>
                 )}
@@ -1378,7 +1393,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               </div>
 
               {/* Search */}
-              <div className="relative w-64 shrink-0">
+              <div className="relative shrink-0">
                 <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
@@ -1387,7 +1402,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                   value={artifactSearch}
                   onChange={(e) => { setArtifactSearch(e.target.value); setArtifactPage(1); }}
                   placeholder="Search resources..."
-                  className="w-full rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                  className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
                 />
               </div>
 

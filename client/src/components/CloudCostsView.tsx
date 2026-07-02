@@ -31,6 +31,7 @@ import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
 import { AzureActualView } from "./AzureActualView";
 import { GCPActualView } from "./GCPActualView";
+import { VirtualizedList } from "./VirtualizedList";
 import { AWSActualView } from "./AWSActualView";
 import { CloudIntegrationWizard } from "./CloudIntegrationWizard";
 import type { CloudIntegration } from "./CloudIntegrationWizard";
@@ -1100,7 +1101,7 @@ export function CloudCostsView({
                         autoFocus
                       />
                     </div>
-                    <div className="max-h-64 overflow-y-auto">
+                    <div>
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspaces</span>
                         <div className="flex items-center gap-2 text-xs">
@@ -1109,34 +1110,38 @@ export function CloudCostsView({
                           <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
                       </div>
-                      {availableTableWorkspaces
-                        .filter(w => {
+                      {(() => {
+                        const filtered = availableTableWorkspaces.filter(w => {
                           if (!tableWorkspaceSearch) return true;
                           const q = tableWorkspaceSearch.toLowerCase();
                           return resolveWsName(w).toLowerCase().includes(q) || w.toLowerCase().includes(q);
-                        })
-                        .map(w => {
-                          const label = resolveWsName(w);
-                          return (
-                            <button
-                              key={w}
-                              onClick={() => { setTableWorkspace((prev) => prev.includes(w) ? prev.filter(x => x !== w) : [...prev, w]); setCurrentPage(1); }}
-                              className="flex w-full items-center gap-2 px-3 py-2.5 text-xs hover:bg-gray-50"
-                            >
-                              <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${tableWorkspace.includes(w) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                                {tableWorkspace.includes(w) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                              </div>
-                              <span className="truncate text-gray-700">{label}</span>
-                            </button>
-                          );
-                        })}
-                      {availableTableWorkspaces.filter(w => {
-                        if (!tableWorkspaceSearch) return true;
-                        const q = tableWorkspaceSearch.toLowerCase();
-                        return resolveWsName(w).toLowerCase().includes(q) || w.toLowerCase().includes(q);
-                      }).length === 0 && (
-                        <div className="px-3 py-2 text-sm text-gray-500">No matching workspaces</div>
-                      )}
+                        });
+                        if (filtered.length === 0) {
+                          return <div className="px-3 py-2 text-sm text-gray-500">No matching workspaces</div>;
+                        }
+                        return (
+                          <VirtualizedList
+                            items={filtered}
+                            itemHeight={36}
+                            maxHeight={256}
+                            getKey={(w) => w}
+                            renderItem={(w) => {
+                              const label = resolveWsName(w);
+                              return (
+                                <button
+                                  onClick={() => { setTableWorkspace((prev) => prev.includes(w) ? prev.filter(x => x !== w) : [...prev, w]); setCurrentPage(1); }}
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-xs hover:bg-gray-50"
+                                >
+                                  <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${tableWorkspace.includes(w) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                                    {tableWorkspace.includes(w) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                  </div>
+                                  <span className="truncate text-gray-700">{label}</span>
+                                </button>
+                              );
+                            }}
+                          />
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -1193,7 +1198,7 @@ export function CloudCostsView({
                 placeholder="Search clusters..."
                 value={clusterSearch}
                 onChange={(e) => { setClusterSearch(e.target.value); setCurrentPage(1); }}
-                className="w-52 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
               />
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useMemo, useRef } from "react";
+import { memo, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   BarChart,
   Bar,
@@ -11,6 +11,35 @@ import {
 } from "recharts";
 import type { ProductBreakdownResponse, WorkspaceBreakdown } from "@/types/billing";
 import { formatCurrencyCompact as formatCurrency } from "@/utils/formatters";
+import { VirtualizedList } from "./VirtualizedList";
+
+// Hoisted formatters — see SKUBreakdown for rationale.
+const fmtCurrency = (v: unknown) => formatCurrency(v as number);
+const fmtTooltip = (value: number | undefined) => formatCurrency(value ?? 0);
+const fmtTooltipLabel = (label: unknown) => `Product: ${label}`;
+const fmtYTick = (v: string) => (v.length > 18 ? v.substring(0, 18) + "..." : v);
+const TOOLTIP_STYLE = { backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px" } as const;
+const LABEL_STYLE = { fontSize: 11, fill: "#6b7280" } as const;
+
+interface WsRowProps {
+  wsId: string;
+  wsName: string;
+  selected: boolean;
+  onToggle: (id: string) => void;
+}
+const WsRow = memo(function WsRow({ wsId, wsName, selected, onToggle }: WsRowProps) {
+  return (
+    <button
+      onClick={() => onToggle(wsId)}
+      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
+    >
+      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selected ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+        {selected && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+      </div>
+      <span className="truncate text-gray-700">{wsName}</span>
+    </button>
+  );
+});
 
 interface ProductBreakdownProps {
   data: ProductBreakdownResponse | undefined;
@@ -150,6 +179,18 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
     return workspaceNameMap?.[wsId] || (ws ? (ws.workspace_name || String(ws.workspace_id)) : wsId);
   }, [selectedWorkspaces, workspaces, workspaceNameMap]);
 
+  const toggleWs = useCallback((wsId: string) => {
+    setSelectedWorkspaces((prev) => (prev.includes(wsId) ? prev.filter((x) => x !== wsId) : [...prev, wsId]));
+  }, []);
+  const selectedSet = useMemo(() => new Set(selectedWorkspaces), [selectedWorkspaces]);
+  const wsItems = useMemo(
+    () => (workspaces || []).map((ws) => {
+      const wsId = String(ws.workspace_id);
+      return { wsId, wsName: workspaceNameMap?.[wsId] || ws.workspace_name || String(ws.workspace_id) };
+    }),
+    [workspaces, workspaceNameMap],
+  );
+
   const workspaceSelector = workspaces && workspaces.length > 1 ? (
     <div className="relative" ref={dropdownRef}>
       <button
@@ -166,7 +207,7 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
         </svg>
       </button>
       {dropdownOpen && (
-        <div className="absolute right-0 top-full z-[9999] mt-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+        <div className="absolute right-0 top-full z-[9999] mt-1 w-72 rounded-lg border border-gray-200 bg-white shadow-lg">
           <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</span>
             <div className="flex items-center gap-2 text-xs">
@@ -175,26 +216,32 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
               <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaces([]); }} className="text-gray-500 hover:text-gray-800">Clear</button>
             </div>
           </div>
-          {workspaces.map((ws) => {
-            const wsId = String(ws.workspace_id);
-            const isActive = selectedWorkspaces.includes(wsId);
-            return (
-              <button
-                key={wsId}
-                onClick={() => setSelectedWorkspaces(prev => prev.includes(wsId) ? prev.filter(x => x !== wsId) : [...prev, wsId])}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
-              >
-                <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${isActive ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                  {isActive && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                </div>
-                <span className="truncate text-gray-700">{workspaceNameMap?.[wsId] || ws.workspace_name || ws.workspace_id}</span>
-              </button>
-            );
-          })}
+          <VirtualizedList
+            items={wsItems}
+            itemHeight={36}
+            maxHeight={256}
+            getKey={(it) => it.wsId}
+            renderItem={(it) => (
+              <WsRow wsId={it.wsId} wsName={it.wsName} selected={selectedSet.has(it.wsId)} onToggle={toggleWs} />
+            )}
+          />
         </div>
       )}
     </div>
   ) : null;
+
+  // Memoize before early returns so hook count is stable across renders.
+  const chartData = useMemo(
+    () =>
+      [...(displayData?.products ?? [])]
+        .sort((a, b) => b.total_spend - a.total_spend)
+        .map((p) => ({
+          name: p.category,
+          total_spend: p.total_spend,
+          percentage: p.percentage,
+        })),
+    [displayData],
+  );
 
   if (showLoading) {
     return (
@@ -226,14 +273,6 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
     );
   }
 
-  const chartData = [...displayData.products]
-    .sort((a, b) => b.total_spend - a.total_spend)
-    .map((p) => ({
-      name: p.category,
-      total_spend: p.total_spend,
-      percentage: p.percentage,
-    }));
-
   return (
     <div className="animate-fade-in rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5', overflow: 'visible' }}>
       <div className="mb-4 flex items-center justify-between">
@@ -249,7 +288,7 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
       </div>
       <ResponsiveContainer width="100%" height={320}>
         <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 70 }}>
-          <XAxis type="number" tickFormatter={(v) => formatCurrency(v)} stroke="#9ca3af" fontSize={12} tickMargin={8} />
+          <XAxis type="number" tickFormatter={fmtCurrency} stroke="#9ca3af" fontSize={12} tickMargin={8} />
           <YAxis
             type="category"
             dataKey="name"
@@ -257,22 +296,18 @@ export const ProductBreakdown = memo(function ProductBreakdown({ data, isLoading
             stroke="#9ca3af"
             fontSize={12}
             tickMargin={8}
-            tickFormatter={(v: string) => (v.length > 18 ? v.substring(0, 18) + "..." : v)}
+            tickFormatter={fmtYTick}
           />
           <Tooltip
-            formatter={(value: number | undefined) => formatCurrency(value ?? 0)}
-            labelFormatter={(label) => `Product: ${label}`}
-            contentStyle={{
-              backgroundColor: "white",
-              border: "1px solid #e5e7eb",
-              borderRadius: "8px",
-            }}
+            formatter={fmtTooltip}
+            labelFormatter={fmtTooltipLabel}
+            contentStyle={TOOLTIP_STYLE}
           />
-          <Bar dataKey="total_spend" name="Spend" radius={[0, 4, 4, 0]}>
+          <Bar dataKey="total_spend" name="Spend" radius={[0, 4, 4, 0]} isAnimationActive={false}>
             {chartData.map((entry, idx) => (
               <Cell key={entry.name} fill={CATEGORY_COLORS[entry.name] || COLOR_ROTATION[idx % COLOR_ROTATION.length]} />
             ))}
-            <LabelList dataKey="total_spend" position="right" formatter={(v: unknown) => formatCurrency(v as number)} style={{ fontSize: 11, fill: "#6b7280" }} />
+            <LabelList dataKey="total_spend" position="right" formatter={fmtCurrency} style={LABEL_STYLE} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>

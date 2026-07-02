@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import type { TaggingDashboardBundle } from "@/types/billing";
 import { KPITrendModal } from "./KPITrendModal";
+import { VirtualizedList } from "./VirtualizedList";
 
 interface TagObject {
   object_id?: string | null;
@@ -653,7 +654,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                         autoFocus
                       />
                     </div>
-                    <div className="max-h-60 overflow-y-auto">
+                    <div>
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Tag Values</span>
                         <div className="flex items-center gap-2 text-xs">
@@ -662,32 +663,40 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                           <button onClick={(e) => { e.stopPropagation(); setSelectedTagValueFilters([]); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
                       </div>
-                      {availableTagValues
-                        .filter(kv => !tagValueFilterSearch || kv.toLowerCase().includes(tagValueFilterSearch.toLowerCase()))
-                        .map(kv => {
-                          const [key, ...rest] = kv.split(":");
-                          const value = rest.join(":");
-                          return (
-                            <button
-                              key={kv}
-                              onClick={() => handleToggleTagValueFilter(kv)}
-                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50"
-                            >
-                              <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selectedTagValueFilters.includes(kv) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                                {selectedTagValueFilters.includes(kv) && (
-                                  <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                )}
-                              </div>
-                              <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">{key}</span>
-                              <span className="truncate text-xs text-gray-600">{value}</span>
-                            </button>
-                          );
-                        })}
-                      {availableTagValues.filter(kv => !tagValueFilterSearch || kv.toLowerCase().includes(tagValueFilterSearch.toLowerCase())).length === 0 && (
-                        <div className="px-3 py-2 text-sm text-gray-500">No matching tags</div>
-                      )}
+                      {(() => {
+                        const filtered = availableTagValues.filter(kv => !tagValueFilterSearch || kv.toLowerCase().includes(tagValueFilterSearch.toLowerCase()));
+                        if (filtered.length === 0) {
+                          return <div className="px-3 py-2 text-sm text-gray-500">No matching tags</div>;
+                        }
+                        return (
+                          <VirtualizedList
+                            items={filtered}
+                            itemHeight={32}
+                            maxHeight={240}
+                            getKey={(kv) => kv}
+                            renderItem={(kv) => {
+                              const [key, ...rest] = kv.split(":");
+                              const value = rest.join(":");
+                              return (
+                                <button
+                                  onClick={() => handleToggleTagValueFilter(kv)}
+                                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50"
+                                >
+                                  <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selectedTagValueFilters.includes(kv) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                                    {selectedTagValueFilters.includes(kv) && (
+                                      <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                  <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">{key}</span>
+                                  <span className="truncate text-xs text-gray-600">{value}</span>
+                                </button>
+                              );
+                            }}
+                          />
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -802,7 +811,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                         autoFocus
                       />
                     </div>
-                    <div className="max-h-60 overflow-y-auto">
+                    <div>
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Tag Keys</span>
                         <div className="flex items-center gap-2 text-xs">
@@ -811,27 +820,35 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                           <button onClick={(e) => { e.stopPropagation(); setSelectedTagFilters([]); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                         </div>
                       </div>
-                      {availableTagKeys
-                        .filter(k => !tagFilterSearch || k.toLowerCase().includes(tagFilterSearch.toLowerCase()))
-                        .map(key => (
-                          <button
-                            key={key}
-                            onClick={() => handleToggleTagFilter(key)}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
-                          >
-                            <div className={`flex h-4 w-4 items-center justify-center rounded border ${selectedTagFilters.includes(key) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                              {selectedTagFilters.includes(key) && (
-                                <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </div>
-                            <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-800">{key}</span>
-                          </button>
-                        ))}
-                      {availableTagKeys.filter(k => !tagFilterSearch || k.toLowerCase().includes(tagFilterSearch.toLowerCase())).length === 0 && (
-                        <div className="px-3 py-2 text-sm text-gray-500">No matching tag keys</div>
-                      )}
+                      {(() => {
+                        const filtered = availableTagKeys.filter(k => !tagFilterSearch || k.toLowerCase().includes(tagFilterSearch.toLowerCase()));
+                        if (filtered.length === 0) {
+                          return <div className="px-3 py-2 text-sm text-gray-500">No matching tag keys</div>;
+                        }
+                        return (
+                          <VirtualizedList
+                            items={filtered}
+                            itemHeight={36}
+                            maxHeight={240}
+                            getKey={(k) => k}
+                            renderItem={(key) => (
+                              <button
+                                onClick={() => handleToggleTagFilter(key)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
+                              >
+                                <div className={`flex h-4 w-4 items-center justify-center rounded border ${selectedTagFilters.includes(key) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                                  {selectedTagFilters.includes(key) && (
+                                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-800">{key}</span>
+                              </button>
+                            )}
+                          />
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

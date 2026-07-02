@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { format } from "date-fns";
+import { format, parseISO, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isWithinInterval } from "date-fns";
 import type {
   BillingSummary,
   ProductBreakdownResponse,
@@ -68,6 +68,131 @@ const DB_ALT_ROW: [number, number, number] = [248, 249, 250];
 // scattering `(doc as any)` casts throughout the file.
 function getLastTableY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+}
+
+// Colors pre-blended against white (jsPDF fills are opaque, no alpha).
+// Mirrors the heatmap tiers used in SpendAnomalies.cellStyle so the exported
+// calendar looks like the on-screen one.
+function heatmapCellColor(changePercent: number): { fill: [number, number, number]; text: [number, number, number] } {
+  const abs = Math.abs(changePercent);
+  if (changePercent > 0) {
+    if (abs >= 30) return { fill: [226, 77, 77], text: [255, 255, 255] };
+    if (abs >= 15) return { fill: [244, 133, 133], text: [255, 255, 255] };
+    if (abs >= 5)  return { fill: [253, 208, 208], text: [153, 27, 27] };
+    return           { fill: [254, 243, 243], text: [220, 38, 38] };
+  } else {
+    if (abs >= 30) return { fill: [72, 195, 118], text: [255, 255, 255] };
+    if (abs >= 15) return { fill: [99, 217, 150], text: [255, 255, 255] };
+    if (abs >= 5)  return { fill: [192, 247, 212], text: [20, 83, 45] };
+    return           { fill: [240, 253, 245], text: [21, 128, 61] };
+  }
+}
+
+// Draws a compact calendar heatmap of daily spend changes to mirror the
+// SpendAnomalies calendar view. Renders two months per PDF row. Returns the
+// updated yPos.
+function drawSpendCalendar(
+  doc: jsPDF,
+  anomalies: Array<{ usage_date: string; change_percent: number }>,
+  startDate: string,
+  endDate: string,
+  yStart: number,
+): number {
+  const anomalyMap = new Map<string, number>();
+  for (const a of anomalies) anomalyMap.set(a.usage_date, a.change_percent);
+
+  const start = parseISO(startDate);
+  const end = parseISO(endDate);
+  const months = eachMonthOfInterval({ start, end });
+  const DAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
+
+  const pageWidth = doc.internal.pageSize.width;
+  const pageHeight = doc.internal.pageSize.height;
+  const marginX = 14;
+  const gap = 6;
+  const monthW = (pageWidth - marginX * 2 - gap) / 2;
+  const cell = monthW / 7;
+  const headerH = 5; // month label
+  const dowH = 4;    // day-of-week row
+  const monthH = headerH + dowH + cell * 6 + 2;
+
+  let yPos = yStart;
+  for (let i = 0; i < months.length; i++) {
+    const col = i % 2;
+    // Only advance yPos + paginate at the start of a row so the two months in
+    // one row always stay on the same page. Otherwise month #2 could land alone
+    // on the next page when month #1 fits but the row spills past the fold.
+    if (col === 0) {
+      if (i > 0) yPos += monthH + 4;
+      if (yPos + monthH > pageHeight - 20) {
+        doc.addPage();
+        yPos = 20;
+      }
+    }
+    const x0 = marginX + col * (monthW + gap);
+    const month = months[i];
+
+    // Month label
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(55, 65, 81);
+    doc.text(format(month, "MMMM yyyy"), x0, yPos + headerH - 1);
+
+    // Day-of-week headers
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(107, 114, 128);
+    for (let d = 0; d < 7; d++) {
+      doc.text(DAY_INITIALS[d], x0 + cell * d + cell / 2, yPos + headerH + dowH - 1, { align: "center" });
+    }
+
+    // Day cells
+    const monthStart = startOfMonth(month);
+    const monthEnd = endOfMonth(month);
+    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    const firstDow = getDay(monthStart);
+    const gridTop = yPos + headerH + dowH;
+    doc.setFontSize(6);
+    for (let d = 0; d < days.length; d++) {
+      const day = days[d];
+      const slot = firstDow + d;
+      const row = Math.floor(slot / 7);
+      const colIdx = slot % 7;
+      const cx = x0 + cell * colIdx;
+      const cy = gridTop + cell * row;
+
+      const dateStr = format(day, "yyyy-MM-dd");
+      const inRange = isWithinInterval(day, { start, end });
+      const pct = anomalyMap.get(dateStr);
+      const style = (inRange && pct !== undefined) ? heatmapCellColor(pct) : null;
+
+      if (style) {
+        doc.setFillColor(style.fill[0], style.fill[1], style.fill[2]);
+      } else if (inRange) {
+        doc.setFillColor(243, 244, 246);
+      } else {
+        doc.setFillColor(250, 250, 250);
+      }
+      doc.roundedRect(cx + 0.3, cy + 0.3, cell - 0.6, cell - 0.6, 0.6, 0.6, "F");
+
+      // Day number, top-right
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(5);
+      const dayColor = style ? style.text : ([75, 85, 99] as [number, number, number]);
+      doc.setTextColor(dayColor[0], dayColor[1], dayColor[2]);
+      doc.text(format(day, "d"), cx + cell - 0.8, cy + 1.6, { align: "right" });
+
+      // Percent, centered
+      if (style && pct !== undefined) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(6);
+        const label = `${pct > 0 ? "+" : ""}${pct.toFixed(0)}%`;
+        doc.text(label, cx + cell / 2, cy + cell / 2 + 1.2, { align: "center" });
+      }
+    }
+  }
+
+  return yPos + monthH;
 }
 
 export interface ExportData {
@@ -249,7 +374,7 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
     const workspaceData = data.workspaces.workspaces
       .slice(0, 10)
       .map((w) => [
-        w.workspace_id,
+        w.workspace_name || w.workspace_id,
         formatNumber(w.total_dbus),
         formatCurrency(w.total_spend),
         `${w.percentage.toFixed(1)}%`,
@@ -257,7 +382,7 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
 
     autoTable(doc, {
       startY: yPos,
-      head: [["Workspace ID", "DBUs", "Spend", "%"]],
+      head: [["Workspace", "DBUs", "Spend", "%"]],
       body: workspaceData,
       theme: "striped",
       headStyles: { fillColor: DB_HEADER, fontSize: 9 },
@@ -773,15 +898,18 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
       doc.setTextColor(0, 0, 0);
       yPos += 6;
 
-      const appsRows = data.apps.apps.apps.slice(0, 15).map((a) => [
-        (a.app_name || a.app_id || "Unknown").length > 30
-          ? (a.app_name || a.app_id || "Unknown").substring(0, 27) + "..."
-          : a.app_name || a.app_id || "Unknown",
-        formatNumber(a.total_dbus),
-        formatCurrency(a.total_spend),
-        `${a.percentage.toFixed(1)}%`,
-        a.days_active?.toString() || "-",
-      ]);
+      const appsRows = [...data.apps.apps.apps]
+        .sort((a, b) => (b.total_spend || 0) - (a.total_spend || 0))
+        .slice(0, 15)
+        .map((a) => [
+          (a.app_name || a.app_id || "Unknown").length > 30
+            ? (a.app_name || a.app_id || "Unknown").substring(0, 27) + "..."
+            : a.app_name || a.app_id || "Unknown",
+          formatNumber(a.total_dbus),
+          formatCurrency(a.total_spend),
+          `${a.percentage.toFixed(1)}%`,
+          a.days_active?.toString() || "-",
+        ]);
 
       autoTable(doc, {
         startY: yPos,
@@ -800,64 +928,6 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
       yPos = getLastTableY(doc) + 12;
     }
 
-    // Connected Artifacts / Resources
-    if (data.apps.connected_artifacts && data.apps.connected_artifacts.length > 0) {
-      if (yPos > 200) {
-        doc.addPage();
-        yPos = 20;
-      }
-
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
-      doc.text("Connected Resources", 14, yPos);
-      doc.setTextColor(0, 0, 0);
-      yPos += 6;
-
-      // Group by (app_name, artifact_type) to keep the table compact — one row
-      // per bucket with a count column, sorted by resource count.
-      const grouped = new Map<string, { app: string; type: string; count: number; sample: string }>();
-      for (const a of data.apps.connected_artifacts) {
-        const key = `${a.app_name || "Unknown"}::${a.artifact_type || "Unknown"}`;
-        const existing = grouped.get(key);
-        if (existing) {
-          existing.count += 1;
-        } else {
-          grouped.set(key, {
-            app: a.app_name || "Unknown",
-            type: a.artifact_type || "Unknown",
-            count: 1,
-            sample: a.artifact_name || "",
-          });
-        }
-      }
-      const artifactRows = Array.from(grouped.values())
-        .sort((x, y) => y.count - x.count)
-        .slice(0, 20)
-        .map((r) => [
-          r.app.length > 28 ? r.app.substring(0, 25) + "..." : r.app,
-          r.type,
-          r.count.toString(),
-          r.sample.length > 40 ? r.sample.substring(0, 37) + "..." : r.sample,
-        ]);
-
-      autoTable(doc, {
-        startY: yPos,
-        head: [["App", "Resource Type", "Count", "Sample"]],
-        body: artifactRows,
-        theme: "striped",
-        headStyles: { fillColor: DB_HEADER, fontSize: 9 },
-        alternateRowStyles: { fillColor: DB_ALT_ROW },
-        bodyStyles: { fontSize: 8 },
-        margin: { left: 14, right: 14 },
-        columnStyles: {
-          0: { cellWidth: 50 },
-          3: { cellWidth: 70 },
-        },
-      });
-
-      yPos = getLastTableY(doc) + 12;
-    }
   }
 
   // Tagging
@@ -1131,6 +1201,17 @@ export function generateCostReport(data: ExportData, sections?: ExportSections) 
     });
 
     yPos = getLastTableY(doc) + 12;
+
+    // Calendar heatmap of daily changes — mirrors the SpendAnomalies calendar view.
+    if (yPos > 200) { doc.addPage(); yPos = 20; }
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(DB_HEADER[0], DB_HEADER[1], DB_HEADER[2]);
+    doc.text("Daily Spend Change Calendar", 14, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 6;
+    yPos = drawSpendCalendar(doc, data.anomalies.anomalies, data.dateRange.start, data.dateRange.end, yPos);
+    yPos += 8;
   }
 
   // Query 360 (SQL Warehousing)

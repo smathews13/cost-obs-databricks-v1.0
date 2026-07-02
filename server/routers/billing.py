@@ -2743,6 +2743,7 @@ async def get_kpi_trend(
         WHERE usage_date BETWEEN :start_date AND :end_date
           AND usage_quantity > 0
           AND usage_metadata.cluster_id IS NOT NULL
+          AND (sku_name LIKE '%ALL_PURPOSE%' OR sku_name LIKE '%JOBS%' OR sku_name LIKE '%DLT%')
         GROUP BY usage_date
         ORDER BY usage_date
         """

@@ -512,12 +512,20 @@ WHERE 1=0
 """
 
 AIML_AGENT_BRICKS_ENRICHED = """
-WITH serving_endpoints_by_id AS (
+WITH raw_served_entities AS (
+  -- Materialize the served_entities scan once so both aggregation paths below
+  -- share it. Reduces the total warehouse cost of the agent_bricks query when
+  -- it runs alongside the tagging/idle bundles at page load.
+  SELECT endpoint_id, endpoint_name, served_entity_name
+  FROM system.serving.served_entities
+  WHERE endpoint_id IS NOT NULL OR endpoint_name IS NOT NULL
+),
+serving_endpoints_by_id AS (
   SELECT
     endpoint_id as serving_endpoint_id,
     MAX(endpoint_name) as endpoint_name,
     MAX(served_entity_name) as served_entity_name
-  FROM system.serving.served_entities
+  FROM raw_served_entities
   WHERE endpoint_id IS NOT NULL
   GROUP BY endpoint_id
 ),
@@ -527,7 +535,7 @@ serving_endpoints_by_name AS (
   SELECT
     endpoint_name as serving_endpoint_name,
     MAX(served_entity_name) as served_entity_name
-  FROM system.serving.served_entities
+  FROM raw_served_entities
   WHERE endpoint_name IS NOT NULL
   GROUP BY endpoint_name
 )

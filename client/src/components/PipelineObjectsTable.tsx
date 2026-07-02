@@ -83,7 +83,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
   if (data?.error) {
     return (
       <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">ETL Breakdown</h3>
+        <h3 className="mb-4 text-lg font-semibold text-gray-900">ETL Leaderboard</h3>
         <p className="text-sm text-amber-600">{data.error}</p>
       </div>
     );
@@ -92,7 +92,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
   if (!data || data.objects.length === 0) {
     return (
       <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">ETL Breakdown</h3>
+        <h3 className="mb-4 text-lg font-semibold text-gray-900">ETL Leaderboard</h3>
         <div className="flex h-32 flex-col items-center justify-center gap-2 text-gray-500">
           <p className="text-base font-medium">No pipeline objects found</p>
           <p className="text-sm">Jobs and SDP pipelines will appear here when billing activity is detected</p>
@@ -138,13 +138,13 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
     <div className="animate-fade-in rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h3 className="text-lg font-semibold text-gray-900 shrink-0 flex items-center gap-1.5">
-          ETL Breakdown
+          ETL Leaderboard
           <span className="relative group">
             <svg className="h-4 w-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-80 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg z-20">
-              All streaming and batch workloads across Spark Declarative Pipelines (SDP) and Jobs. Unlike Interactive Compute, these are automated scheduled or triggered workloads that run without user interaction.
+              All streaming and batch workloads across Spark Declarative Pipelines (SDP) and Jobs. Unlike Interactive Compute, these are automated scheduled or triggered workloads that run without user interaction. Shows the top 200 objects by spend.
             </span>
           </span>
         </h3>

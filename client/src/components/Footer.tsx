@@ -54,6 +54,11 @@ export function Footer() {
             </h3>
             <ul className="space-y-1 text-xs text-gray-500">
               <li>
+                <a href="https://github.com/smathews13/cost-obs-databricks-v1.0" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700 hover:underline">
+                  Cost Observability App (GitHub)
+                </a>
+              </li>
+              <li>
                 <a href="https://docs.databricks.com/en/administration-guide/system-tables/index.html" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700 hover:underline">
                   System Tables Documentation
                 </a>

@@ -86,7 +86,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
   if (data?.error) {
     return (
       <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">Interactive Compute Breakdown</h3>
+        <h3 className="mb-4 text-lg font-semibold text-gray-900">Interactive Compute Leaderboard</h3>
         <p className="text-sm text-amber-600">{data.error}</p>
       </div>
     );
@@ -95,7 +95,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
   if (!data || data.items.length === 0) {
     return (
       <div className="rounded-lg bg-white p-6 border " style={{ borderColor: '#E5E5E5' }}>
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">Interactive Compute Breakdown</h3>
+        <h3 className="mb-4 text-lg font-semibold text-gray-900">Interactive Compute Leaderboard</h3>
         <div className="flex h-32 flex-col items-center justify-center gap-2 text-gray-500">
           <p className="text-base font-medium">No interactive compute usage found</p>
           <p className="text-sm">All-purpose cluster activity will appear here when detected</p>
@@ -211,13 +211,13 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
       <div className="mb-4">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-lg font-semibold text-gray-900 shrink-0 flex items-center gap-1.5">
-            Interactive Compute Breakdown
+            Interactive Compute Leaderboard
             <span className="relative group">
               <svg className="h-4 w-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg z-20">
-                All-purpose cluster usage from notebooks, IDEs, and interactive sessions. Does not include automated jobs or streaming pipelines — those are tracked in the ETL Breakdown below.
+                Interactive compute (also known as "All Purpose" compute) usage from notebooks, IDEs, and interactive sessions. Does not include automated jobs or streaming pipelines — those are tracked in the ETL Leaderboard below.
               </span>
             </span>
           </h3>

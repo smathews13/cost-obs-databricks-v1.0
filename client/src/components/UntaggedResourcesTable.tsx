@@ -328,7 +328,7 @@ export function UntaggedResourcesTable({
           </svg>
           <input
             type="text"
-            placeholder={activeUntaggedTab === "all" ? "Search all untagged resources..." : `Search untagged ${activeUntaggedTab}...`}
+            placeholder="Search resources..."
             value={searchQuery}
             onChange={(e) => { onSearchChange(e.target.value); onPageChange(1); }}
             className="w-44 rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-4 text-xs placeholder:text-gray-400 focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"

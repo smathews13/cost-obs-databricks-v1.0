@@ -296,37 +296,44 @@ warehouse_uptime AS (
   WHERE window_start < window_end
   GROUP BY warehouse_id
 ),
-billing_uptime AS (
-  -- Fallback for classic warehouses missing from warehouse_events. Bucket-time:
-  -- sums billed-hour spans clamped to the window, capped at the window duration.
-  -- Overestimates uptime for sub-hour bursts; UI badges these rows as estimated.
+billing_agg AS (
+  -- Single-pass scan of system.billing.usage producing both the billing-derived
+  -- uptime fallback (classic-only, LEAST-capped at window duration) and total
+  -- warehouse spend for the proration below. Consolidated to avoid scanning
+  -- billing.usage twice — the extra scan was pressuring the warehouse enough
+  -- to starve concurrent bundles' queries (tagging, aiml) into timeout.
   SELECT
-    usage_metadata.warehouse_id AS warehouse_id,
+    u.usage_metadata.warehouse_id AS warehouse_id,
     LEAST(
       SUM(
-        (UNIX_TIMESTAMP(LEAST(usage_end_time, CAST(:end_ts AS TIMESTAMP)))
-         - UNIX_TIMESTAMP(GREATEST(usage_start_time, CAST(:start_ts AS TIMESTAMP)))
-        ) / 60.0
+        CASE
+          WHEN u.usage_end_time > CAST(:start_ts AS TIMESTAMP)
+               AND u.usage_start_time < CAST(:end_ts AS TIMESTAMP)
+          THEN (UNIX_TIMESTAMP(LEAST(u.usage_end_time, CAST(:end_ts AS TIMESTAMP)))
+                - UNIX_TIMESTAMP(GREATEST(u.usage_start_time, CAST(:start_ts AS TIMESTAMP)))
+               ) / 60.0
+          ELSE 0
+        END
       ),
       (UNIX_TIMESTAMP(CAST(:end_ts AS TIMESTAMP)) - UNIX_TIMESTAMP(CAST(:start_ts AS TIMESTAMP))) / 60.0
-    ) AS total_running_minutes
-  FROM system.billing.usage
-  WHERE usage_date BETWEEN :start_date AND :end_date
-    AND usage_metadata.warehouse_id IS NOT NULL
-    AND usage_quantity > 0
-    AND sku_name NOT LIKE '%SERVERLESS%'
-    AND usage_end_time > CAST(:start_ts AS TIMESTAMP)
-    AND usage_start_time < CAST(:end_ts AS TIMESTAMP)
+    ) AS billing_running_minutes,
+    SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS total_spend
+  FROM system.billing.usage u
+  LEFT JOIN system.billing.list_prices p
+    ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
+  WHERE u.usage_date BETWEEN :start_date AND :end_date
+    AND u.usage_metadata.warehouse_id IS NOT NULL
+    AND u.usage_quantity > 0
     {ws_clause}
-  GROUP BY usage_metadata.warehouse_id
+  GROUP BY u.usage_metadata.warehouse_id
 ),
 combined_uptime AS (
   SELECT
     COALESCE(e.warehouse_id, b.warehouse_id) AS warehouse_id,
-    COALESCE(e.total_running_minutes, b.total_running_minutes) AS total_running_minutes,
+    COALESCE(e.total_running_minutes, b.billing_running_minutes) AS total_running_minutes,
     CASE WHEN e.warehouse_id IS NOT NULL THEN 'events' ELSE 'billing' END AS uptime_source
   FROM warehouse_uptime e
-  FULL OUTER JOIN billing_uptime b ON e.warehouse_id = b.warehouse_id
+  FULL OUTER JOIN billing_agg b ON e.warehouse_id = b.warehouse_id
 ),
 query_time AS (
   SELECT
@@ -346,25 +353,12 @@ wh_info AS (
   FROM system.compute.warehouses
   WHERE 1=1 {ws_clause_wh}
   QUALIFY ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY change_time DESC) = 1
-),
-wh_cost AS (
-  SELECT
-    usage_metadata.warehouse_id AS warehouse_id,
-    SUM(usage_quantity * COALESCE(p.pricing.default, 0)) AS total_spend
-  FROM system.billing.usage u
-  LEFT JOIN system.billing.list_prices p
-    ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
-  WHERE usage_date BETWEEN :start_date AND :end_date
-    AND usage_metadata.warehouse_id IS NOT NULL
-    AND usage_quantity > 0
-    {ws_clause}
-  GROUP BY usage_metadata.warehouse_id
 )
 SELECT
   u.warehouse_id,
   COALESCE(i.warehouse_name, u.warehouse_id) AS warehouse_name,
   COALESCE(i.warehouse_size, 'Unknown') AS warehouse_size,
-  COALESCE(i.warehouse_type, 'CLASSIC') AS warehouse_type,
+  CASE WHEN i.warehouse_type = 'SERVERLESS' THEN 'SERVERLESS' ELSE 'CLASSIC' END AS warehouse_type,
   i.workspace_id,
   u.uptime_source,
   ROUND(u.total_running_minutes) AS total_running_minutes,
@@ -387,9 +381,8 @@ SELECT
 FROM combined_uptime u
 LEFT JOIN query_time q ON u.warehouse_id = q.warehouse_id
 JOIN wh_info i ON u.warehouse_id = i.warehouse_id
-LEFT JOIN wh_cost c ON u.warehouse_id = c.warehouse_id
+LEFT JOIN billing_agg c ON u.warehouse_id = c.warehouse_id
 WHERE u.total_running_minutes >= 10
-  AND COALESCE(i.warehouse_type, 'CLASSIC') != 'SERVERLESS'
 ORDER BY estimated_idle_spend DESC
 LIMIT 25
 """

@@ -50,9 +50,12 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
   const userFiltersSeen = useRef<Set<string>>(new Set());
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
   const productDropdownRef = useRef<HTMLDivElement>(null);
   const userDropdownRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    // Reset user search when its dropdown closes so reopening starts fresh
+    if (!userDropdownOpen) setUserSearch("");
     if (!productDropdownOpen && !userDropdownOpen) return;
     const handler = (e: MouseEvent) => {
       if (productDropdownOpen && productDropdownRef.current && !productDropdownRef.current.contains(e.target as Node)) setProductDropdownOpen(false);
@@ -223,8 +226,13 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 {userFilters.length === 1 ? formatIdentity(userFilters[0]) : isUserFilterActive ? `${userFilters.length} Users` : "Users"}
                 <svg className={`h-3 w-3 transition-transform ${userDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
-              {userDropdownOpen && (
-                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] rounded-lg border border-gray-200 bg-white shadow-lg">
+              {userDropdownOpen && (() => {
+                const q = userSearch.trim().toLowerCase();
+                const filteredUsers = q
+                  ? allUsers.filter((u) => u.toLowerCase().includes(q) || formatIdentity(u).toLowerCase().includes(q))
+                  : allUsers;
+                return (
+                <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[220px] rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Users</span>
                     <div className="flex items-center gap-2 text-xs">
@@ -233,23 +241,38 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                       <button onClick={(e) => { e.stopPropagation(); setUserFilters([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                     </div>
                   </div>
-                  <VirtualizedList
-                    items={allUsers}
-                    itemHeight={36}
-                    maxHeight={256}
-                    getKey={(u) => u}
-                    renderItem={(u) => (
-                      <button onClick={() => { setUserFilters((prev) => prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]); setCurrentPage(1); }}
-                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
-                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                          {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                        </div>
-                        <span className="truncate text-gray-700">{formatIdentity(u)}</span>
-                      </button>
-                    )}
-                  />
+                  <div className="border-b border-gray-100 p-2">
+                    <input
+                      type="text"
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      placeholder="Search users..."
+                      className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                      autoFocus
+                    />
+                  </div>
+                  {filteredUsers.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-500">No matching users</div>
+                  ) : (
+                    <VirtualizedList
+                      items={filteredUsers}
+                      itemHeight={36}
+                      maxHeight={256}
+                      getKey={(u) => u}
+                      renderItem={(u) => (
+                        <button onClick={() => { setUserFilters((prev) => prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]); setCurrentPage(1); }}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50">
+                          <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                            {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                          </div>
+                          <span className="truncate text-gray-700">{formatIdentity(u)}</span>
+                        </button>
+                      )}
+                    />
+                  )}
                 </div>
-              )}
+                );
+              })()}
             </div>
           )}
           <div className="relative">

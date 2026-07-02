@@ -50,6 +50,15 @@ const COLORS = ["#1B5162", "#06B6D4", "#10B981", "#14B8A6", "#F59E0B", "#3B82F6"
 
 const COST_TOOLTIP_TEXT = "Costs are estimates: the warehouse's billed DBU-hours are divided across all queries in the period, weighted by task duration. A fast query running during a low-activity window can inherit a large share of the hour's cost.";
 
+// Stable module-level formatters for the Top Users bar chart — passing inline
+// arrows to Recharts churns identity every render and re-triggers animations,
+// which is what caused the labels to flicker.
+const USER_BAR_TICK_FMT = (v: number | string) => formatCurrency(typeof v === "number" ? v : Number(v));
+const USER_BAR_TOOLTIP_FMT = (value: unknown) => formatCurrency(value as number);
+const USER_BAR_TOOLTIP_LABEL_FMT = (label: unknown) => `User: ${label}`;
+const USER_BAR_LABEL_FMT = (v: unknown) => `$${Math.round(v as number).toLocaleString()}`;
+const USER_BAR_LABEL_STYLE = { fontSize: 11, fill: "#6b7280" };
+
 function InfoTooltip({ text, stopClick }: { text: string; stopClick?: boolean }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   return (
@@ -140,16 +149,21 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
   const [warehouseSizeWsFilter, setWarehouseSizeWsFilter] = useState<string[]>([]);
   const warehouseSizeWsInitialized = useRef(false);
   const [whSizeDropdownOpen, setWhSizeDropdownOpen] = useState(false);
+  const [whSizeWsSearch, setWhSizeWsSearch] = useState("");
   const whSizeDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close warehouse size dropdown on outside click
+  // Close warehouse size dropdown on outside click; reset search on close so reopening starts fresh
   useEffect(() => {
+    if (!whSizeDropdownOpen) {
+      setWhSizeWsSearch("");
+      return;
+    }
     const handleClick = (e: MouseEvent) => {
       if (whSizeDropdownRef.current && !whSizeDropdownRef.current.contains(e.target as Node)) {
         setWhSizeDropdownOpen(false);
       }
     };
-    if (whSizeDropdownOpen) document.addEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [whSizeDropdownOpen]);
 
@@ -688,7 +702,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                     margin={{ left: 0, right: 70 }}
                     style={{ cursor: "pointer" }}
                   >
-                    <XAxis type="number" tickFormatter={(v) => formatCurrency(v)} stroke="#9ca3af" fontSize={12} tickMargin={8} />
+                    <XAxis type="number" tickFormatter={USER_BAR_TICK_FMT} stroke="#9ca3af" fontSize={12} tickMargin={8} />
                     <YAxis
                       type="category"
                       dataKey="user"
@@ -698,12 +712,13 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       tickMargin={8}
                     />
                     <Tooltip
-                      formatter={(value) => formatCurrency(value as number)}
-                      labelFormatter={(label) => `User: ${label}`}
+                      formatter={USER_BAR_TOOLTIP_FMT}
+                      labelFormatter={USER_BAR_TOOLTIP_LABEL_FMT}
                     />
                     <Bar
                       dataKey="total_spend"
                       radius={[0, 4, 4, 0]}
+                      isAnimationActive={false}
                       onClick={(entry: any) => {
                         setSelectedUser({ raw: entry.rawUser, display: entry.user });
                       }}
@@ -711,7 +726,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       {userBarData.map((_entry, idx) => (
                         <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                       ))}
-                      <LabelList dataKey="total_spend" position="right" formatter={(v: unknown) => `$${Math.round(v as number).toLocaleString()}`} style={{ fontSize: 11, fill: "#6b7280" }} />
+                      <LabelList dataKey="total_spend" position="right" formatter={USER_BAR_LABEL_FMT} style={USER_BAR_LABEL_STYLE} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -834,7 +849,12 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                             </svg>
                           </button>
-                          {whSizeDropdownOpen && (
+                          {whSizeDropdownOpen && (() => {
+                            const q = whSizeWsSearch.trim().toLowerCase();
+                            const filteredWs = q
+                              ? wsEntries.filter(([wsId, wsName]) => wsName.toLowerCase().includes(q) || wsId.toLowerCase().includes(q))
+                              : wsEntries;
+                            return (
                             <div className="absolute right-0 top-full z-[9999] mt-1 w-72 rounded-lg border border-gray-200 bg-white shadow-lg">
                               <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</span>
@@ -844,25 +864,40 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                                   <button onClick={(e) => { e.stopPropagation(); setWarehouseSizeWsFilter([]); }} className="text-gray-500 hover:text-gray-800">Clear</button>
                                 </div>
                               </div>
-                              <VirtualizedList
-                                items={wsEntries}
-                                itemHeight={36}
-                                maxHeight={256}
-                                getKey={([wsId]) => wsId}
-                                renderItem={([wsId, wsName]) => (
-                                  <button
-                                    onClick={() => setWarehouseSizeWsFilter(prev => prev.includes(wsId) ? prev.filter(x => x !== wsId) : [...prev, wsId])}
-                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
-                                  >
-                                    <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${warehouseSizeWsFilter.includes(wsId) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                                      {warehouseSizeWsFilter.includes(wsId) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                    </div>
-                                    <span className="truncate text-gray-700">{wsName}</span>
-                                  </button>
-                                )}
-                              />
+                              <div className="border-b border-gray-100 p-2">
+                                <input
+                                  type="text"
+                                  value={whSizeWsSearch}
+                                  onChange={(e) => setWhSizeWsSearch(e.target.value)}
+                                  placeholder="Search workspaces..."
+                                  className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:border-[#FF3621] focus:outline-none focus:ring-1 focus:ring-[#FF3621]"
+                                  autoFocus
+                                />
+                              </div>
+                              {filteredWs.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-gray-500">No matching workspaces</div>
+                              ) : (
+                                <VirtualizedList
+                                  items={filteredWs}
+                                  itemHeight={36}
+                                  maxHeight={256}
+                                  getKey={([wsId]) => wsId}
+                                  renderItem={([wsId, wsName]) => (
+                                    <button
+                                      onClick={() => setWarehouseSizeWsFilter(prev => prev.includes(wsId) ? prev.filter(x => x !== wsId) : [...prev, wsId])}
+                                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
+                                    >
+                                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${warehouseSizeWsFilter.includes(wsId) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                                        {warehouseSizeWsFilter.includes(wsId) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                      </div>
+                                      <span className="truncate text-gray-700">{wsName}</span>
+                                    </button>
+                                  )}
+                                />
+                              )}
                             </div>
-                          )}
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -1462,8 +1497,10 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
     <div className="rounded-lg border border-gray-200 bg-white p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h3 className="text-base font-semibold text-gray-900">Warehouse Rightsizing</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Over-scaled and oversized warehouse recommendations</p>
+          <h3 className="text-base font-semibold text-gray-900 flex items-center">
+            Warehouse Rightsizing
+            <InfoTooltip text="Two categories of rightsizing opportunities. Over-scaled: warehouse scaled to 2+ clusters over the last 30 days but peak query concurrency stayed below capacity — consider reducing max_num_clusters. Oversized: a Large or bigger warehouse with average queue time < 15s and median query duration < 3 minutes — consider downsizing one tier." />
+          </h3>
         </div>
         <div className="flex items-center gap-3">
           {warehouseHealth && (
@@ -1691,6 +1728,9 @@ export function WarehouseIdleTimeView({
     () => Array.from(new Set((data?.warehouses || []).map(w => w.warehouse_size))).filter(Boolean).sort() as string[],
     [data?.warehouses],
   );
+  // Normalize warehouse_type to the two labels the dropdown actually shows
+  // (Serverless vs Classic). Raw values include 'CLASSIC', 'PRO', 'SERVERLESS';
+  // Pro is a classic-family variant and should not appear as a duplicate row.
   const availableIdleTypes = useMemo(
     () => Array.from(new Set((data?.warehouses || []).map(w => w.warehouse_type))).filter(Boolean) as string[],
     [data?.warehouses],
@@ -1738,10 +1778,10 @@ export function WarehouseIdleTimeView({
     <div className="rounded-lg border border-gray-200 bg-white p-6">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-base font-semibold text-gray-900">Top Warehouses by Idle Time</h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Idle time = warehouse uptime minus active query time. Uptime is derived from warehouse lifecycle events, or falls back to hourly billing buckets (badged <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-1 py-0 text-[10px] font-medium text-amber-700 align-middle">est.</span>) when no events are emitted. Estimated idle spend is prorated from total billed spend; est. rows are directionally noisy.
-          </p>
+          <h3 className="text-base font-semibold text-gray-900 flex items-center">
+            Top Warehouses by Idle Time
+            <InfoTooltip text="Idle time = warehouse uptime minus active query time. Uptime is derived from warehouse lifecycle events, or falls back to hourly billing buckets when no events are emitted — those fallback rows are badged 'est.' and their idle-spend estimate is directionally noisy. Estimated idle spend is prorated from total billed spend." />
+          </h3>
         </div>
         {data?.available && data.warehouses.length > 0 && (() => {
           const distinctSizes = Array.from(new Set(data.warehouses.map(w => w.warehouse_size))).filter(Boolean).sort();

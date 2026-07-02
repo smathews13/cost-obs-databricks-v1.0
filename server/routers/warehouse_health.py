@@ -46,10 +46,13 @@ recent_queries AS (
     AND compute.warehouse_id IS NOT NULL
 ),
 running_warehouses AS (
-  SELECT DISTINCT warehouse_id
+  SELECT
+    warehouse_id,
+    MAX(event_time) AS last_event_time
   FROM system.compute.warehouse_events
   WHERE event_time >= NOW() - INTERVAL {_IDLE_LOOKBACK_HOURS} HOUR
     AND cluster_count > 0
+  GROUP BY warehouse_id
 )
 SELECT
   rw.warehouse_id,
@@ -57,13 +60,11 @@ SELECT
   w.warehouse_size,
   w.workspace_id,
   w.warehouse_type,
-  MAX(we.event_time) AS last_event_time
+  rw.last_event_time
 FROM running_warehouses rw
 JOIN current_warehouses w USING (warehouse_id)
-JOIN system.compute.warehouse_events we ON we.warehouse_id = rw.warehouse_id
 WHERE rw.warehouse_id NOT IN (SELECT warehouse_id FROM recent_queries)
   AND COALESCE(w.warehouse_type, 'CLASSIC') != 'SERVERLESS'
-GROUP BY rw.warehouse_id, w.warehouse_name, w.warehouse_size, w.workspace_id, w.warehouse_type
 """
 
 _SQL_OVER_SCALED = f"""

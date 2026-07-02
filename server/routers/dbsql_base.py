@@ -639,7 +639,7 @@ def create_dbsql_router(table_name: str) -> APIRouter:
     async def get_top_queries(
         start_date: str = Query(default=None),
         end_date: str = Query(default=None),
-        limit: int = Query(default=100, le=200),
+        limit: int = Query(default=200, le=200),
         workspace_ids: str = Query(default=None),
     ) -> dict[str, Any]:
         catalog, schema = get_catalog_schema()

@@ -557,8 +557,6 @@ function Dashboard() {
     staleTime: Infinity,
     enabled: warehouseReady,
   });
-  const wsFilterList = (wsListData?.workspaces ?? []).map(w => ({ workspace_id: w.id, workspace_name: w.name }));
-
   const workspaceNameMap = useMemo(() => {
     const map: Record<string, string> = {};
     // wsListData has real account-level names; only store entries where a real name exists
@@ -569,6 +567,13 @@ function Dashboard() {
     });
     return map;
   }, [wsListData?.workspaces, workspaces?.workspaces]);
+
+  // Overlay the merged name map so the top-nav filter picks up billing-derived
+  // names when /api/billing/workspaces returns an id-only record.
+  const wsFilterList = (wsListData?.workspaces ?? []).map(w => ({
+    workspace_id: w.id,
+    workspace_name: workspaceNameMap[w.id] || w.name || null,
+  }));
 
   // Settings data — all prefetched in the background after the main bundle loads.
   // `enabled` gates each query on `!!bundle` so settings requests don't race the

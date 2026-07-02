@@ -381,6 +381,16 @@ function Dashboard() {
   // queries against a cold warehouse before we know its state.
   const warehouseReady = warehouseStatus?.status === "warm";
 
+  // SettingsConfig writes true here when a rebuild starts, false when it finishes.
+  // Suppresses the cold-start screen during rebuilds — the warehouse waking up
+  // was caused by the rebuild itself, not a cold app load.
+  const { data: rebuildInProgress = false } = useQuery<boolean>({
+    queryKey: ["rebuild-in-progress"],
+    queryFn: () => false,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
   // Clear the chunk-reload guard and preload lazy chunks once the warehouse is
   // confirmed warm. Gating preloading here prevents the browser's ES module
   // registry from caching rejected import() promises during the risky startup
@@ -699,7 +709,7 @@ function Dashboard() {
     );
   }
 
-  if (warehouseWarming) {
+  if (warehouseWarming && !rebuildInProgress) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-6" style={{ backgroundColor: '#F9F7F4' }}>
         <div className="flex flex-col items-center gap-4 text-center">

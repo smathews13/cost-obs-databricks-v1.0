@@ -134,6 +134,7 @@ export function SettingsConfig({
       if (_mvPollInterval) { clearInterval(_mvPollInterval); _mvPollInterval = null; }
       _mvRefreshing = false;
       setMvRefreshing(false);
+      queryClient.setQueryData(["rebuild-in-progress"], false);
       // Capture result status for success/error badge
       const status = result.data?.refresh_status?.status ?? null;
       _mvLastResult = status;
@@ -162,6 +163,7 @@ export function SettingsConfig({
     _mvDeadline = Date.now() + 15 * 60 * 1000;
     setMvRefreshing(true);
     setMvLastResult(null);
+    queryClient.setQueryData(["rebuild-in-progress"], true);
     try {
       await fetch(`/api/settings/refresh-mvs?lookback_days=${lookbackDays}`, { method: "POST" });
     } catch {

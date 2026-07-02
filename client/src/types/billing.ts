@@ -358,6 +358,7 @@ export interface AIMLEndpoint {
   days_active: number;
   percentage: number;
   workspace_id?: string | null;
+  workspace_name?: string | null;
 }
 
 export interface AIMLEndpointsResponse {

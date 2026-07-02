@@ -74,9 +74,11 @@ interface UntaggedResourcesTableProps {
 
 const SUGGESTED_TAGS_KEY = "cost-obs-minimize-suggested-tags";
 
+const ALL_RESOURCE_TYPES: Exclude<UntaggedTab, "all">[] = ["clusters", "jobs", "pipelines", "warehouses", "endpoints"];
+
 export function UntaggedResourcesTable({
   data, host, suggestedTags, untaggedCounts,
-  activeUntaggedTab, onTabChange,
+  activeUntaggedTab: _activeUntaggedTab, onTabChange: _onTabChange,
   searchQuery, onSearchChange,
   currentPage, onPageChange,
   sortField, sortDirection, onSort,
@@ -90,8 +92,15 @@ export function UntaggedResourcesTable({
     return false;
   });
 
+  // Multi-select resource type filter — all selected by default. Replaces the old single-tab picker.
+  const [selectedResourceTypes, setSelectedResourceTypes] = useState<Exclude<UntaggedTab, "all">[]>([...ALL_RESOURCE_TYPES]);
   const [tabDropdownOpen, setTabDropdownOpen] = useState(false);
   const tabDropdownRef = useRef<HTMLDivElement>(null);
+  const isAllTypesSelected = selectedResourceTypes.length === ALL_RESOURCE_TYPES.length;
+  const singleTypeSelected: Exclude<UntaggedTab, "all"> | null = selectedResourceTypes.length === 1 ? selectedResourceTypes[0] : null;
+  const activeUntaggedTab: UntaggedTab = singleTypeSelected ?? "all";
+  const toggleResourceType = (t: Exclude<UntaggedTab, "all">) => setSelectedResourceTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+
   useEffect(() => {
     if (!tabDropdownOpen) return;
     const handler = (e: MouseEvent) => {
@@ -112,9 +121,7 @@ export function UntaggedResourcesTable({
     }
   }, []);
 
-  const totalUntaggedCount = untaggedCounts.clusters + untaggedCounts.jobs + untaggedCounts.pipelines + untaggedCounts.warehouses + untaggedCounts.endpoints;
-  const tabs: { key: UntaggedTab; label: string; count: number }[] = [
-    { key: "all", label: "All Resources", count: totalUntaggedCount },
+  const resourceTabs: { key: Exclude<UntaggedTab, "all">; label: string; count: number }[] = [
     { key: "clusters", label: "Clusters", count: untaggedCounts.clusters },
     { key: "jobs", label: "Jobs", count: untaggedCounts.jobs },
     { key: "pipelines", label: "SDP Pipelines", count: untaggedCounts.pipelines },
@@ -123,16 +130,17 @@ export function UntaggedResourcesTable({
   ];
 
   const getItems = () => {
-    if (activeUntaggedTab === "all") {
-      return [
-        ...(data.untagged.clusters?.items || []).map(i => ({ ...i, _name: i.cluster_name, _id: i.cluster_id, _type: "clusters" })),
-        ...(data.untagged.jobs?.items || []).map(i => ({ ...i, _name: i.job_name, _id: i.job_id, _type: "jobs" })),
-        ...(data.untagged.pipelines?.items || []).map(i => ({ ...i, _name: i.pipeline_name, _id: i.pipeline_id, _type: "pipelines" })),
-        ...(data.untagged.warehouses?.items || []).map(i => ({ ...i, _name: i.warehouse_name, _id: i.warehouse_id, _type: "warehouses" })),
-        ...(data.untagged.endpoints?.items || []).map(i => ({ ...i, _name: i.endpoint_name, _id: i.endpoint_name, _type: "endpoints" })),
-      ];
+    if (!singleTypeSelected) {
+      const items: any[] = [];
+      const has = (t: Exclude<UntaggedTab, "all">) => selectedResourceTypes.includes(t);
+      if (has("clusters")) items.push(...(data.untagged.clusters?.items || []).map(i => ({ ...i, _name: i.cluster_name, _id: i.cluster_id, _type: "clusters" })));
+      if (has("jobs")) items.push(...(data.untagged.jobs?.items || []).map(i => ({ ...i, _name: i.job_name, _id: i.job_id, _type: "jobs" })));
+      if (has("pipelines")) items.push(...(data.untagged.pipelines?.items || []).map(i => ({ ...i, _name: i.pipeline_name, _id: i.pipeline_id, _type: "pipelines" })));
+      if (has("warehouses")) items.push(...(data.untagged.warehouses?.items || []).map(i => ({ ...i, _name: i.warehouse_name, _id: i.warehouse_id, _type: "warehouses" })));
+      if (has("endpoints")) items.push(...(data.untagged.endpoints?.items || []).map(i => ({ ...i, _name: i.endpoint_name, _id: i.endpoint_name, _type: "endpoints" })));
+      return items;
     }
-    switch (activeUntaggedTab) {
+    switch (singleTypeSelected) {
       case "clusters": return data.untagged.clusters?.items || [];
       case "jobs": return data.untagged.jobs?.items || [];
       case "pipelines": return data.untagged.pipelines?.items || [];
@@ -267,34 +275,41 @@ export function UntaggedResourcesTable({
         </label>
         <div className="relative" ref={tabDropdownRef}>
           <button
+            type="button"
             onClick={() => setTabDropdownOpen((o) => !o)}
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${activeUntaggedTab !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${!isAllTypesSelected ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
           >
-            {tabs.find((t) => t.key === activeUntaggedTab)?.label ?? "Select"}
-            {activeUntaggedTab !== "all" && (() => { const c = tabs.find((t) => t.key === activeUntaggedTab)?.count ?? 0; return c > 0 ? <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: '#FF3621' }}>{c >= 1000 ? "1k+" : c}</span> : null; })()}
+            {singleTypeSelected
+              ? (resourceTabs.find((t) => t.key === singleTypeSelected)?.label ?? "Resources")
+              : !isAllTypesSelected
+              ? `${selectedResourceTypes.length} Resource Types`
+              : "All Resources"}
             <svg className={`h-3 w-3 transition-transform ${tabDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
           {tabDropdownOpen && (
-            <div className="absolute left-0 top-full z-[9999] mt-1 min-w-[190px] rounded-lg border border-gray-200 bg-white shadow-lg">
+            <div className="absolute left-0 top-full z-[9999] mt-1 min-w-[210px] rounded-lg border border-gray-200 bg-white shadow-lg">
               <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Resource type</span>
-                {activeUntaggedTab !== "all" && (
-                  <button onClick={(e) => { e.stopPropagation(); onTabChange("all"); setTabDropdownOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
-                )}
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Resource Type</span>
+                <div className="flex items-center gap-2 text-xs">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedResourceTypes([...ALL_RESOURCE_TYPES]); }} className="text-gray-500 hover:text-gray-800">All</button>
+                  <span className="text-gray-300">·</span>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedResourceTypes([]); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                </div>
               </div>
-              {tabs.map((tab) => (
+              {resourceTabs.map((tab) => (
                 <button
+                  type="button"
                   key={tab.key}
-                  onClick={() => { onTabChange(tab.key); setTabDropdownOpen(false); }}
+                  onClick={() => toggleResourceType(tab.key)}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                 >
                   <div className="flex items-center gap-2">
-                    <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${activeUntaggedTab === tab.key ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                      {activeUntaggedTab === tab.key && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                    <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selectedResourceTypes.includes(tab.key) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                      {selectedResourceTypes.includes(tab.key) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                     </div>
-                    <span className={activeUntaggedTab === tab.key ? "font-medium text-gray-900" : "text-gray-700"}>{tab.label}</span>
+                    <span className={selectedResourceTypes.includes(tab.key) ? "font-medium text-gray-900" : "text-gray-700"}>{tab.label}</span>
                   </div>
                   {tab.count > 0 && (
                     <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">

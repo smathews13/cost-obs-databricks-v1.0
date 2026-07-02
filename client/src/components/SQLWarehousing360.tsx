@@ -1427,7 +1427,11 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
     staleTime: 30 * 60 * 1000,
     retry: false,
   });
-  const [healthIssueFilter, setHealthIssueFilter] = useState<string[]>([]);
+  const HEALTH_ISSUE_OPTIONS = [
+    { value: "OVER_SCALED", label: "Over-Scaled" },
+    { value: "OVERSIZED", label: "Oversized" },
+  ];
+  const [healthIssueFilter, setHealthIssueFilter] = useState<string[]>(() => HEALTH_ISSUE_OPTIONS.map(o => o.value));
   const [healthSearch, setHealthSearch] = useState("");
   const [healthPage, setHealthPage] = useState(1);
   const HEALTH_PAGE_SIZE = 10;
@@ -1443,11 +1447,6 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [healthIssueDropdownOpen]);
-
-  const HEALTH_ISSUE_OPTIONS = [
-    { value: "OVER_SCALED", label: "Over-Scaled" },
-    { value: "OVERSIZED", label: "Oversized" },
-  ];
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6">
@@ -1587,7 +1586,7 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
             </div>
             {totalPages > 1 && (
               <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                <span>{filtered.length} recommendation{filtered.length !== 1 ? "s" : ""}{healthIssueFilter.length > 0 ? ` (filtered)` : ""}</span>
+                <span>{filtered.length} recommendation{filtered.length !== 1 ? "s" : ""}{healthIssueFilter.length > 0 && healthIssueFilter.length < HEALTH_ISSUE_OPTIONS.length ? ` (filtered)` : ""}</span>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setHealthPage((p) => Math.max(1, p - 1))}
@@ -1669,11 +1668,38 @@ export function WarehouseIdleTimeView({
   const [idleSearch, setIdleSearch] = useState("");
   const [idleSizeFilter, setIdleSizeFilter] = useState<string[]>([]);
   const [idleTypeFilter, setIdleTypeFilter] = useState<string[]>([]);
+  const idleSizeSeen = useRef<Set<string>>(new Set());
+  const idleTypeSeen = useRef<Set<string>>(new Set());
   const [idleSizeDropdownOpen, setIdleSizeDropdownOpen] = useState(false);
   const [idleTypeDropdownOpen, setIdleTypeDropdownOpen] = useState(false);
   const idleSizeDropdownRef = useRef<HTMLDivElement>(null);
   const idleTypeDropdownRef = useRef<HTMLDivElement>(null);
   const IDLE_PAGE_SIZE = 10;
+
+  const availableIdleSizes = useMemo(
+    () => Array.from(new Set((data?.warehouses || []).map(w => w.warehouse_size))).filter(Boolean).sort() as string[],
+    [data?.warehouses],
+  );
+  const availableIdleTypes = useMemo(
+    () => Array.from(new Set((data?.warehouses || []).map(w => w.warehouse_type))).filter(Boolean) as string[],
+    [data?.warehouses],
+  );
+
+  useEffect(() => {
+    const seen = idleSizeSeen.current;
+    const fresh = availableIdleSizes.filter(x => !seen.has(x));
+    if (fresh.length === 0) return;
+    setIdleSizeFilter(prev => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach(x => seen.add(x));
+  }, [availableIdleSizes]);
+
+  useEffect(() => {
+    const seen = idleTypeSeen.current;
+    const fresh = availableIdleTypes.filter(x => !seen.has(x));
+    if (fresh.length === 0) return;
+    setIdleTypeFilter(prev => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach(x => seen.add(x));
+  }, [availableIdleTypes]);
 
   useEffect(() => {
     if (!idleSizeDropdownOpen) return;

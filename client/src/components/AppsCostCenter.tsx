@@ -328,14 +328,14 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   const [selectedApp, setSelectedApp] = useState<AppsApp | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWorkspaces, setSelectedWorkspaces] = useState<string[]>([]);
-  const selectedWorkspacesInitialized = useRef(false);
+  const selectedWorkspacesSeen = useRef<Set<string>>(new Set());
   const [wsFilterOpen, setWsFilterOpen] = useState(false);
   const [wsFilterSearch, setWsFilterSearch] = useState("");
   const [appsPage, setAppsPage] = useState(1);
   const APPS_PAGE_SIZE = 40;
   const [artifactTypeFilters, setArtifactTypeFilters] = useState<string[]>([]);
-  const artifactTypeInitialized = useRef(false);
-  const artifactAppInitialized = useRef(false);
+  const artifactTypeSeen = useRef<Set<string>>(new Set());
+  const artifactAppSeen = useRef<Set<string>>(new Set());
   const [artifactTypeDropdownOpen, setArtifactTypeDropdownOpen] = useState(false);
   const [artifactAppFilter, setArtifactAppFilter] = useState<string[]>([]);
   const [artifactAppFilterOpen, setArtifactAppFilterOpen] = useState(false);
@@ -373,28 +373,30 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
     return () => document.removeEventListener("mousedown", handleClick);
   }, [artifactAppFilterOpen]);
 
-  // Seed artifact filters with all values on first data load
-  useEffect(() => {
-    if (artifactTypeInitialized.current) return;
-    const arts = data?.connected_artifacts;
-    if (!arts || arts.length === 0) return;
-    const types = [...new Set(arts.map((a: AppsConnectedArtifact) => a.artifact_type))].filter((t): t is string => !!t && t !== 'UNKNOWN' && t !== 'Unknown').sort();
-    if (types.length > 0) {
-      setArtifactTypeFilters(types);
-      artifactTypeInitialized.current = true;
-    }
+  const availableArtifactTypes = useMemo(() => {
+    const arts = data?.connected_artifacts || [];
+    return [...new Set(arts.map((a: AppsConnectedArtifact) => a.artifact_type))].filter((t): t is string => !!t && t !== 'UNKNOWN' && t !== 'Unknown').sort();
+  }, [data?.connected_artifacts]);
+  const availableArtifactApps = useMemo(() => {
+    const arts = data?.connected_artifacts || [];
+    return [...new Set(arts.map((a: AppsConnectedArtifact) => a.app_name).filter(Boolean))].sort() as string[];
   }, [data?.connected_artifacts]);
 
   useEffect(() => {
-    if (artifactAppInitialized.current) return;
-    const arts = data?.connected_artifacts;
-    if (!arts || arts.length === 0) return;
-    const apps = [...new Set(arts.map((a: AppsConnectedArtifact) => a.app_name).filter(Boolean))].sort() as string[];
-    if (apps.length > 0) {
-      setArtifactAppFilter(apps);
-      artifactAppInitialized.current = true;
-    }
-  }, [data?.connected_artifacts]);
+    const seen = artifactTypeSeen.current;
+    const fresh = availableArtifactTypes.filter(x => !seen.has(x));
+    if (fresh.length === 0) return;
+    setArtifactTypeFilters(prev => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach(x => seen.add(x));
+  }, [availableArtifactTypes]);
+
+  useEffect(() => {
+    const seen = artifactAppSeen.current;
+    const fresh = availableArtifactApps.filter(x => !seen.has(x));
+    if (fresh.length === 0) return;
+    setArtifactAppFilter(prev => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach(x => seen.add(x));
+  }, [availableArtifactApps]);
 
   // Close artifact type filter dropdown on outside click
   useEffect(() => {
@@ -478,13 +480,13 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
     })).sort((a, b) => a.name.localeCompare(b.name));
   }, [data?.workspaces, workspaceNameMap]);
 
-  // Seed workspace filter with all IDs on first data load
+  // Sync-add: unseen workspace IDs get added to the filter automatically.
   useEffect(() => {
-    if (selectedWorkspacesInitialized.current) return;
-    if (availableWorkspaces.length > 0) {
-      setSelectedWorkspaces(availableWorkspaces.map(ws => ws.id));
-      selectedWorkspacesInitialized.current = true;
-    }
+    const seen = selectedWorkspacesSeen.current;
+    const fresh = availableWorkspaces.map(ws => ws.id).filter(id => !seen.has(id));
+    if (fresh.length === 0) return;
+    setSelectedWorkspaces(prev => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach(id => seen.add(id));
   }, [availableWorkspaces]);
 
   // Selected workspaces as names (workspace_names on apps contains names, not IDs)
@@ -976,21 +978,31 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             )}
           </div>
         </div>
-        {/* Workspace filter pills */}
-        {selectedWorkspaces.length > 0 && (
-          <div className="mb-4 flex flex-wrap items-center gap-1.5">
-            {selectedWorkspaces.map(wsId => (
-              <span key={wsId} className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: '#FF3621' }}>
-                {resolveWsName(wsId)}
-                <button onClick={() => handleToggleWorkspace(wsId)} className="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-white/20">
-                  <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+        {/* Workspace filter pills — only shown for partial selections (all-selected is the default).
+            Hard cap and scroll to prevent unbounded pill sprawl with 50+ workspaces. */}
+        {selectedWorkspaces.length > 0 && selectedWorkspaces.length < availableWorkspaces.length && (
+          selectedWorkspaces.length > 12 ? (
+            <div className="mb-4 flex items-center gap-2 text-xs text-gray-600">
+              <span className="rounded-full bg-orange-50 px-2.5 py-0.5 font-medium text-[#FF3621]">
+                {selectedWorkspaces.length} of {availableWorkspaces.length} workspaces selected
               </span>
-            ))}
-            <button onClick={() => setSelectedWorkspaces([])} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
-          </div>
+              <button onClick={() => setSelectedWorkspaces([...availableWorkspaces.map(w => w.id)])} className="text-gray-500 hover:text-gray-700 underline">Reset to all</button>
+            </div>
+          ) : (
+            <div className="mb-4 flex max-h-20 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
+              {selectedWorkspaces.map(wsId => (
+                <span key={wsId} className="inline-flex max-w-[220px] items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: '#FF3621' }}>
+                  <span className="truncate">{resolveWsName(wsId)}</span>
+                  <button onClick={() => handleToggleWorkspace(wsId)} className="ml-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full hover:bg-white/20">
+                    <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              ))}
+              <button onClick={() => setSelectedWorkspaces([...availableWorkspaces.map(w => w.id)])} className="text-xs text-gray-500 hover:text-gray-700">Reset</button>
+            </div>
+          )
         )}
 
         {/* Detail panel — shown when an app is selected */}

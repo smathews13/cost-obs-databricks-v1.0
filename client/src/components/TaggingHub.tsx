@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { UntaggedResourcesTable } from "./UntaggedResourcesTable";
@@ -102,11 +102,13 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
   const [tagFilterDropdownOpen, setTagFilterDropdownOpen] = useState(false);
   const [tagFilterSearch, setTagFilterSearch] = useState("");
+  const tagFilterSeen = useRef<Set<string>>(new Set());
 
   // Tag value filter state (for Spend by Tag table)
   const [selectedTagValueFilters, setSelectedTagValueFilters] = useState<string[]>([]);
   const [tagValueFilterDropdownOpen, setTagValueFilterDropdownOpen] = useState(false);
   const [tagValueFilterSearch, setTagValueFilterSearch] = useState("");
+  const tagValueFilterSeen = useRef<Set<string>>(new Set());
 
   // Tag drilldown state
   const [selectedTag, setSelectedTag] = useState<{tag_key: string; tag_value: string} | null>(null);
@@ -289,20 +291,43 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
       .sort();
   }, [data]);
 
+  // Sync-add: newly-appearing keys/values get added to the filter (checked by default);
+  // items the user has manually unchecked stay unchecked across data refreshes.
+  useEffect(() => {
+    const seen = tagFilterSeen.current;
+    const fresh = availableTagKeys.filter(x => !seen.has(x));
+    if (fresh.length === 0) return;
+    setSelectedTagFilters(prev => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach(x => seen.add(x));
+  }, [availableTagKeys]);
+
+  useEffect(() => {
+    const seen = tagValueFilterSeen.current;
+    const fresh = availableTagValues.filter(x => !seen.has(x));
+    if (fresh.length === 0) return;
+    setSelectedTagValueFilters(prev => Array.from(new Set([...prev, ...fresh])));
+    fresh.forEach(x => seen.add(x));
+  }, [availableTagValues]);
+
+  // Treat "all selected" as the same as no filter for downstream memos.
+  const isTagFilterActive = selectedTagFilters.length > 0 && selectedTagFilters.length < availableTagKeys.length;
+  const isTagValueFilterActive = selectedTagValueFilters.length > 0 && selectedTagValueFilters.length < availableTagValues.length;
+
   // Filtered tag data based on selected tag value filters
   const filteredTags = useMemo(() => {
     if (!data?.cost_by_tag?.tags) return [];
-    if (selectedTagValueFilters.length === 0) return data.cost_by_tag.tags;
+    if (!isTagValueFilterActive) return data.cost_by_tag.tags;
     return data.cost_by_tag.tags.filter(tag =>
       selectedTagValueFilters.includes(`${tag.tag_key}:${tag.tag_value}`)
     );
-  }, [data, selectedTagValueFilters]);
+  }, [data, selectedTagValueFilters, isTagValueFilterActive]);
 
   // Filtered tag breakdown (Spend by Key chart) based on selected filters
   const filteredTagBreakdownData = useMemo(() => {
-    if (selectedTagFilters.length === 0) return tagBreakdownData;
+    if (!isTagFilterActive && !isTagValueFilterActive) return tagBreakdownData;
     const byKey: Record<string, number> = {};
     for (const tag of filteredTags) {
+      if (isTagFilterActive && !selectedTagFilters.includes(tag.tag_key)) continue;
       if (!byKey[tag.tag_key]) byKey[tag.tag_key] = 0;
       byKey[tag.tag_key] += tag.total_spend;
     }
@@ -314,7 +339,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
         total_spend: spend,
         fill: TAG_COLORS[idx % TAG_COLORS.length],
       }));
-  }, [filteredTags, selectedTagFilters, tagBreakdownData]);
+  }, [filteredTags, selectedTagFilters, tagBreakdownData, isTagFilterActive, isTagValueFilterActive]);
 
   const handleToggleTagFilter = useCallback((key: string) => {
     setSelectedTagFilters(prev =>
@@ -324,22 +349,10 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
     setKeyPage(1);
   }, []);
 
-  const handleClearTagFilters = useCallback(() => {
-    setSelectedTagFilters([]);
-    setCurrentPage(1);
-    setKeyPage(1);
-  }, []);
-
   const handleToggleTagValueFilter = useCallback((keyValue: string) => {
     setSelectedTagValueFilters(prev =>
       prev.includes(keyValue) ? prev.filter(kv => kv !== keyValue) : [...prev, keyValue]
     );
-    setCurrentPage(1);
-    setTagPage(1);
-  }, []);
-
-  const handleClearTagValueFilters = useCallback(() => {
-    setSelectedTagValueFilters([]);
     setCurrentPage(1);
     setTagPage(1);
   }, []);
@@ -611,7 +624,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">
               Spend by Tag
-              {selectedTagValueFilters.length > 0 && (
+              {isTagValueFilterActive && (
                 <span className="ml-2 text-sm font-normal text-gray-500">({filteredTags.length} results)</span>
               )}
             </h3>
@@ -619,10 +632,10 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               <div className="relative" data-tag-value-filter-dropdown>
                 <button
                   onClick={() => { setTagValueFilterDropdownOpen(!tagValueFilterDropdownOpen); setTagValueFilterSearch(""); }}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${selectedTagValueFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${isTagValueFilterActive ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                 >
                   Value
-                  {selectedTagValueFilters.length > 0 && (
+                  {isTagValueFilterActive && (
                     <span className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: '#FF3621' }}>
                       {selectedTagValueFilters.length}
                     </span>
@@ -643,11 +656,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                     <div className="max-h-60 overflow-y-auto">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Tag Values</span>
-                        <div className="flex items-center gap-2 text-xs">
-                          <button onClick={(e) => { e.stopPropagation(); setSelectedTagValueFilters([...availableTagValues]); }} className="text-gray-500 hover:text-gray-800">All</button>
-                          <span className="text-gray-300">·</span>
-                          <button onClick={(e) => { e.stopPropagation(); handleClearTagValueFilters(); }} className="text-gray-500 hover:text-gray-800">Clear</button>
-                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedTagValueFilters([...availableTagValues]); }} className="text-xs text-gray-500 hover:text-gray-800">Reset</button>
                       </div>
                       {availableTagValues
                         .filter(kv => !tagValueFilterSearch || kv.toLowerCase().includes(tagValueFilterSearch.toLowerCase()))
@@ -681,8 +690,8 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               </div>
             )}
           </div>
-          {/* Tag value filter pills */}
-          {selectedTagValueFilters.length > 0 && (
+          {/* Tag value filter pills — only shown when a partial selection is active */}
+          {isTagValueFilterActive && (
             <div className="mb-3 flex max-h-24 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
               {selectedTagValueFilters.map(kv => {
                 const [key, ...rest] = kv.split(":");
@@ -698,7 +707,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                   </span>
                 );
               })}
-              <button onClick={handleClearTagValueFilters} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
+              <button onClick={() => setSelectedTagValueFilters([...availableTagValues])} className="text-xs text-gray-500 hover:text-gray-700">Reset</button>
             </div>
           )}
           {filteredTags.length > 0 ? (() => {
@@ -751,7 +760,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
             );
           })() : (
             <div className="flex h-32 items-center justify-center text-gray-500">
-              {selectedTagValueFilters.length > 0 ? "No tags match the selected filters" : "No tagged resources found"}
+              {isTagValueFilterActive ? "No tags match the selected filters" : "No tagged resources found"}
             </div>
           )}
         </div>
@@ -764,10 +773,10 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               <div className="relative" data-tag-filter-dropdown>
                 <button
                   onClick={() => { setTagFilterDropdownOpen(!tagFilterDropdownOpen); setTagFilterSearch(""); }}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${selectedTagFilters.length > 0 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${isTagFilterActive ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                 >
                   Tag
-                  {selectedTagFilters.length > 0 && (
+                  {isTagFilterActive && (
                     <span className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: '#FF3621' }}>
                       {selectedTagFilters.length}
                     </span>
@@ -788,11 +797,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                     <div className="max-h-60 overflow-y-auto">
                       <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Tag Keys</span>
-                        <div className="flex items-center gap-2 text-xs">
-                          <button onClick={(e) => { e.stopPropagation(); setSelectedTagFilters([...availableTagKeys]); }} className="text-gray-500 hover:text-gray-800">All</button>
-                          <span className="text-gray-300">·</span>
-                          <button onClick={(e) => { e.stopPropagation(); handleClearTagFilters(); }} className="text-gray-500 hover:text-gray-800">Clear</button>
-                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedTagFilters([...availableTagKeys]); }} className="text-xs text-gray-500 hover:text-gray-800">Reset</button>
                       </div>
                       {availableTagKeys
                         .filter(k => !tagFilterSearch || k.toLowerCase().includes(tagFilterSearch.toLowerCase()))
@@ -821,8 +826,8 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
               </div>
             )}
           </div>
-          {/* Tag key filter pills */}
-          {selectedTagFilters.length > 0 && (
+          {/* Tag key filter pills — only shown when a partial selection is active */}
+          {isTagFilterActive && (
             <div className="mb-3 flex max-h-24 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
               {selectedTagFilters.map(key => (
                 <span key={key} className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: '#FF3621' }}>
@@ -834,7 +839,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                   </button>
                 </span>
               ))}
-              <button onClick={handleClearTagFilters} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
+              <button onClick={() => setSelectedTagFilters([...availableTagKeys])} className="text-xs text-gray-500 hover:text-gray-700">Reset</button>
             </div>
           )}
           {filteredTagBreakdownData.length > 0 ? (() => {
@@ -889,7 +894,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
             );
           })() : (
             <div className="flex h-32 items-center justify-center text-gray-500">
-              {selectedTagFilters.length > 0 ? "No data for selected filters" : "No tag data available"}
+              {isTagFilterActive ? "No data for selected filters" : "No tag data available"}
             </div>
           )}
         </div>

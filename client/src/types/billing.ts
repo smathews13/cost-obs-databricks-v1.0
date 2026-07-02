@@ -132,6 +132,7 @@ export interface AWSClusterCost {
   worker_instance_type: string | null;
   cluster_source: string | null;
   workspace_id: string;
+  workspace_name?: string | null;
   state: string | null;
   total_dbu_hours: number;
   estimated_aws_cost: number;

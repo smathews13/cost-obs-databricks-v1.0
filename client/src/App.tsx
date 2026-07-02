@@ -574,6 +574,7 @@ function Dashboard() {
       days_active: c.days_active,
       percentage: c.percentage,
       workspace_id: (c as any).workspace_id || "",
+      workspace_name: (c as any).workspace_name ?? null,
       state: null,
       estimated_aws_cost: c.estimated_cost,
     })),

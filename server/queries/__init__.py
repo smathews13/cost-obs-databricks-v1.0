@@ -1188,11 +1188,14 @@ SELECT
   MAX(ci.worker_instance_type) AS worker_instance_type,
   MAX(ci.cluster_source)       AS cluster_source,
   MAX(uf.workspace_id)         AS workspace_id,
+  MAX(wsl.workspace_name)      AS workspace_name,
   MAX(uf.cloud)                AS cloud,
   SUM(uf.estimated_dbu_hours)  AS total_dbu_hours,
   COUNT(DISTINCT uf.usage_date) AS days_active
 FROM usage_filtered uf
 LEFT JOIN cluster_info ci ON uf.cluster_id = ci.cluster_id
+LEFT JOIN system.access.workspaces_latest wsl
+  ON CAST(uf.workspace_id AS BIGINT) = CAST(wsl.workspace_id AS BIGINT)
 GROUP BY uf.cluster_id
 ORDER BY total_dbu_hours DESC
 LIMIT 100

@@ -726,6 +726,19 @@ export function CloudCostsView({
     return [...ws].sort();
   }, [familyFilteredClusters]);
 
+  // Fallback name lookup from cluster rows (populated via backend LEFT JOIN on
+  // system.access.workspaces_latest). Used when workspaceNameMap is missing an id.
+  const clusterWorkspaceNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const c of familyFilteredClusters) {
+      const wsId = c.workspace_id;
+      const wsName = (c as any).workspace_name;
+      if (wsId && wsName && !map[wsId]) map[wsId] = wsName;
+    }
+    return map;
+  }, [familyFilteredClusters]);
+  const resolveWsName = (id: string) => workspaceNameMap?.[id] || clusterWorkspaceNames[id] || id;
+
   useEffect(() => {
     const seen = tableWorkspaceSeen.current;
     const fresh = availableTableWorkspaces.filter(x => !seen.has(x));
@@ -1065,7 +1078,7 @@ export function CloudCostsView({
                   onClick={() => { setWorkspaceFilterOpen(o => !o); setFamilyFilterOpen(false); setTableWorkspaceSearch(""); }}
                   className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${isTableWorkspaceFilterActive ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}
                 >
-                  {!isTableWorkspaceFilterActive ? "Workspaces" : tableWorkspace.length === 1 ? (workspaceNameMap?.[tableWorkspace[0]] || tableWorkspace[0]) : `${tableWorkspace.length} Workspaces`}
+                  {!isTableWorkspaceFilterActive ? "Workspaces" : tableWorkspace.length === 1 ? resolveWsName(tableWorkspace[0]) : `${tableWorkspace.length} Workspaces`}
                   {isTableWorkspaceFilterActive && (
                     <button onClick={(e) => { e.stopPropagation(); setTableWorkspace([...availableTableWorkspaces]); setCurrentPage(1); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
                       <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1096,10 +1109,10 @@ export function CloudCostsView({
                         .filter(w => {
                           if (!tableWorkspaceSearch) return true;
                           const q = tableWorkspaceSearch.toLowerCase();
-                          return (workspaceNameMap?.[w] || w).toLowerCase().includes(q) || w.toLowerCase().includes(q);
+                          return resolveWsName(w).toLowerCase().includes(q) || w.toLowerCase().includes(q);
                         })
                         .map(w => {
-                          const label = workspaceNameMap?.[w] || w;
+                          const label = resolveWsName(w);
                           return (
                             <button
                               key={w}
@@ -1116,7 +1129,7 @@ export function CloudCostsView({
                       {availableTableWorkspaces.filter(w => {
                         if (!tableWorkspaceSearch) return true;
                         const q = tableWorkspaceSearch.toLowerCase();
-                        return (workspaceNameMap?.[w] || w).toLowerCase().includes(q) || w.toLowerCase().includes(q);
+                        return resolveWsName(w).toLowerCase().includes(q) || w.toLowerCase().includes(q);
                       }).length === 0 && (
                         <div className="px-3 py-2 text-sm text-gray-500">No matching workspaces</div>
                       )}

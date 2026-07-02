@@ -238,14 +238,12 @@ const PAGE_SIZE = 10;
 export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUsers = false, workspaceIds, workspaceNameMap }: Props) {
   const [selectedUser, setSelectedUser] = useState<UserSpend | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<"spend" | "dbus" | "days">("spend");
-  const [sortOpen, setSortOpen] = useState(false);
-  const sortRef = useRef<HTMLDivElement>(null);
-  const [typeFilter, setTypeFilter] = useState<"all" | "users" | "sps">("all");
+  const [typeFilter, setTypeFilter] = useState<Array<"users" | "sps">>(["users", "sps"]);
   const [typeFilterOpen, setTypeFilterOpen] = useState(false);
   const typeFilterRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
-  const [productFilter, setProductFilter] = useState<string>("all");
+  const [productFilter, setProductFilter] = useState<string[]>([]);
+  const productFilterInitialized = useRef(false);
   const [productFilterOpen, setProductFilterOpen] = useState(false);
   const productFilterRef = useRef<HTMLDivElement>(null);
   const [selectedKPI, setSelectedKPI] = useState<{kpi: string; label: string; variant?: "billing" | "platform"} | null>(null);
@@ -263,9 +261,6 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
       if (typeFilterRef.current && !typeFilterRef.current.contains(e.target as Node)) {
         setTypeFilterOpen(false);
       }
-      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
-        setSortOpen(false);
-      }
       if (productFilterRef.current && !productFilterRef.current.contains(e.target as Node)) {
         setProductFilterOpen(false);
       }
@@ -277,7 +272,15 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
   const { data, isLoading } = useUsersGroupsBundle(dateRange, workspaceIds);
   const summary = data?.summary;
   const topUsers = data?.top_users ?? [];
-  const uniqueProducts = Array.from(new Set(topUsers.map(u => u.primary_product).filter(Boolean))).sort();
+  const uniqueProducts = Array.from(new Set(topUsers.map(u => u.primary_product).filter(Boolean))).sort() as string[];
+
+  useEffect(() => {
+    if (productFilterInitialized.current) return;
+    if (uniqueProducts.length > 0) {
+      setProductFilter([...uniqueProducts]);
+      productFilterInitialized.current = true;
+    }
+  }, [uniqueProducts]);
 
   const daysDiff = startDate && endDate
     ? Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
@@ -302,16 +305,13 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
   const filtered = topUsers
     .filter(u => {
       if (searchQuery && !u.user_email.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      if (typeFilter === "users" && isServicePrincipal(u.user_email)) return false;
-      if (typeFilter === "sps" && !isServicePrincipal(u.user_email)) return false;
-      if (productFilter !== "all" && u.primary_product !== productFilter) return false;
+      const isSP = isServicePrincipal(u.user_email);
+      const typeKey: "users" | "sps" = isSP ? "sps" : "users";
+      if (!typeFilter.includes(typeKey)) return false;
+      if (!productFilter.includes(u.primary_product)) return false;
       return true;
     })
-    .sort((a, b) => {
-      if (sortBy === "dbus") return b.total_dbus - a.total_dbus;
-      if (sortBy === "days") return b.active_days - a.active_days;
-      return b.total_spend - a.total_spend;
-    });
+    .sort((a, b) => b.total_spend - a.total_spend);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -571,32 +571,35 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
             <div className="relative" ref={typeFilterRef}>
               <button
                 onClick={() => setTypeFilterOpen(o => !o)}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${typeFilter !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${typeFilter.length > 0 && typeFilter.length < 2 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
               >
-                {typeFilter === "all" ? "Type" : typeFilter === "users" ? "Users" : "Service Principals"}
-                {typeFilter !== "all" && (
-                  <button onClick={(e) => { e.stopPropagation(); setTypeFilter("all"); setPage(0); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
-                    <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                )}
+                {typeFilter.length === 0
+                  ? "Type"
+                  : typeFilter.length === 2
+                  ? "Type"
+                  : typeFilter[0] === "users"
+                  ? "Users"
+                  : "Service Principals"}
                 <svg className={`h-3 w-3 transition-transform ${typeFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {typeFilterOpen && (
-                <div className="absolute left-0 top-full z-[9999] mt-1 w-44 rounded-lg border border-gray-200 bg-white shadow-lg">
+                <div className="absolute left-0 top-full z-[9999] mt-1 w-52 rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Type</span>
-                    {typeFilter !== "all" && (
-                      <button onClick={(e) => { e.stopPropagation(); setTypeFilter("all"); setPage(0); setTypeFilterOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
-                    )}
+                    <div className="flex items-center gap-2 text-xs">
+                      <button onClick={(e) => { e.stopPropagation(); setTypeFilter(["users", "sps"]); setPage(0); }} className="text-gray-500 hover:text-gray-800">All</button>
+                      <span className="text-gray-300">·</span>
+                      <button onClick={(e) => { e.stopPropagation(); setTypeFilter([]); setPage(0); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                    </div>
                   </div>
                   {(["users", "sps"] as const).map(t => (
                     <button
                       key={t}
-                      onClick={() => { setTypeFilter(typeFilter === t ? "all" : t); setPage(0); setTypeFilterOpen(false); }}
+                      onClick={() => { setTypeFilter(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]); setPage(0); }}
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                     >
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${typeFilter === t ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {typeFilter === t && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${typeFilter.includes(t) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {typeFilter.includes(t) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                       </div>
                       <span className="text-gray-700">{t === "users" ? "Users" : "Service Principals"}</span>
                     </button>
@@ -608,63 +611,37 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
             <div className="relative" ref={productFilterRef}>
               <button
                 onClick={() => setProductFilterOpen(o => !o)}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${productFilter !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${productFilter.length > 0 && productFilter.length < uniqueProducts.length ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
               >
-                {productFilter !== "all" ? productFilter : "Product"}
-                {productFilter !== "all" && (
-                  <button onClick={(e) => { e.stopPropagation(); setProductFilter("all"); setPage(0); }} className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 hover:bg-orange-200">
-                    <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                )}
+                {productFilter.length === 0
+                  ? "Product"
+                  : productFilter.length === 1
+                  ? productFilter[0]
+                  : productFilter.length === uniqueProducts.length
+                  ? "Product"
+                  : `${productFilter.length} products`}
                 <svg className={`h-3 w-3 transition-transform ${productFilterOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {productFilterOpen && (
                 <div className="absolute left-0 top-full z-[9999] mt-1 w-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg" style={{ maxHeight: 260 }}>
                   <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Product</span>
-                    {productFilter !== "all" && (
-                      <button onClick={(e) => { e.stopPropagation(); setProductFilter("all"); setPage(0); setProductFilterOpen(false); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
-                    )}
+                    <div className="flex items-center gap-2 text-xs">
+                      <button onClick={(e) => { e.stopPropagation(); setProductFilter([...uniqueProducts]); setPage(0); }} className="text-gray-500 hover:text-gray-800">All</button>
+                      <span className="text-gray-300">·</span>
+                      <button onClick={(e) => { e.stopPropagation(); setProductFilter([]); setPage(0); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                    </div>
                   </div>
                   {uniqueProducts.map(p => (
                     <button
                       key={p}
-                      onClick={() => { setProductFilter(productFilter === p ? "all" : p); setPage(0); setProductFilterOpen(false); }}
+                      onClick={() => { setProductFilter(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]); setPage(0); }}
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                     >
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilter === p ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {productFilter === p && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${productFilter.includes(p) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {productFilter.includes(p) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                       </div>
                       <span className="truncate text-gray-700">{p}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {/* Sort */}
-            <div className="relative" ref={sortRef}>
-              <button
-                onClick={() => setSortOpen(o => !o)}
-                className="flex items-center gap-1.5 rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                {sortBy === "spend" ? "Spend" : sortBy === "dbus" ? "DBUs" : "Active Days"}
-                <svg className={`h-3 w-3 transition-transform ${sortOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-              </button>
-              {sortOpen && (
-                <div className="absolute left-0 top-full z-[9999] mt-1 w-36 rounded-lg border border-gray-200 bg-white shadow-lg">
-                  <div className="sticky top-0 border-b border-gray-100 bg-white px-3 py-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Sort by</span>
-                  </div>
-                  {(["spend", "dbus", "days"] as const).map(s => (
-                    <button
-                      key={s}
-                      onClick={() => { setSortBy(s); setPage(0); setSortOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
-                    >
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${sortBy === s ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {sortBy === s && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                      </div>
-                      <span className="text-gray-700">{s === "spend" ? "Spend" : s === "dbus" ? "DBUs" : "Active Days"}</span>
                     </button>
                   ))}
                 </div>
@@ -738,7 +715,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-500">
-                    {searchQuery || typeFilter !== "all" || productFilter !== "all" ? "No users match your filters." : "No user spend data found for this date range."}
+                    {searchQuery || typeFilter.length < 2 || productFilter.length < uniqueProducts.length ? "No users match your filters." : "No user spend data found for this date range."}
                   </td>
                 </tr>
               )}

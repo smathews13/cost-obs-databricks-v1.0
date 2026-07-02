@@ -683,7 +683,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
           </div>
           {/* Tag value filter pills */}
           {selectedTagValueFilters.length > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <div className="mb-3 flex max-h-24 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
               {selectedTagValueFilters.map(kv => {
                 const [key, ...rest] = kv.split(":");
                 const value = rest.join(":");
@@ -823,7 +823,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
           </div>
           {/* Tag key filter pills */}
           {selectedTagFilters.length > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <div className="mb-3 flex max-h-24 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
               {selectedTagFilters.map(key => (
                 <span key={key} className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: '#FF3621' }}>
                   {key}

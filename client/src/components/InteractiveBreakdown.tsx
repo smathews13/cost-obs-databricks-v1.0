@@ -249,19 +249,22 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                 </svg>
               </button>
               {viewDropdownOpen && (
-                <div className="absolute right-0 top-full z-[9999] mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                <div className="absolute right-0 top-full z-[9999] mt-1 w-44 rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <div className="sticky top-0 flex items-center border-b border-gray-100 bg-white px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Group by</span>
+                  </div>
                   {(["by-user", "by-cluster", "by-notebook"] as const).map((v) => {
                     const label = v === "by-user" ? "By User" : v === "by-cluster" ? "By Cluster" : "By Notebook";
                     return (
                       <button
                         key={v}
                         onClick={() => { setViewMode(v); setViewDropdownOpen(false); setCurrentPage(1); setSearch(""); }}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${viewMode === v ? "bg-orange-50 font-medium text-[#FF3621]" : "text-gray-700 hover:bg-gray-50"}`}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                       >
-                        <span className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${viewMode === v ? "border-transparent" : "border-gray-300"}`} style={viewMode === v ? { backgroundColor: '#FF3621' } : undefined}>
-                          {viewMode === v && <svg className="h-2 w-2 text-white" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="2" /></svg>}
-                        </span>
-                        {label}
+                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${viewMode === v ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                          {viewMode === v && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                        <span className="text-gray-700">{label}</span>
                       </button>
                     );
                   })}

@@ -213,7 +213,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                       <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
                         {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                       </div>
-                      <span className="truncate text-gray-700">{u}</span>
+                      <span className="truncate text-gray-700">{formatIdentity(u)}</span>
                     </button>
                   ))}
                 </div>

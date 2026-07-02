@@ -33,7 +33,7 @@ type SortDirection = "asc" | "desc";
 export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, isLoading, host }: PipelineObjectsTableProps) {
   const [sortField, setSortField] = useState<SortField>("total_spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [filter, setFilter] = useState<"all" | "Job" | "SDP Pipeline">("all");
+  const [filter, setFilter] = useState<Array<"Job" | "SDP Pipeline">>(["Job", "SDP Pipeline"]);
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
@@ -107,7 +107,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
     return !obj.object_name || obj.object_name === obj.object_id;
   };
   const filteredObjects = data.objects.filter(
-    (obj) => (filter === "all" || obj.object_type === filter) &&
+    (obj) => filter.includes(obj.object_type as "Job" | "SDP Pipeline") &&
       (showHistorical || !isHistorical(obj)) &&
       (!search || (obj.object_name || "").toLowerCase().includes(searchLower) ||
         (obj.object_id || "").toLowerCase().includes(searchLower) ||
@@ -163,9 +163,15 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
           <div ref={filterDropdownRef} className="relative">
             <button
               onClick={() => setFilterDropdownOpen(o => !o)}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter !== "all" ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"}`}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${filter.length > 0 && filter.length < 2 ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"}`}
             >
-              {filter === "all" ? `All (${activeObjects.length})` : filter === "Job" ? `Jobs (${jobCount})` : `SDP (${pipelineCount})`}
+              {filter.length === 0
+                ? "Type"
+                : filter.length === 2
+                ? "Type"
+                : filter[0] === "Job"
+                ? `Jobs (${jobCount})`
+                : `SDP (${pipelineCount})`}
               <svg className={`h-3 w-3 transition-transform ${filterDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
@@ -174,20 +180,22 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
               <div className="absolute right-0 top-full z-[9999] mt-1 w-44 rounded-lg border border-gray-200 bg-white shadow-lg">
                 <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Type</span>
-                  {filter !== "all" && (
-                    <button onClick={(e) => { e.stopPropagation(); setFilter("all"); setFilterDropdownOpen(false); setCurrentPage(1); }} className="text-xs text-gray-500 hover:text-gray-800">Clear</button>
-                  )}
+                  <div className="flex items-center gap-2 text-xs">
+                    <button onClick={(e) => { e.stopPropagation(); setFilter(["Job", "SDP Pipeline"]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">All</button>
+                    <span className="text-gray-300">·</span>
+                    <button onClick={(e) => { e.stopPropagation(); setFilter([]); setCurrentPage(1); }} className="text-gray-500 hover:text-gray-800">Clear</button>
+                  </div>
                 </div>
                 {(["Job", "SDP Pipeline"] as const).map((f) => {
                   const label = f === "Job" ? `Jobs (${jobCount})` : `SDP (${pipelineCount})`;
                   return (
                     <button
                       key={f}
-                      onClick={() => { setFilter(filter === f ? "all" : f); setFilterDropdownOpen(false); setCurrentPage(1); }}
+                      onClick={() => { setFilter(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]); setCurrentPage(1); }}
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50"
                     >
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${filter === f ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
-                        {filter === f && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${filter.includes(f) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
+                        {filter.includes(f) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                       </div>
                       <span className="text-gray-700">{label}</span>
                     </button>

@@ -8,9 +8,11 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put, get_workspace_client
+from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put, get_workspace_client, apply_mv_overrides, get_catalog_schema
 from server import workspace_filter as wf
 from server import cache_ttls
+from server.materialized_views import MV_TAG_STATS
+from server.routers.billing import _check_mv_available
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1129,6 +1131,25 @@ async def get_tagging_dashboard_bundle(
             logger.warning(f"Enriched query failed ({e}), falling back to billing-only")
             return execute_query(fallback_sql, query_params)
 
+    def tag_stats_query(query_params: dict) -> list[dict[str, Any]]:
+        """MV fast path for tag_stats. Falls back to raw system.billing.usage scan on failure.
+
+        The raw TAG_STATS query re-explodes custom_tags across the full billing date range
+        on every request, which was saturating the 90s bundle deadline on large accounts.
+        daily_tag_summary already stores per-day (tag_key, tag_value, spend) rows so we can
+        derive both KPIs in milliseconds when the MV is available.
+        """
+        if _check_mv_available():
+            try:
+                catalog, schema = get_catalog_schema()
+                mv_ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
+                mv_sql = MV_TAG_STATS.format(catalog=catalog, schema=schema, ws_filter=mv_ws_clause)
+                mv_sql = apply_mv_overrides(mv_sql, catalog, schema)
+                return execute_query(mv_sql, query_params)
+            except Exception as e:
+                logger.warning("tag_stats MV path failed (%s); falling back to raw scan", type(e).__name__)
+        return execute_query(_ws(TAG_STATS), query_params)
+
     def lakeflow_query(enriched_sql: str, fallback_sql: str, query_params: dict, flag: list) -> list[dict[str, Any]]:
         """Try lakeflow-enriched query with 45s timeout; fall back to billing-only on failure."""
         if _lakeflow_in_cooldown():
@@ -1154,7 +1175,7 @@ async def get_tagging_dashboard_bundle(
         ("warehouses", lambda: query_with_fallback(_ws(UNTAGGED_WAREHOUSES_ENRICHED), _ws(UNTAGGED_WAREHOUSES), params)),
         ("endpoints", lambda: execute_query(_ws(UNTAGGED_ENDPOINTS), params)),
         ("cost_by_tag", lambda: execute_query(_ws(COST_BY_TAG), params)),
-        ("tag_stats", lambda: execute_query(_ws(TAG_STATS), params)),
+        ("tag_stats", lambda: tag_stats_query(params)),
         ("tag_keys", lambda: execute_query(_ws(COST_BY_TAG_KEY), params)),
         ("timeseries", lambda: execute_query(_ws(TAG_COVERAGE_TIMESERIES), params)),
     ]

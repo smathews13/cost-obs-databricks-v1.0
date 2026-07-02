@@ -1833,3 +1833,27 @@ FROM `{catalog}`.`{schema}`.`daily_query_stats`
 WHERE usage_date BETWEEN :start_date AND :end_date
   {ws_filter}
 """
+
+# Fast path for TAG_STATS. Reads pre-exploded (tag_key, tag_value, daily spend) rows
+# from daily_tag_summary instead of scanning system.billing.usage + LATERAL VIEW EXPLODE
+# on every request (which was hitting the 90s bundle deadline on large accounts).
+MV_TAG_STATS = """
+WITH per_day AS (
+  SELECT
+    usage_date,
+    SUM(total_spend) AS daily_spend,
+    COUNT(DISTINCT CONCAT(tag_key, ':', tag_value)) AS daily_tag_count
+  FROM `{catalog}`.`{schema}`.`daily_tag_summary`
+  WHERE usage_date BETWEEN :start_date AND :end_date
+    {ws_filter}
+  GROUP BY usage_date
+)
+SELECT
+  (SELECT COUNT(DISTINCT CONCAT(tag_key, ':', tag_value))
+     FROM `{catalog}`.`{schema}`.`daily_tag_summary`
+     WHERE usage_date BETWEEN :start_date AND :end_date
+       {ws_filter}
+  ) AS total_tag_count,
+  AVG(CASE WHEN daily_tag_count > 0 THEN daily_spend / daily_tag_count ELSE NULL END) AS avg_cost_per_tag
+FROM per_day
+"""

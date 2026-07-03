@@ -42,6 +42,28 @@ Built on FastAPI + React, deployed as a [Databricks App](https://docs.databricks
 **Removed**
 - **Forecasting view** — internal-only scaffolding, was never customer-facing. `ForecastingView.tsx` is excluded from the public mirror.
 
+### Upgrading from 1.0
+
+Nothing to do. Redeploy the app from the `v1.0` mirror on Databricks Apps → **Deploy**. The two new materialized views (`daily_apps_summary`, `daily_tag_summary`) auto-build on first startup when the app detects data older than 26 hours; the raw-scan fallbacks keep the Apps and Tagging tabs working the whole time. No back-fill, no manual SQL, no config change.
+
+If your app used the environment variable `COST_OBS_WORKSPACES`, or any other setting from 1.0, that's preserved — 1.1 introduces no new required env vars.
+
+### At-a-glance changelog
+
+| Area | Change | Impact |
+|---|---|---|
+| Apps tab | `daily_apps_summary` MV fast path (6 slots) | Sub-second cold loads once MV is warm |
+| Tagging tab | `daily_tag_summary` MV fast path | Fixes the 75–90 s timeout on large accounts |
+| Users / SQL / AI/ML / Apps | SP UUID → SCIM `display_name` resolution | Real names in every identity column |
+| Cache | 60 s TTL on degraded/empty Apps bundle | No more 30-min `$0` lockouts after a cold-warehouse timeout |
+| Reliability | Startup MV rebuild wraps `/tmp/cost-obs-mv-refresh.lock` | Kills `DELTA_METADATA_CHANGED` on pod restart |
+| Apps tab | Client-side workspace filter pass-through | Registry apps show when "all workspaces" is selected |
+| Runtime | Uvicorn workers 4 → 2 | Better cache hit rate, less CPU contention |
+| Runtime | Optimize tab prefetches gated to activeTab | Faster first paint of Dashboard |
+| UI | `isAnimationActive={false}` on Recharts primitives | No more label flicker on chart mount |
+| UI | `text-gray-400` → `text-gray-500`, palette drift cleanup | WCAG AA + brand palette compliance |
+| Removed | Forecasting view (internal-only) | Not shipped to the public mirror |
+
 ---
 
 ## What's changed in the new deployment model

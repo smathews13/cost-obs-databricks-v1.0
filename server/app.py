@@ -400,18 +400,35 @@ def setup_materialized_views():
             logger.info(f"Startup MV refresh SKIPPED — data is {_hours_since:.1f}h old (< 26h, fresh enough)")
             return
 
+        # Guard: only one process (worker or scheduler) may run a full MV rebuild
+        # at a time. Without this, all 4 uvicorn workers race CREATE OR REPLACE
+        # simultaneously on cold start and produce DELTA_METADATA_CHANGED /
+        # DELTA_CONCURRENT_APPEND conflicts. Same lock file as the nightly
+        # scheduler so the two paths also mutex against each other.
+        import fcntl
+        lock_path = "/tmp/cost-obs-mv-refresh.lock"
+
         def _bg_refresh():
             try:
-                logger.info("Refreshing materialized views in background (post-deploy, data is stale)...")
-                r = create_materialized_views(catalog, schema)
-                ok = sum(1 for v in r.values() if v == "created")
-                logger.info(f"Background MV refresh complete: {ok}/{len(r)} tables rebuilt")
-                try:
-                    from server.db import clear_query_cache, delta_cache_invalidate
-                    clear_query_cache()
-                    delta_cache_invalidate()
-                except Exception as inv_exc:
-                    logger.warning(f"Cache invalidation after startup refresh failed: {inv_exc}")
+                with open(lock_path, "w") as lf:
+                    try:
+                        fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        logger.info("Startup MV refresh SKIPPED — another worker (or the scheduler) is already refreshing")
+                        return
+                    try:
+                        logger.info("Refreshing materialized views in background (post-deploy, data is stale)...")
+                        r = create_materialized_views(catalog, schema)
+                        ok = sum(1 for v in r.values() if v == "created")
+                        logger.info(f"Background MV refresh complete: {ok}/{len(r)} tables rebuilt")
+                        try:
+                            from server.db import clear_query_cache, delta_cache_invalidate
+                            clear_query_cache()
+                            delta_cache_invalidate()
+                        except Exception as inv_exc:
+                            logger.warning(f"Cache invalidation after startup refresh failed: {inv_exc}")
+                    finally:
+                        fcntl.flock(lf, fcntl.LOCK_UN)
             except Exception as ex:
                 logger.warning(f"Background MV refresh failed (non-fatal): {ex}")
         threading.Thread(target=_bg_refresh, daemon=True).start()

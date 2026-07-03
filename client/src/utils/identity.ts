@@ -32,7 +32,9 @@ export function formatIdentity(id: string, spNameMap?: Record<string, string>): 
   if (!id) return id;
   const v = id.trim();
   if (isServicePrincipal(v)) {
-    const resolved = spNameMap?.[v];
+    // Lookup case-insensitively — backend normalizes keys to lowercase but
+    // billing identity_metadata.run_as can arrive with mixed casing.
+    const resolved = spNameMap?.[v.toLowerCase()] ?? spNameMap?.[v];
     if (resolved) return resolved;
     return `SP-${v.replace(/-/g, "").slice(0, 5)}`;
   }

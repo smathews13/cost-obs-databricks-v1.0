@@ -18,9 +18,18 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 
-from server.db import execute_query, execute_queries_parallel, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put
+from server.db import execute_query, execute_queries_parallel, get_workspace_client, bundle_cache_key, delta_cache_get, delta_cache_put, apply_mv_overrides, get_catalog_schema
 from server import workspace_filter as wf
 from server import cache_ttls
+from server.materialized_views import (
+    MV_APPS_SUMMARY,
+    MV_APPS_BY_APP_FULL,
+    MV_APPS_BY_APP_SKU,
+    MV_APPS_TIMESERIES,
+    MV_APPS_FILTERED_AVG,
+    MV_APPS_AVG_COST_PER_APP,
+)
+from server.routers.billing import _check_mv_available
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -386,6 +395,87 @@ ORDER BY app_id, total_spend DESC
 """
 
 
+# ── MV fast-path SQL (uses daily_apps_summary, pre-aggregated) ──────────
+# The raw APPS_* queries scan system.billing.usage on every request. When
+# the daily_apps_summary MV is available these read from it directly. All
+# four preserve the exact output shape of their raw counterparts so
+# _process_apps and the frontend don't need to change.
+
+MV_APPS_SUMMARY = """
+WITH apps_by_day AS (
+  SELECT usage_date, workspace_id, app_id,
+    SUM(total_dbus) AS daily_dbus,
+    SUM(total_spend) AS daily_spend
+  FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+  WHERE usage_date BETWEEN :start_date AND :end_date
+    {ws_filter}
+  GROUP BY usage_date, workspace_id, app_id
+),
+apps_totals AS (
+  SELECT
+    SUM(daily_dbus) AS total_dbus,
+    SUM(daily_spend) AS total_spend,
+    COUNT(DISTINCT workspace_id) AS workspace_count,
+    COUNT(DISTINCT app_id) AS app_count,
+    COUNT(DISTINCT usage_date) AS days_in_range,
+    MIN(usage_date) AS first_date,
+    MAX(usage_date) AS last_date
+  FROM apps_by_day
+),
+apps_avg AS (
+  SELECT COALESCE(AVG(daily_apps), 0) AS avg_daily_apps
+  FROM (
+    SELECT usage_date, COUNT(DISTINCT app_id) AS daily_apps
+    FROM apps_by_day
+    GROUP BY usage_date
+  ) t
+)
+SELECT t.*, a.avg_daily_apps
+FROM apps_totals t, apps_avg a
+"""
+
+MV_APPS_BY_APP_FULL = """
+SELECT
+  app_id,
+  SUM(total_dbus) AS total_dbus,
+  SUM(total_spend) AS total_spend,
+  COUNT(DISTINCT workspace_id) AS workspace_count,
+  COUNT(DISTINCT usage_date) AS days_active,
+  MAX(usage_date) AS last_usage_date
+FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
+GROUP BY app_id
+ORDER BY total_spend DESC
+"""
+
+MV_APPS_TIMESERIES = """
+SELECT
+  usage_date,
+  SUM(total_dbus) AS total_dbus,
+  SUM(total_spend) AS total_spend
+FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+WHERE usage_date BETWEEN :start_date AND :end_date
+  {app_filter}
+  {ws_filter}
+GROUP BY usage_date
+ORDER BY usage_date
+"""
+
+MV_APPS_BY_APP_SKU = """
+SELECT
+  app_id,
+  sku_name,
+  SUM(total_dbus) AS total_dbus,
+  SUM(total_spend) AS total_spend
+FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
+GROUP BY app_id, sku_name
+ORDER BY app_id, total_spend DESC
+"""
+
+
 def _process_apps(
     raw_apps: list[dict[str, Any]],
     active_only: bool,
@@ -680,13 +770,36 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
         ) t
         """
 
+        # MV fast paths — daily_apps_summary avoids the raw system.billing.usage
+        # scan for the four heavy slots when the MV is available. Each helper
+        # falls back to its raw counterpart on any exception so a broken MV
+        # never blocks a page load.
+        _use_mv = _check_mv_available()
+        _mv_ws_clause = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list) if _use_mv else ""
+        # MV column is bare `app_id`; the raw filter uses `u.usage_metadata.app_id`
+        _mv_app_filter = ""
+        if _use_mv and registry:
+            _mv_app_filter = "AND app_id IN (" + ", ".join(f"'{uid}'" for uid in registry) + ")"
+
+        def _mv_query(name: str, mv_sql_tpl: str, raw_fallback: Any, **fmt_kwargs: str) -> list[dict[str, Any]]:
+            """Try the MV path; fall back to raw on any exception."""
+            if _use_mv:
+                try:
+                    cat, sch = get_catalog_schema()
+                    mv_sql = mv_sql_tpl.format(catalog=cat, schema=sch, ws_filter=_mv_ws_clause, **fmt_kwargs)
+                    mv_sql = apply_mv_overrides(mv_sql, cat, sch)
+                    return execute_query(mv_sql, params)
+                except Exception as e:
+                    logger.warning("apps %s MV path failed (%s); falling back to raw scan", name, type(e).__name__)
+            return raw_fallback()
+
         queries = [
-            ("summary", lambda: execute_query(_ws(APPS_SUMMARY), params)),
-            ("apps", lambda: execute_query(_ws(APPS_BY_APP_FULL), params)),
-            ("timeseries", lambda: execute_query(filtered_timeseries, params)),
-            ("filtered_avg_apps", lambda: execute_query(filtered_avg_apps_query, params)),
-            ("avg_cost_per_app", lambda: execute_query(avg_cost_per_app_query, params)),
-            ("sku_breakdown", lambda: execute_query(_ws(APPS_BY_APP_SKU), params)),
+            ("summary", lambda: _mv_query("summary", MV_APPS_SUMMARY, lambda: execute_query(_ws(APPS_SUMMARY), params))),
+            ("apps", lambda: _mv_query("apps", MV_APPS_BY_APP_FULL, lambda: execute_query(_ws(APPS_BY_APP_FULL), params))),
+            ("timeseries", lambda: _mv_query("timeseries", MV_APPS_TIMESERIES, lambda: execute_query(filtered_timeseries, params), app_filter=_mv_app_filter)),
+            ("filtered_avg_apps", lambda: _mv_query("filtered_avg_apps", MV_APPS_FILTERED_AVG, lambda: execute_query(filtered_avg_apps_query, params), app_filter=_mv_app_filter)),
+            ("avg_cost_per_app", lambda: _mv_query("avg_cost_per_app", MV_APPS_AVG_COST_PER_APP, lambda: execute_query(avg_cost_per_app_query, params), app_filter=_mv_app_filter)),
+            ("sku_breakdown", lambda: _mv_query("sku_breakdown", MV_APPS_BY_APP_SKU, lambda: execute_query(_ws(APPS_BY_APP_SKU), params))),
             ("workspaces", lambda: _query_app_workspaces(params, ws_clause)),
             ("service_principals", lambda: execute_query(_ws(APPS_SERVICE_PRINCIPALS), params)),
         ]
@@ -799,7 +912,29 @@ def _compute_apps_bundle(params: dict, id_list: list | None, active_only: bool, 
             "start_date": params["start_date"],
             "end_date": params["end_date"],
         }
-        cache_ttl = 60 if not registry else (600 if id_list else 1800)
+        # Guard against locking in a zero-value bundle for 30 min when a critical
+        # query timed out (execute_queries_parallel sets that slot to None).
+        # A partial-timeout would otherwise cache the empty response with full TTL
+        # and users see $0 on the KPIs until the cache expires. Short-cache
+        # (60s) so the next request retries against a hopefully-warm warehouse.
+        _summary_missing = results.get("summary") is None
+        _apps_missing = results.get("apps") is None
+        _timeseries_missing = results.get("timeseries") is None
+        _bundle_empty = (
+            total_spend_all == 0
+            and total_dbus_all == 0
+            and not apps_result.get("apps")
+        )
+        _degraded = _summary_missing or _apps_missing or _timeseries_missing or _bundle_empty
+        if _degraded:
+            cache_ttl = 60
+            logger.info(
+                "apps dashboard-bundle degraded response — short-caching (60s): "
+                "summary_missing=%s apps_missing=%s timeseries_missing=%s empty=%s",
+                _summary_missing, _apps_missing, _timeseries_missing, _bundle_empty,
+            )
+        else:
+            cache_ttl = 60 if not registry else (600 if id_list else 1800)
         try:
             delta_cache_put(dkey, _endpoint, _resp, ttl_seconds=cache_ttl)
         except Exception as _ce:

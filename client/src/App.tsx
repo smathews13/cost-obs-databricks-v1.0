@@ -581,12 +581,13 @@ function Dashboard() {
     [wsListData?.workspaces, workspaceNameMap],
   );
 
-  // Service-principal display-name map — fetched once, cached indefinitely.
-  // Consumers pick this up via SpNameMapContext (provided at the app root).
+  // Service-principal display-name map — refetches after 10 min so if the first
+  // SCIM call missed (e.g. permission granted later, backend was in cold-start),
+  // consumers recover without a hard refresh.
   const { data: spListData } = useQuery<{ map: Record<string, string> }>({
     queryKey: ["user", "service-principals"],
     queryFn: () => fetch("/api/user/service-principals").then(r => r.json()),
-    staleTime: Infinity,
+    staleTime: 10 * 60 * 1000,
   });
   // Memoize so consumers of SpNameMapContext get a stable reference while
   // spListData is undefined (otherwise every parent render churns the context).

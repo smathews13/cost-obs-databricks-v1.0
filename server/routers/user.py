@@ -33,7 +33,12 @@ _SP_CACHE_FAIL_TTL = 300   # 5 minutes on failure — retry sooner
 
 
 def _list_service_principals_sync() -> dict[str, str]:
-    """Call WorkspaceClient.service_principals.list() and build application_id -> display_name."""
+    """Call WorkspaceClient.service_principals.list() and build application_id -> display_name.
+
+    Keys are lowercased so lookups from the frontend (which sees SP UUIDs from
+    system.billing.usage identity_metadata.run_as) match regardless of casing
+    differences between SCIM and billing.
+    """
     from server.db import get_workspace_client
     w = get_workspace_client()
     out: dict[str, str] = {}
@@ -41,7 +46,7 @@ def _list_service_principals_sync() -> dict[str, str]:
         app_id = getattr(sp, "application_id", None)
         display = getattr(sp, "display_name", None)
         if app_id and display:
-            out[str(app_id)] = str(display)
+            out[str(app_id).lower()] = str(display)
     return out
 
 

@@ -860,6 +860,60 @@ GROUP BY usage_date, workspace_id, tag_key, tag_value
 ORDER BY usage_date, tag_key, tag_value
 """
 
+# Daily Apps summary — pre-aggregates billing_origin_product = 'APPS' at
+# (usage_date, workspace_id, app_id, sku_name) grain so the Apps bundle's
+# summary / apps / timeseries / sku_breakdown slots don't rescan
+# system.billing.usage on every request.
+CREATE_DAILY_APPS_SUMMARY = """
+CREATE OR REPLACE TABLE `{catalog}`.`{schema}`.`daily_apps_summary` CLUSTER BY (usage_date, workspace_id) AS
+SELECT
+  u.usage_date,
+  u.workspace_id,
+  COALESCE(u.usage_metadata.app_id, 'Unknown') AS app_id,
+  u.sku_name,
+  SUM(u.usage_quantity) AS total_dbus,
+  SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS total_spend
+FROM system.billing.usage u
+LEFT JOIN system.billing.list_prices p
+  ON u.sku_name = p.sku_name
+  AND u.cloud = p.cloud
+  AND p.price_end_time IS NULL
+WHERE u.usage_date >= DATE_SUB(CURRENT_DATE(), {billing_lookback_days})
+  AND u.usage_quantity > 0
+  AND u.billing_origin_product = 'APPS'
+GROUP BY u.usage_date, u.workspace_id, COALESCE(u.usage_metadata.app_id, 'Unknown'), u.sku_name
+ORDER BY u.usage_date, u.workspace_id
+"""
+
+MERGE_DAILY_APPS_SUMMARY = """
+MERGE INTO `{catalog}`.`{schema}`.`daily_apps_summary` AS tgt
+USING (
+  SELECT
+    u.usage_date,
+    u.workspace_id,
+    COALESCE(u.usage_metadata.app_id, 'Unknown') AS app_id,
+    u.sku_name,
+    SUM(u.usage_quantity) AS total_dbus,
+    SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS total_spend
+  FROM system.billing.usage u
+  LEFT JOIN system.billing.list_prices p
+    ON u.sku_name = p.sku_name
+    AND u.cloud = p.cloud
+    AND p.price_end_time IS NULL
+  WHERE u.usage_date >= DATE('{reprocess_start}')
+    AND u.usage_date <= CURRENT_DATE()
+    AND u.usage_quantity > 0
+    AND u.billing_origin_product = 'APPS'
+  GROUP BY u.usage_date, u.workspace_id, COALESCE(u.usage_metadata.app_id, 'Unknown'), u.sku_name
+) AS src
+ON tgt.usage_date = src.usage_date
+  AND tgt.workspace_id = src.workspace_id
+  AND tgt.app_id = src.app_id
+  AND tgt.sku_name = src.sku_name
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED BY TARGET THEN INSERT *
+"""
+
 MERGE_DAILY_TAG_SUMMARY = """
 MERGE INTO `{catalog}`.`{schema}`.`daily_tag_summary` AS tgt
 USING (
@@ -964,6 +1018,12 @@ _TABLE_REFRESH_CONFIG: dict[str, dict] = {
     "daily_tag_summary": {
         "reprocess_days": 14,
         "pk": ["usage_date", "workspace_id", "tag_key", "tag_value"],
+        "source_date_col": "usage_date",
+        "overlap_days": 0,
+    },
+    "daily_apps_summary": {
+        "reprocess_days": 14,
+        "pk": ["usage_date", "workspace_id", "app_id", "sku_name"],
         "source_date_col": "usage_date",
         "overlap_days": 0,
     },
@@ -1541,6 +1601,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
         ("daily_query_stats", CREATE_QUERY_STATS),
         ("dbsql_cost_per_query", CREATE_DBSQL_COST_PER_QUERY),
         ("daily_tag_summary", CREATE_DAILY_TAG_SUMMARY),
+        ("daily_apps_summary", CREATE_DAILY_APPS_SUMMARY),
     ]
 
     # Create all tables in parallel — none depend on each other
@@ -1590,6 +1651,7 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
                     "daily_query_stats": MERGE_QUERY_STATS,
                     "dbsql_cost_per_query": MERGE_DBSQL_COST_PER_QUERY,
                     "daily_tag_summary": MERGE_DAILY_TAG_SUMMARY,
+                    "daily_apps_summary": MERGE_DAILY_APPS_SUMMARY,
                 }
                 merge_sql = merge_sql_map.get(table_name)
 
@@ -1690,6 +1752,7 @@ _MV_TABLES = [
     "daily_query_stats",
     "dbsql_cost_per_query",
     "daily_tag_summary",
+    "daily_apps_summary",
 ]
 
 
@@ -1903,4 +1966,109 @@ SELECT
   COUNT(DISTINCT CASE WHEN tagged_spend > 0 THEN workspace_id END) AS tagged_workspaces,
   COUNT(DISTINCT CASE WHEN total_spend > tagged_spend THEN workspace_id END) AS untagged_workspaces
 FROM joined
+"""
+
+
+# ── Apps bundle fast paths (read from daily_apps_summary) ─────────────────
+# These replace the raw system.billing.usage scans in server/routers/apps.py
+# for the summary / apps / timeseries / sku_breakdown slots. Same output
+# shape as the raw versions so downstream Python code is unchanged.
+
+MV_APPS_SUMMARY = """
+WITH apps_by_day AS (
+  SELECT usage_date, workspace_id, app_id,
+    SUM(total_dbus) AS daily_dbus,
+    SUM(total_spend) AS daily_spend
+  FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+  WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
+  GROUP BY usage_date, workspace_id, app_id
+),
+apps_totals AS (
+  SELECT
+    SUM(daily_dbus) AS total_dbus,
+    SUM(daily_spend) AS total_spend,
+    COUNT(DISTINCT workspace_id) AS workspace_count,
+    COUNT(DISTINCT app_id) AS app_count,
+    COUNT(DISTINCT usage_date) AS days_in_range,
+    MIN(usage_date) AS first_date,
+    MAX(usage_date) AS last_date
+  FROM apps_by_day
+),
+apps_avg AS (
+  SELECT COALESCE(AVG(daily_apps), 0) AS avg_daily_apps
+  FROM (
+    SELECT usage_date, COUNT(DISTINCT app_id) AS daily_apps
+    FROM apps_by_day
+    GROUP BY usage_date
+  ) t
+)
+SELECT t.*, a.avg_daily_apps
+FROM apps_totals t, apps_avg a
+"""
+
+MV_APPS_BY_APP_FULL = """
+SELECT
+  app_id,
+  SUM(total_dbus) AS total_dbus,
+  SUM(total_spend) AS total_spend,
+  COUNT(DISTINCT workspace_id) AS workspace_count,
+  COUNT(DISTINCT usage_date) AS days_active,
+  MAX(usage_date) AS last_usage_date
+FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+WHERE usage_date BETWEEN :start_date AND :end_date
+{ws_filter}
+GROUP BY app_id
+ORDER BY total_spend DESC
+"""
+
+MV_APPS_BY_APP_SKU = """
+SELECT
+  app_id,
+  sku_name,
+  SUM(total_dbus) AS total_dbus,
+  SUM(total_spend) AS total_spend
+FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+WHERE usage_date BETWEEN :start_date AND :end_date
+{ws_filter}
+GROUP BY app_id, sku_name
+ORDER BY app_id, total_spend DESC
+"""
+
+MV_APPS_TIMESERIES = """
+SELECT
+  usage_date,
+  SUM(total_dbus) AS total_dbus,
+  SUM(total_spend) AS total_spend
+FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+WHERE usage_date BETWEEN :start_date AND :end_date
+{ws_filter}
+{app_filter}
+GROUP BY usage_date
+ORDER BY usage_date
+"""
+
+MV_APPS_FILTERED_AVG = """
+SELECT COALESCE(AVG(daily_apps), 0) AS avg_daily_apps
+FROM (
+  SELECT usage_date, COUNT(DISTINCT app_id) AS daily_apps
+  FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+  WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
+  {app_filter}
+  GROUP BY usage_date
+) t
+"""
+
+MV_APPS_AVG_COST_PER_APP = """
+SELECT COALESCE(AVG(daily_cost_per_app), 0) AS avg_cost_per_app
+FROM (
+  SELECT usage_date,
+    SUM(total_spend) / NULLIF(COUNT(DISTINCT app_id), 0) AS daily_cost_per_app
+  FROM `{catalog}`.`{schema}`.`daily_apps_summary`
+  WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
+  {app_filter}
+  GROUP BY usage_date
+) t
 """

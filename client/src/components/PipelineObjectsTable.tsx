@@ -2,7 +2,7 @@ import { Fragment, useState, useRef, useEffect, memo } from "react";
 import type { PipelineObjectsResponse } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
-import { formatIdentity } from "@/utils/identity";
+import { formatIdentity, useSpNameMap } from "@/utils/identity";
 
 interface PipelineObjectsTableProps {
   data: PipelineObjectsResponse | undefined;
@@ -31,6 +31,7 @@ type SortField = "object_name" | "object_type" | "total_spend" | "total_dbus" | 
 type SortDirection = "asc" | "desc";
 
 export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, isLoading, host }: PipelineObjectsTableProps) {
+  const spNameMap = useSpNameMap();
   const [sortField, setSortField] = useState<SortField>("total_spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [filter, setFilter] = useState<Array<"Job" | "SDP Pipeline">>(["Job", "SDP Pipeline"]);
@@ -330,7 +331,7 @@ export const PipelineObjectsTable = memo(function PipelineObjectsTable({ data, i
                   <td className="px-3 py-3">
                     {obj.owner ? (
                       <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={obj.owner}>
-                        {formatIdentity(obj.owner)}
+                        {formatIdentity(obj.owner, spNameMap)}
                       </span>
                     ) : (
                       <span className="text-xs text-gray-500">-</span>

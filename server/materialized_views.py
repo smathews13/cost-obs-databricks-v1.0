@@ -1857,3 +1857,50 @@ SELECT
   AVG(CASE WHEN daily_tag_count > 0 THEN daily_spend / daily_tag_count ELSE NULL END) AS avg_cost_per_tag
 FROM per_day
 """
+
+
+# Hybrid MV fast path for the tagging bundle's summary card.
+# Uses daily_usage_summary (an MV) for total_spend + a targeted system.billing.usage
+# scan filtered to rows with custom_tags for the tagged portion. Faster than the
+# raw TAGGING_SUMMARY that scans every billing row, since only tagged usage is
+# scanned by the filter and totals come from the pre-aggregated MV.
+MV_TAGGING_SUMMARY = """
+WITH usage_agg AS (
+  SELECT usage_date, workspace_id, total_spend
+  FROM `{catalog}`.`{schema}`.`daily_usage_summary`
+  WHERE usage_date BETWEEN :start_date AND :end_date
+  {ws_filter}
+),
+tagged_agg AS (
+  SELECT
+    u.usage_date,
+    u.workspace_id,
+    SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) AS tagged_spend
+  FROM system.billing.usage u
+  LEFT JOIN system.billing.list_prices p
+    ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND p.price_end_time IS NULL
+  WHERE u.usage_date BETWEEN :start_date AND :end_date
+    AND u.usage_quantity > 0
+    AND u.custom_tags IS NOT NULL
+    AND size(u.custom_tags) > 0
+    {ws_clause_billing}
+  GROUP BY u.usage_date, u.workspace_id
+),
+joined AS (
+  SELECT
+    ua.workspace_id,
+    ua.total_spend,
+    COALESCE(ta.tagged_spend, 0) AS tagged_spend
+  FROM usage_agg ua
+  LEFT JOIN tagged_agg ta
+    ON ua.usage_date = ta.usage_date
+    AND ua.workspace_id = ta.workspace_id
+)
+SELECT
+  SUM(tagged_spend) AS tagged_spend,
+  SUM(GREATEST(total_spend - tagged_spend, 0)) AS untagged_spend,
+  SUM(total_spend) AS total_spend,
+  COUNT(DISTINCT CASE WHEN tagged_spend > 0 THEN workspace_id END) AS tagged_workspaces,
+  COUNT(DISTINCT CASE WHEN total_spend > tagged_spend THEN workspace_id END) AS untagged_workspaces
+FROM joined
+"""

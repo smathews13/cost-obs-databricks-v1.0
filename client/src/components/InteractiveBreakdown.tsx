@@ -2,7 +2,7 @@ import { Fragment, useState, useRef, useEffect } from "react";
 import type { InteractiveBreakdownResponse } from "@/types/billing";
 import { formatCurrency, workspaceUrl } from "@/utils/formatters";
 import { StatusIndicator } from "./StatusIndicator";
-import { formatIdentity } from "@/utils/identity";
+import { formatIdentity, useSpNameMap } from "@/utils/identity";
 
 interface InteractiveBreakdownProps {
   data: InteractiveBreakdownResponse | undefined;
@@ -34,6 +34,7 @@ type SortDirection = "asc" | "desc";
 type ViewMode = "by-user" | "by-cluster" | "by-notebook";
 
 export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreakdownProps) {
+  const spNameMap = useSpNameMap();
   const [sortField, setSortField] = useState<SortField>("total_spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [viewMode, setViewMode] = useState<ViewMode>("by-user");
@@ -343,7 +344,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                 : viewMode === "by-notebook" && item.key !== "(No Notebook)"
                 ? item.key.split("/").pop() || item.key
                 : viewMode === "by-user"
-                ? formatIdentity(item.key)
+                ? formatIdentity(item.key, spNameMap)
                 : item.key;
 
               return (
@@ -389,7 +390,7 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                     <td className="px-3 py-3">
                       {item.user ? (
                         <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-36 truncate" title={item.user}>
-                          {formatIdentity(item.user)}
+                          {formatIdentity(item.user, spNameMap)}
                         </span>
                       ) : (
                         <span className="text-gray-500">—</span>

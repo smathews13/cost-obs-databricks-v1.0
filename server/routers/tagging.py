@@ -11,7 +11,7 @@ from fastapi import APIRouter, Query
 from server.db import execute_query, execute_queries_parallel, bundle_cache_key, delta_cache_get, delta_cache_put, get_workspace_client, apply_mv_overrides, get_catalog_schema
 from server import workspace_filter as wf
 from server import cache_ttls
-from server.materialized_views import MV_TAG_STATS
+from server.materialized_views import MV_TAG_STATS, MV_TAGGING_SUMMARY
 from server.routers.billing import _check_mv_available
 
 router = APIRouter()
@@ -1138,6 +1138,33 @@ async def get_tagging_dashboard_bundle(
             logger.warning(f"Enriched query failed ({e}), falling back to billing-only")
             return execute_query(fallback_sql, query_params)
 
+    def summary_query(query_params: dict) -> list[dict[str, Any]]:
+        """MV fast path for TAGGING_SUMMARY. Falls back to raw system.billing.usage
+        scan on failure.
+
+        The raw TAGGING_SUMMARY scans every row in system.billing.usage across the
+        window and computes has_tags per row — expensive on large accounts and the
+        source of the 75s bundle timeout we saw. The MV path uses daily_usage_summary
+        (already aggregated per day/workspace) for the total and only scans billing.usage
+        rows that have custom_tags for the tagged portion.
+        """
+        if _check_mv_available():
+            try:
+                catalog, schema = get_catalog_schema()
+                mv_ws_filter = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
+                mv_ws_clause_billing = wf.build_ws_filter_clause(col="workspace_id", id_list=id_list)
+                mv_sql = MV_TAGGING_SUMMARY.format(
+                    catalog=catalog,
+                    schema=schema,
+                    ws_filter=mv_ws_filter,
+                    ws_clause_billing=mv_ws_clause_billing,
+                )
+                mv_sql = apply_mv_overrides(mv_sql, catalog, schema)
+                return execute_query(mv_sql, query_params)
+            except Exception as e:
+                logger.warning("tagging_summary MV path failed (%s); falling back to raw scan", type(e).__name__)
+        return execute_query(_ws(TAGGING_SUMMARY), query_params)
+
     def tag_stats_query(query_params: dict) -> list[dict[str, Any]]:
         """MV fast path for tag_stats. Falls back to raw system.billing.usage scan on failure.
 
@@ -1179,7 +1206,7 @@ async def get_tagging_dashboard_bundle(
         return execute_query(fallback_sql, query_params)
 
     queries = [
-        ("summary", lambda: execute_query(_ws(TAGGING_SUMMARY), params)),
+        ("summary", lambda: summary_query(params)),
         ("clusters", lambda: query_with_fallback(_ws(UNTAGGED_CLUSTERS_ENRICHED), _ws(UNTAGGED_CLUSTERS), params)),
         ("jobs", lambda: lakeflow_query("lakeflow_jobs", _ws(UNTAGGED_JOBS_ENRICHED), _ws(UNTAGGED_JOBS), params, jobs_ok)),
         ("pipelines", lambda: lakeflow_query("lakeflow_pipelines", _ws(UNTAGGED_PIPELINES_ENRICHED), _ws(UNTAGGED_PIPELINES), params, pipelines_ok)),

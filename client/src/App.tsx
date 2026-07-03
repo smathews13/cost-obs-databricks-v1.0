@@ -588,7 +588,9 @@ function Dashboard() {
     queryFn: () => fetch("/api/user/service-principals").then(r => r.json()),
     staleTime: Infinity,
   });
-  const spNameMap = spListData?.map ?? {};
+  // Memoize so consumers of SpNameMapContext get a stable reference while
+  // spListData is undefined (otherwise every parent render churns the context).
+  const spNameMap = useMemo(() => spListData?.map ?? {}, [spListData?.map]);
 
   // Settings data — all prefetched in the background after the main bundle loads.
   // `enabled` gates each query on `!!bundle` so settings requests don't race the

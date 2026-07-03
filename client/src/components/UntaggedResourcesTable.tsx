@@ -1,5 +1,5 @@
 import { useCallback, useState, useRef, useEffect } from "react";
-import { formatIdentity } from "@/utils/identity";
+import { formatIdentity, useSpNameMap } from "@/utils/identity";
 import { workspaceUrl } from "@/utils/formatters";
 import type { TaggingDashboardBundle } from "@/types/billing";
 
@@ -85,6 +85,7 @@ export function UntaggedResourcesTable({
   showHistoricalUntagged, onHistoricalToggle,
   itemsPerPage,
 }: UntaggedResourcesTableProps) {
+  const spNameMap = useSpNameMap();
   const [suggestedTagsMinimized, setSuggestedTagsMinimized] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem(SUGGESTED_TAGS_KEY) === "true";
@@ -422,7 +423,7 @@ export function UntaggedResourcesTable({
                             </span>
                           ) : col.key === "owner" ? (
                             <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={colVal}>
-                              {formatIdentity(colVal)}
+                              {formatIdentity(colVal, spNameMap)}
                             </span>
                           ) : (
                             <span className="max-w-40 truncate block" title={colVal}>{colVal}</span>

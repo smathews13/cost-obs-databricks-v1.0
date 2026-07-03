@@ -1,4 +1,4 @@
-command: ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--timeout-graceful-shutdown", "10"]
+command: ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--timeout-graceful-shutdown", "10"]
 
 # =============================================================================
 # Setup: configure in the Databricks Apps UI before deploying

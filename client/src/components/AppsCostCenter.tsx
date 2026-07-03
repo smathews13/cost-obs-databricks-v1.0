@@ -1215,9 +1215,18 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
               );
             })}
           </div>
-        ) : (
+        ) : searchQuery ? (
           <div className="flex h-32 items-center justify-center text-gray-500">
-            {searchQuery ? `No apps matching "${searchQuery}"` : "No apps found"}
+            No apps matching "{searchQuery}"
+          </div>
+        ) : (
+          // Not user-filter driven — likely still-warming warehouse or a
+          // response we short-cached at 60s. Show the spinner instead of a
+          // definitive "No apps found" so the UI doesn't imply confirmed
+          // empty when we haven't finished loading.
+          <div className="flex h-32 flex-col items-center justify-center gap-3">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200" style={{ borderTopColor: '#FF3621' }} />
+            <p className="text-sm text-gray-500">Loading apps…</p>
           </div>
         )}
 

@@ -17,7 +17,6 @@ export interface TabVisibility {
   tagging: boolean;
   "use-cases": boolean;
   "users-groups": boolean;
-  forecasting: boolean;
 }
 
 const DEFAULT_VISIBILITY: TabVisibility = {
@@ -31,7 +30,6 @@ const DEFAULT_VISIBILITY: TabVisibility = {
   tagging: true,
   "use-cases": false,
   "users-groups": true,
-  forecasting: false,
 };
 
 const STORAGE_KEY = "coc-tab-visibility";
@@ -68,7 +66,6 @@ export interface AppSettings {
   enableAppHostingComparison: boolean;
   enableUseCaseTracking: boolean;
   enableAccuracyChecks: boolean;
-  enableForecasting: boolean;
   darkMode: boolean;
   anonymizeUsers: boolean;
 }
@@ -88,7 +85,6 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   enableAppHostingComparison: false,
   enableUseCaseTracking: false,
   enableAccuracyChecks: false,
-  enableForecasting: false,
   darkMode: false,
   anonymizeUsers: false,
 };
@@ -383,7 +379,6 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
                 toggleTab={toggleTab}
                 visibleCount={visibleCount}
                 enableUseCaseTracking={localSettings.enableUseCaseTracking}
-                enableForecasting={localSettings.enableForecasting}
               />
             )}
             {activeSection === "accuracy-checks" && (

@@ -508,7 +508,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               <XAxis type="number" tickFormatter={v => fmt(v)} stroke="#9ca3af" fontSize={12} tickMargin={8} />
               <YAxis type="category" dataKey="user" width={140} stroke="#9ca3af" fontSize={12} tickMargin={8} interval={0} />
               <Tooltip formatter={(v: number | undefined) => fmt(v ?? 0)} />
-              <Bar dataKey="spend" radius={[0, 4, 4, 0]} onClick={(d: unknown) => {
+              <Bar dataKey="spend" radius={[0, 4, 4, 0]} isAnimationActive={false} onClick={(d: unknown) => {
                 const rawEmail = (d as { rawEmail?: string }).rawEmail;
                 const u = topUsers.find(u => u.user_email === rawEmail);
                 if (u) setSelectedUser(u);
@@ -539,7 +539,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
                 <XAxis dataKey="month" stroke="#9ca3af" fontSize={12} tickMargin={8} tickFormatter={m => { const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; const parts = m.split("-"); return months[parseInt(parts[1], 10) - 1] || m; }} />
                 <YAxis stroke="#9ca3af" fontSize={12} tickMargin={4} allowDecimals={false} />
                 <Tooltip labelFormatter={l => String(l)} />
-                <Bar dataKey="active_users" name="Active users" fill="#FF3621" radius={[4, 4, 0, 0]}>
+                <Bar dataKey="active_users" name="Active users" fill="#FF3621" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                   <LabelList dataKey="active_users" position="top" style={{ fontSize: 10, fill: '#6b7280' }} />
                 </Bar>
               </BarChart>
@@ -556,7 +556,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
                 <XAxis dataKey="month" stroke="#9ca3af" fontSize={12} tickMargin={8} tickFormatter={m => { const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; const parts = m.split("-"); return months[parseInt(parts[1], 10) - 1] || m; }} />
                 <YAxis stroke="#9ca3af" fontSize={12} tickMargin={4} allowDecimals={false} />
                 <Tooltip labelFormatter={l => String(l)} />
-                <Bar dataKey="new_users" name="New users" fill="#1B5162" radius={[4, 4, 0, 0]}>
+                <Bar dataKey="new_users" name="New users" fill="#1B5162" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                   <LabelList dataKey="new_users" position="top" style={{ fontSize: 10, fill: '#6b7280' }} />
                 </Bar>
               </BarChart>

@@ -1700,11 +1700,18 @@ export function WarehouseIdleTimeView({
       workspace_id: string;
       uptime_source?: string;
       total_running_minutes: number;
-      total_query_minutes: number;
+      busy_union_minutes: number;
       idle_minutes: number;
       idle_pct: number;
+      warm_hold_minutes: number;
+      keep_alive_score: number;
+      auto_stop_mins: number;
+      max_num_clusters: number;
       total_spend: number;
-      estimated_idle_spend: number;
+      // null when the backend suppressed attribution — serverless, multi-cluster,
+      // or when uptime came from the billing fallback rather than lifecycle events.
+      estimated_idle_spend: number | null;
+      low_confidence: boolean;
     }>;
   }>({
     queryKey: ["warehouse-idle-time", startDate, endDate, workspaceIds?.join(",")],
@@ -1781,7 +1788,7 @@ export function WarehouseIdleTimeView({
         <div>
           <h3 className="text-base font-semibold text-gray-900 flex items-center">
             Top Warehouses by Idle Time
-            <InfoTooltip text="Idle time = warehouse uptime minus active query time. Uptime is derived from warehouse lifecycle events, or falls back to hourly billing buckets when no events are emitted — those fallback rows are badged 'est.' and their idle-spend estimate is directionally noisy. Estimated idle spend is prorated from total billed spend." />
+            <InfoTooltip text="Idle time = warehouse uptime minus busy time (union of query intervals — bounded by wall-clock even under concurrency). Est. Idle Spend is only computed for CLASSIC single-cluster warehouses because serverless bills per-query with warm-hold at a reduced rate, and multi-cluster warehouses have concurrent cluster billing that wall-clock uptime can't reconstruct. For serverless rows, look at Warm-Hold (minutes held ready between queries, capped at auto_stop_mins) and the 'low conf.' badge — the actionable knob is auto_stop_mins, not raw idle %." />
           </h3>
         </div>
         {data?.available && data.warehouses.length > 0 && (() => {
@@ -1946,18 +1953,44 @@ export function WarehouseIdleTimeView({
                       </td>
                       <td className="px-4 py-3 text-right text-gray-700">{fmtHours(wh.idle_minutes)}</td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${wh.idle_pct >= 80 ? "bg-red-100 text-red-700" : wh.idle_pct >= 50 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-700"}`}>
-                          {wh.idle_pct.toFixed(1)}%
-                        </span>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${wh.idle_pct >= 80 ? "bg-red-100 text-red-700" : wh.idle_pct >= 50 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-700"}`}>
+                            {wh.idle_pct.toFixed(1)}%
+                          </span>
+                          {wh.low_confidence && (
+                            <span
+                              className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+                              title="Low confidence — serverless with wall-clock uptime above 95% of the window. Almost certainly a keep-alive probe firing under auto_stop_mins, not literal continuous compute. Look at Warm-Hold instead."
+                            >
+                              low conf.
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right text-gray-700">{fmt$(wh.total_spend)}</td>
-                      <td className={`px-4 py-3 text-right ${wh.uptime_source === "billing" ? "text-red-500" : "font-medium text-red-600"}`}>
-                        {wh.uptime_source === "billing" ? (
-                          <span title="Approximate — uptime for this warehouse comes from billing buckets, so the idle-spend proration is directionally noisy.">
-                            ~{fmt$(wh.estimated_idle_spend)}
-                          </span>
+                      <td className={`px-4 py-3 text-right ${wh.estimated_idle_spend == null ? "text-gray-400" : wh.uptime_source === "billing" ? "text-red-500" : "font-medium text-red-600"}`}>
+                        {wh.estimated_idle_spend != null ? (
+                          wh.uptime_source === "billing" ? (
+                            <span title="Approximate — uptime for this warehouse comes from billing buckets, so the idle-spend proration is directionally noisy.">
+                              ~{fmt$(wh.estimated_idle_spend)}
+                            </span>
+                          ) : (
+                            fmt$(wh.estimated_idle_spend)
+                          )
                         ) : (
-                          fmt$(wh.estimated_idle_spend)
+                          <span
+                            title={
+                              wh.warehouse_type === "SERVERLESS"
+                                ? `Serverless — dollar attribution suppressed. Serverless bills per-query with warm-hold at a reduced rate, not full-rate wall-clock. Warm-hold: ${fmtHours(wh.warm_hold_minutes)} at ${wh.auto_stop_mins}m auto_stop_mins. Keep-alive score: ${wh.keep_alive_score.toFixed(1)}%.`
+                                : wh.max_num_clusters > 1
+                                ? `Multi-cluster (up to ${wh.max_num_clusters} clusters) — wall-clock cluster_count > 0 can't reconstruct concurrent cluster billing. Warm-hold: ${fmtHours(wh.warm_hold_minutes)}.`
+                                : wh.uptime_source === "billing"
+                                ? "Lifecycle events missing — uptime denominator uncertain, dollar attribution suppressed."
+                                : "Suppressed — see Warm-Hold and auto_stop_mins for the actionable metric."
+                            }
+                          >
+                            —
+                          </span>
                         )}
                       </td>
                     </tr>

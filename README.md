@@ -16,6 +16,33 @@ Built on FastAPI + React, deployed as a [Databricks App](https://docs.databricks
 
 ---
 
+## What's new in 1.1 (2026-07-03)
+
+**Service principal display names.** SP identities that previously rendered as `SP-<hex>` across the Users, SQL, AI/ML, Apps, and workspace tables now resolve to their SCIM `display_name` via a new `/api/user/service-principals` endpoint. Backend keys are lowercased and the frontend does a case-insensitive lookup, so billing UUIDs match regardless of case. On a fetch failure, the map re-tries every 5 minutes so recovery (e.g. after granting SCIM permission) no longer requires a pod restart.
+
+**Apps bundle materialized view.** New `daily_apps_summary` pre-aggregation at (usage_date, workspace_id, app_id, sku_name) grain filtered to `billing_origin_product = 'APPS'`. Powers all six APPS query slots (summary, per-app breakdown, timeseries, filtered averages, avg-cost-per-app, sku breakdown) via an MV fast path with automatic fallback to raw scans when the MV is unavailable.
+
+**Tagging bundle fast paths.** `daily_tag_summary` MV now backs the tag statistics KPIs and coverage summary. The tagging bundle previously timed out around 75–90 s on large accounts on cold-warehouse first loads; the MV path is sub-second once warm.
+
+**Reliability**
+- **Concurrent MV rebuild lock.** All uvicorn workers now share `/tmp/cost-obs-mv-refresh.lock`. The startup refresh path previously fired `CREATE OR REPLACE TABLE AS SELECT` concurrently from every worker in the pod, producing `DELTA_METADATA_CHANGED` and `DELTA_CONCURRENT_APPEND` errors on the core MV tables. Startup and the nightly scheduler now mutex against each other on the same lock.
+- **No more `$0` lockouts.** When a critical Apps bundle query timed out on a cold warehouse, the resulting zero-value response was being cached for the full 30 min TTL — even after the warehouse warmed up, users saw `$0` until the cache expired. Timed-out or all-zero responses now short-cache to 60 s so the next request recovers automatically.
+- **Faster SP registry recovery.** SP-fetch failures previously cached an empty map for 24 h. Now uses 24 h on success + 5 min on failure via an `_sp_cache_ok` flag.
+
+**Performance**
+- **Uvicorn workers dropped from 4 to 2.** This app is nearly 100 % I/O bound; four workers on the Databricks Apps small tier were oversubscribing CPU and quadrupling per-worker `TTLCache` duplication + SDK client footprint for no gain. Each worker still uses its `ThreadPoolExecutor(10)` for per-request query parallelism.
+- **Optimizer prefetches gated to tab visits.** `warehouse-health` and `warehouse-idle-time` were firing on Dashboard mount and starving concurrent bundles on cold start. They now fire only when `activeTab === "optimizer"`.
+- **Chart flicker eliminated.** `isAnimationActive={false}` on Bar/Line/Area/Pie primitives across 14+ chart consumers removes the label flicker that appeared during Recharts' initial-render animation.
+
+**UI polish**
+- **WCAG AA contrast.** All non-placeholder `text-gray-400` usages promoted to `text-gray-500`.
+- **Palette drift cleanup.** `sky-*`, `teal-*`, and `emerald-*` classes replaced with `blue-*` / `cyan-*` / `green-*` to align with the Databricks brand palette.
+
+**Removed**
+- **Forecasting view** — internal-only scaffolding, was never customer-facing. `ForecastingView.tsx` is excluded from the public mirror.
+
+---
+
 ## What's changed in the new deployment model
 
 - **Setup is simpler.** The SQL warehouse is bound as an Apps resource and injected as `DATABRICKS_WAREHOUSE_ID`. Workspace scoping is controlled with `COST_OBS_WORKSPACES`. Customers no longer need to select a warehouse or change workspace scope inside the app UI.
@@ -287,8 +314,8 @@ Use **Settings → Permissions** to manage who can administer or view the app.
 │                    Databricks App                        │
 │                                                         │
 │  ┌──────────────┐          ┌──────────────────────────┐ │
-│  │  React + TS  │◄────────►│  FastAPI (4 workers)     │ │
-│  │  Vite + TW   │  REST    │  18 routers              │ │
+│  │  React + TS  │◄────────►│  FastAPI (2 workers)     │ │
+│  │  Vite + TW   │  REST    │  20 routers              │ │
 │  └──────────────┘          └──────────┬───────────────┘ │
 │                                       │                 │
 └───────────────────────────────────────┼─────────────────┘
@@ -308,7 +335,7 @@ Use **Settings → Permissions** to manage who can administer or view the app.
                       │   │  system.lakeflow.*           │ │
                       │   │  system.serving.*            │ │
                       │   │  system.access.*             │ │
-                      │   │  6 app-managed Delta tables  │ │
+                      │   │  8 app-managed Delta tables  │ │
                       │   └──────────────────────────────┘ │
                       │         Databricks                 │
                       └────────────────────────────────────┘
@@ -346,18 +373,20 @@ All billing and compute data is **account-level** — queries run against Unity 
 
 ### App-Managed Tables
 
-The setup wizard creates **6 pre-aggregated Delta tables** in the Unity Catalog location you configure. These are the only persistent objects the app creates in your environment.
+The setup wizard creates **8 pre-aggregated Delta tables** in the Unity Catalog location you configure. These are the only persistent objects the app creates in your environment.
 
 | Table | What it stores | Rows (est.) |
 |---|---|---|
-| `daily_usage_summary` | Total DBUs + spend per day | ~365 |
+| `daily_usage_summary` | Total DBUs + spend per day × workspace | ~365 |
 | `daily_product_breakdown` | DBUs + spend per day × product category | ~3,600 |
 | `daily_workspace_breakdown` | DBUs + spend per day × workspace | ~3,600–36,000 |
 | `sql_tool_attribution` | Genie vs DBSQL spend split per day × warehouse | ~730–7,000 |
 | `daily_query_stats` | Query count, rows read, compute time per day | ~365 |
 | `dbsql_cost_per_query` | Per-query cost attribution for the last 90 days | ~90k–900k |
+| `daily_tag_summary` | Exploded (tag_key, tag_value) daily spend for the Tagging Hub | ~10k–1M |
+| `daily_apps_summary` | Per (app_id, sku_name) daily spend + DBUs for the Apps tab | ~1k–100k |
 
-Tables are built automatically when the setup wizard completes. The dashboard works immediately using direct system table queries while the background build runs (typically 3–8 minutes), then switches to the pre-aggregated tables automatically.
+Tables are built automatically when the setup wizard completes. The dashboard works immediately using direct system table queries while the background build runs (typically 3–8 minutes), then switches to the pre-aggregated tables automatically. The `daily_tag_summary` and `daily_apps_summary` tables (new in 1.1) are treated as optional — the Tagging Hub and Apps tab both fall back to raw scans when the MV is not yet available.
 
 ### Keeping Tables Fresh
 
@@ -365,7 +394,7 @@ Tables are automatically refreshed on a nightly schedule (default: 05:00 UTC). T
 
 The refresh frequency and scheduled time are configurable under **Settings → General**. Options include nightly (default) and every 6 hours.
 
-To rebuild on demand, go to **Settings → Config → Rebuild**. This triggers a full rebuild of all 6 tables from the latest `system.*` data and typically takes 3–8 minutes. Progress is shown in real time.
+To rebuild on demand, go to **Settings → Config → Rebuild**. This triggers a full rebuild of all 8 tables from the latest `system.*` data and typically takes 3–8 minutes. Progress is shown in real time.
 
 Tables can be dropped and recreated at any time with no data loss — all source data lives in `system.*` tables managed by Databricks.
 
@@ -373,13 +402,16 @@ Tables can be dropped and recreated at any time with no data loss — all source
 
 | Optimization | Detail |
 |---|---|
-| **Pre-aggregated Tables** | 6 Delta tables for sub-second dashboard loads |
-| **Parallel Query Execution** | `ThreadPoolExecutor` (10 workers) runs 6–8 queries concurrently per bundle endpoint |
-| **4-Hour Query Cache** | `TTLCache` with 500 entries — cost data changes at most once per day |
+| **Pre-aggregated Tables** | 8 Delta tables for sub-second dashboard loads (Tagging + Apps MV paths new in 1.1) |
+| **Parallel Query Execution** | `ThreadPoolExecutor` (10 workers per uvicorn worker) runs 6–8 queries concurrently per bundle endpoint |
+| **2-Hour Query Cache** | `TTLCache` with 200 entries — cost data changes at most once per day |
 | **SDK Call Caching** | Pipeline names, group membership, and app registry cached for 1 hour |
 | **Bundle Endpoints** | Single API call returns all data for a tab (reduces HTTP round-trips) |
-| **React Query** | 30-minute stale time, 1-hour GC — prevents redundant refetches |
+| **Degraded-Response Cache TTL** | On timeout or all-zero bundle, the Apps endpoint short-caches to 60 s so a cold-warehouse first hit doesn't lock in `$0` for 30 min (new in 1.1) |
+| **React Query** | 30-minute stale time, 1-hour GC — prevents redundant refetches. SP registry uses a 10-min stale time so a first-load failure recovers automatically |
 | **Lazy-Loaded Chunks** | Each heavy tab (Cloud Costs, AI/ML, Tagging, etc.) is a separate JS chunk loaded on first visit |
+| **Prefetch Gating** | Optimizer prefetches (warehouse-health + warehouse-idle-time) fire only when the Optimize tab is opened (new in 1.1) |
+| **Refresh Lock** | Startup and nightly MV refresh share a `flock` on `/tmp/cost-obs-mv-refresh.lock` — prevents concurrent `CREATE OR REPLACE` from multiple workers (new in 1.1) |
 
 ---
 
@@ -431,7 +463,7 @@ cost-obs-databricks/
 │   ├── cloud_pricing.py         # EC2 / Azure VM pricing for cost estimates
 │   ├── queries/
 │   │   └── __init__.py          # Core billing SQL
-│   └── routers/                 # 18 API route handlers
+│   └── routers/                 # 20 API route handlers
 │       ├── billing.py           # Core spend, KPIs, user/product breakdowns
 │       ├── dbsql.py             # SQL tab bundle
 │       ├── warehouse_health.py  # Warehouse utilization and rightsizing
@@ -495,4 +527,4 @@ Full interactive API docs at `http://localhost:8000/docs` (FastAPI Swagger UI).
 | Data | Databricks system tables (account-level), Unity Catalog, Delta materialized views |
 | Persistence | Delta materialized views (app-managed), TTL in-memory cache |
 | Deployment | Databricks Apps (service principal auth, serverless compute), multi-cloud (AWS + Azure) |
-| Caching | TTLCache (4h query cache, 1h SDK cache), React Query (30min stale time) |
+| Caching | TTLCache (2h query cache, 1h SDK cache, 24h SP registry), React Query (30min stale time) |

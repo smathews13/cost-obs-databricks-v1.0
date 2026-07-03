@@ -500,20 +500,26 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
   // Filter apps by search query and workspace
   const filteredApps = useMemo(() => {
     if (!data?.apps?.apps) return [];
-    // Empty selection (from Clear) is treated as "show all" so Clear doesn't
-    // silently hide every row. Only apply the workspace filter when there is
-    // an actual partial selection.
-    let apps = selectedWorkspaces.length === 0
+    // Empty or all-selected → treat as "show all" so Clear doesn't silently
+    // hide every row and the default "all workspaces" state doesn't drop apps
+    // that have no workspace_names (registry-only rows with no billing yet).
+    // Only apply the workspace filter when there is an actual partial
+    // selection, and pass through apps without workspace data (their
+    // workspace_names is [] whenever there's no APPS billing to map from).
+    const isPartial = selectedWorkspaces.length > 0
+      && selectedWorkspaces.length < availableWorkspaces.length;
+    let apps = !isPartial
       ? data.apps.apps
       : data.apps.apps.filter(a =>
-          a.workspace_names?.some(ws => selectedWorkspaceNames.has(ws))
+          !a.workspace_names?.length
+          || a.workspace_names.some(ws => selectedWorkspaceNames.has(ws))
         );
     if (!searchQuery.trim()) return apps;
     const q = searchQuery.toLowerCase();
     return apps.filter(
       (a) => a.app_name.toLowerCase().includes(q) || a.app_id.toLowerCase().includes(q)
     );
-  }, [data?.apps, searchQuery, selectedWorkspaces.length, selectedWorkspaceNames]);
+  }, [data?.apps, searchQuery, selectedWorkspaces.length, selectedWorkspaceNames, availableWorkspaces.length]);
 
   // Reset to page 1 whenever filters change
   useEffect(() => {

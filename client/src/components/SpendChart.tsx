@@ -95,7 +95,7 @@ export const SpendChart = memo(function SpendChart({ data, isLoading }: SpendCha
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {data.categories.map((category) => (
-            <Area
+            <Area isAnimationActive={false}
               key={category}
               type="monotone"
               dataKey={category}

@@ -73,7 +73,7 @@ export function GCPActualView({ gcpActualData, cloudTabSwitcher, onSwitchToEstim
           {servicePieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={servicePieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value"
+                <Pie isAnimationActive={false} data={servicePieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value"
                   label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(1)}%`} labelLine={false}>
                   {servicePieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
                 </Pie>
@@ -94,7 +94,7 @@ export function GCPActualView({ gcpActualData, cloudTabSwitcher, onSwitchToEstim
                 <Tooltip formatter={(v) => formatCurrency(v as number)} labelFormatter={(l) => format(parseISO(l as string), "MMM d, yyyy")} />
                 <Legend />
                 {(timeseries.services || []).slice(0, 8).map((svc, i) => (
-                  <Bar key={svc} dataKey={svc} stackId="1" fill={GCP_COLORS[i % GCP_COLORS.length]} radius={[0, 0, 0, 0]} />
+                  <Bar isAnimationActive={false} key={svc} dataKey={svc} stackId="1" fill={GCP_COLORS[i % GCP_COLORS.length]} radius={[0, 0, 0, 0]} />
                 ))}
               </BarChart>
             </ResponsiveContainer>

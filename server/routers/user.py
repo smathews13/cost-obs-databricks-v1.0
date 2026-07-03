@@ -1,9 +1,11 @@
 """User endpoints."""
 
+import asyncio
 import json
 import logging
 import os
 import time
+from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -17,6 +19,26 @@ USER_PERMISSIONS_FILE = os.path.join(SETTINGS_DIR, "user_permissions.json")
 _perm_cache: dict = {}
 _perm_cache_at: float = 0.0
 _PERM_CACHE_TTL = 60.0  # seconds
+
+# Service-principal display-name lookup — application_id -> display_name.
+# Fetched via WorkspaceClient once per day since SPs rarely change; falls back
+# to an empty map on SDK error so consumers can still render raw SP-<hex>.
+_sp_cache: dict[str, str] | None = None
+_sp_cache_at: float = 0.0
+_SP_CACHE_TTL = 24 * 3600  # 24 hours
+
+
+def _list_service_principals_sync() -> dict[str, str]:
+    """Call WorkspaceClient.service_principals.list() and build application_id -> display_name."""
+    from server.db import get_workspace_client
+    w = get_workspace_client()
+    out: dict[str, str] = {}
+    for sp in w.service_principals.list():
+        app_id = getattr(sp, "application_id", None)
+        display = getattr(sp, "display_name", None)
+        if app_id and display:
+            out[str(app_id)] = str(display)
+    return out
 
 
 def _load_permissions() -> dict:
@@ -90,3 +112,31 @@ async def get_current_user(request: Request):
         "name": user_name,
         "role": _get_user_role(user_email),
     }
+
+
+@router.get("/service-principals")
+async def get_service_principals() -> dict[str, Any]:
+    """Return application_id -> display_name map for service principals.
+
+    Cached for 24 hours since SP identities rarely change. Falls back to an
+    empty map if the SDK call fails (missing SCIM permission, SP-less
+    workspace, etc.) so callers can still render the SP-<hex> shortening
+    without erroring.
+    """
+    global _sp_cache, _sp_cache_at
+    now = time.monotonic()
+    if _sp_cache is not None and (now - _sp_cache_at) < _SP_CACHE_TTL:
+        return {"map": _sp_cache, "available": True, "cached": True}
+
+    try:
+        result = await asyncio.to_thread(_list_service_principals_sync)
+        _sp_cache = result
+        _sp_cache_at = now
+        logger.info("Fetched %d service principals from workspace", len(result))
+        return {"map": result, "available": True, "cached": False}
+    except Exception as e:
+        logger.warning("service_principals.list() failed: %s", e)
+        # Cache empty so we don't hammer the SDK on every render.
+        _sp_cache = {}
+        _sp_cache_at = now
+        return {"map": {}, "available": False, "error": str(e)}

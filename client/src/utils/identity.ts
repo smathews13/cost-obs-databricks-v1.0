@@ -5,7 +5,15 @@
  * Pattern: 8-4-4-4-8..12 hex chars.
  */
 
+import { createContext, useContext } from "react";
+
 export const SP_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{8,12}$/i;
+
+// React context for the service-principal display-name map (application_id -> display_name).
+// App.tsx provides the value fetched from /api/user/service-principals so consumers
+// don't need to drill the map through props.
+export const SpNameMapContext = createContext<Record<string, string>>({});
+export const useSpNameMap = () => useContext(SpNameMapContext);
 
 export function isServicePrincipal(id: string): boolean {
   return SP_REGEX.test((id ?? "").trim());
@@ -13,14 +21,19 @@ export function isServicePrincipal(id: string): boolean {
 
 /**
  * Short display label for any identity:
- *  - Service principal UUID → "SP-xxxxx"
+ *  - Service principal UUID → resolved SCIM display_name, else "SP-xxxxx"
  *  - Email address          → "alice"    (username before @)
  *  - Other                  → value as-is
+ *
+ * Pass an optional `spNameMap` (application_id -> display_name) sourced from
+ * /api/user/service-principals to get real SP names instead of the hex hash.
  */
-export function formatIdentity(id: string): string {
+export function formatIdentity(id: string, spNameMap?: Record<string, string>): string {
   if (!id) return id;
   const v = id.trim();
   if (isServicePrincipal(v)) {
+    const resolved = spNameMap?.[v];
+    if (resolved) return resolved;
     return `SP-${v.replace(/-/g, "").slice(0, 5)}`;
   }
   if (v.includes("@")) {

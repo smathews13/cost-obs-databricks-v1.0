@@ -13,6 +13,7 @@ import { SKUBreakdown } from "@/components/SKUBreakdown";
 import { ExportDialog, type ExportSections, type ExportFormat } from "@/components/ExportDialog";
 import { SettingsDialog, loadTabVisibility, loadAppSettings, type TabVisibility, type AppSettings } from "@/components/SettingsDialog";
 import { PricingProvider, usePricing } from "@/context/PricingContext";
+import { SpNameMapContext } from "@/utils/identity";
 import { Footer } from "@/components/Footer";
 import awsLogo from "@/assets/aws.png";
 import azureLogo from "@/assets/azure.png";
@@ -45,7 +46,7 @@ const SQLWarehousing360 = lazy(() => lazyWithRetry(() => import("@/components/SQ
 const WarehouseRightsizingView = lazy(() => lazyWithRetry(() => import("@/components/SQLWarehousing360").then(m => ({ default: m.WarehouseRightsizingView }))));
 const WarehouseIdleTimeView = lazy(() => lazyWithRetry(() => import("@/components/SQLWarehousing360").then(m => ({ default: m.WarehouseIdleTimeView }))));
 const OptimizeMethodologyPanel = lazy(() => lazyWithRetry(() => import("@/components/SQLWarehousing360").then(m => ({ default: m.OptimizeMethodologyPanel }))));
-const ForecastingView = lazy(() => lazyWithRetry(() => import("@/components/ForecastingView").then(m => ({ default: m.ForecastingView }))));
+// ForecastingView removed from active app (internal-only; excluded from external mirror)
 const UseCases = lazy(() => lazyWithRetry(() => import("@/pages/UseCases")));
 const UsersGroups = lazy(() => lazyWithRetry(() => import("@/pages/UsersGroups")));
 
@@ -60,7 +61,6 @@ function preloadTabChunks() {
   import("@/components/AppsCostCenter");
   import("@/components/TaggingHub");
   import("@/components/SQLWarehousing360");
-  import("@/components/ForecastingView");
   import("@/pages/UseCases");
   import("@/pages/UsersGroups");
 }
@@ -104,7 +104,7 @@ function useKeepAlive() {
   }, []);
 }
 
-type ViewTab = "dbu" | "sql" | "infra" | "optimizer" | "kpis" | "aiml" | "apps" | "tagging" | "use-cases" | "forecasting" | "users-groups";
+type ViewTab = "dbu" | "sql" | "infra" | "optimizer" | "kpis" | "aiml" | "apps" | "tagging" | "use-cases" | "users-groups";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -511,7 +511,9 @@ function Dashboard() {
     queryFn: () => fetch("/api/sql/warehouse-health").then(r => r.json()),
     staleTime: 30 * 60 * 1000,
     retry: false,
-    enabled: warehouseReady,
+    // Deferred: only fire when the Optimize tab is actually opened. Previously
+    // this prefetched at Dashboard mount and could starve concurrent bundles.
+    enabled: warehouseReady && activeTab === "optimizer",
   });
   const { data: optimizeIdleData } = useQuery<{
     available: boolean;
@@ -540,7 +542,8 @@ function Dashboard() {
     },
     staleTime: 30 * 60 * 1000,
     retry: false,
-    enabled: warehouseReady,
+    // Deferred: only fire when the Optimize tab is actually opened.
+    enabled: warehouseReady && activeTab === "optimizer",
   });
 
   // Use Cases tab data - only fetch when feature is enabled
@@ -577,6 +580,15 @@ function Dashboard() {
     })),
     [wsListData?.workspaces, workspaceNameMap],
   );
+
+  // Service-principal display-name map — fetched once, cached indefinitely.
+  // Consumers pick this up via SpNameMapContext (provided at the app root).
+  const { data: spListData } = useQuery<{ map: Record<string, string> }>({
+    queryKey: ["user", "service-principals"],
+    queryFn: () => fetch("/api/user/service-principals").then(r => r.json()),
+    staleTime: Infinity,
+  });
+  const spNameMap = spListData?.map ?? {};
 
   // Settings data — all prefetched in the background after the main bundle loads.
   // `enabled` gates each query on `!!bundle` so settings requests don't race the
@@ -738,7 +750,7 @@ function Dashboard() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-6" style={{ backgroundColor: '#F9F7F4' }}>
         <div className="flex flex-col items-center gap-4 text-center">
-          <svg className="h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-10 w-10 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
           <h2 className="text-xl font-semibold" style={{ color: '#1B3139' }}>SQL Warehouse unavailable</h2>
@@ -765,6 +777,7 @@ function Dashboard() {
   }
 
   return (
+    <SpNameMapContext.Provider value={spNameMap}>
     <div className="min-h-screen" style={{ backgroundColor: appSettings.darkMode ? '#1B1F23' : '#F9F7F4' }}>
       {/* Setup incomplete banner — non-dismissable, shown when wizard was closed without finishing */}
       {setupIncomplete && (
@@ -1327,13 +1340,6 @@ function Dashboard() {
           </TabErrorBoundary>
         ) : activeTab === "use-cases" ? (
           <TabErrorBoundary tabName="Use Cases"><UseCases /></TabErrorBoundary>
-        ) : activeTab === "forecasting" ? (
-          <TabErrorBoundary tabName="Forecasting">
-          <ForecastingView
-            startDate={dateRange.startDate}
-            endDate={dateRange.endDate}
-          />
-          </TabErrorBoundary>
         ) : activeTab === "users-groups" ? (
           <TabErrorBoundary tabName="Users">
           <UsersGroups
@@ -1359,7 +1365,6 @@ function Dashboard() {
         tabVisibility={{
           ...tabVisibility,
           "use-cases": tabVisibility["use-cases"] && appSettings.enableUseCaseTracking,
-          forecasting: tabVisibility.forecasting && appSettings.enableForecasting,
         }}
       />
 
@@ -1379,6 +1384,7 @@ function Dashboard() {
         onSettingsChange={setAppSettings}
       />
     </div>
+    </SpNameMapContext.Provider>
   );
 }
 

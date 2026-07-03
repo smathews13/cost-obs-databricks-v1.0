@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { formatIdentity } from "@/utils/identity";
+import { formatIdentity, useSpNameMap } from "@/utils/identity";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFeatureAvailability } from "@/hooks/useFeatureAvailability";
@@ -133,6 +133,7 @@ interface SourceQuery {
 }
 
 export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryData, isLoading, topQueriesData, topQueriesLoading, host, startDate, endDate, workspaceIds, workspaceNameMap }: SQLWarehousing360Props) {
+  const spNameMap = useSpNameMap();
   const [sortField, setSortField] = useState<SortField>("cost");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [queriesPage, setQueriesPage] = useState(1);
@@ -314,8 +315,8 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
     return Object.values(byUser)
       .sort((a, b) => b.total_spend - a.total_spend)
       .slice(0, 10)
-      .map(u => ({ ...u, user: formatIdentity(u.user) }));
-  }, [queryData?.by_user]);
+      .map(u => ({ ...u, user: formatIdentity(u.user, spNameMap) }));
+  }, [queryData?.by_user, spNameMap]);
 
   const timeseriesData = useMemo(() => {
     if (!queryData?.timeseries?.timeseries) return [];
@@ -434,7 +435,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
       {hasQueryData === false ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
           <div className="flex items-start gap-3">
-            <svg className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="mt-0.5 h-5 w-5 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
@@ -1037,7 +1038,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                         : `${querySourceFilters.length} Sources`}
                     </span>
                     <svg
-                      className={`ml-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${querySourceDropdownOpen ? "rotate-180" : ""}`}
+                      className={`ml-0.5 h-4 w-4 shrink-0 text-gray-500 transition-transform ${querySourceDropdownOpen ? "rotate-180" : ""}`}
                       fill="none" viewBox="0 0 24 24" stroke="currentColor"
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1071,7 +1072,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                   )}
                 </div>
                 <div className="relative shrink-0">
-                  <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                   <input
@@ -1140,7 +1141,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                         </td>
                         <td className="px-4 py-3">
                           <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={query.executed_by}>
-                            {formatIdentity(query.executed_by)}
+                            {formatIdentity(query.executed_by, spNameMap)}
                           </span>
                         </td>
                         <td className="max-w-md px-4 py-3 text-sm text-gray-500">
@@ -1241,7 +1242,7 @@ export function SQLWarehousing360({ sqlBreakdownData: _sqlBreakdownData, queryDa
                       <tr key={q.statement_id || idx} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={q.executed_by}>
-                            {formatIdentity(q.executed_by)}
+                            {formatIdentity(q.executed_by, spNameMap)}
                           </span>
                         </td>
                         <td className="max-w-sm px-4 py-3 text-sm text-gray-500">
@@ -1539,7 +1540,7 @@ export function WarehouseRightsizingView({ host }: { host?: string | null }) {
                 )}
               </div>
               <div className="relative">
-                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input
@@ -1853,7 +1854,7 @@ export function WarehouseIdleTimeView({
                 </div>
               )}
               <div className="relative">
-                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input

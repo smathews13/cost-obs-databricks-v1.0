@@ -32,7 +32,7 @@ function InfoTooltip({ text }: { text: string }) {
 }
 import type { UserSpend } from "@/hooks/useBillingData";
 import type { DateRange } from "@/types/billing";
-import { formatIdentity, isServicePrincipal } from "@/utils/identity";
+import { formatIdentity, isServicePrincipal, useSpNameMap } from "@/utils/identity";
 
 const COLORS = ["#1B5162", "#06B6D4", "#10B981", "#14B8A6", "#F59E0B", "#06B6D4", "#EC4899", "#EF4444", "#6B7280", "#3B82F6"];
 
@@ -65,6 +65,7 @@ function formatNumber(n: number) {
 // ── User Detail Modal ─────────────────────────────────────────────────────────
 
 function UserDetailModal({ user, onClose }: { user: UserSpend; onClose: () => void }) {
+  const spNameMap = useSpNameMap();
   const [detail, setDetail] = useState<{ permission_grants: { type: string; value: string }[] } | null>(null);
   useEffect(() => {
     fetch(`/api/users-groups/user-detail/${encodeURIComponent(user.user_email)}`)
@@ -79,7 +80,7 @@ function UserDetailModal({ user, onClose }: { user: UserSpend; onClose: () => vo
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-gray-900 text-sm truncate max-w-75">{formatIdentity(user.user_email)}</h3>
+              <h3 className="font-semibold text-gray-900 text-sm truncate max-w-75">{formatIdentity(user.user_email, spNameMap)}</h3>
             </div>
             <p className="text-xs text-gray-500 mt-0.5">{user.active_days} active days · {user.workspace_count} workspace{user.workspace_count !== 1 ? "s" : ""}</p>
           </div>
@@ -152,6 +153,7 @@ function UserDetailModal({ user, onClose }: { user: UserSpend; onClose: () => vo
 // ── Product Drill-down ────────────────────────────────────────────────────────
 
 function ProductDrilldown({ topUsers }: { topUsers: UserSpend[] }) {
+  const spNameMap = useSpNameMap();
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
   const productTotals: Record<string, number> = {};
@@ -205,7 +207,7 @@ function ProductDrilldown({ topUsers }: { topUsers: UserSpend[] }) {
                       <div key={u.email} className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="text-gray-500 w-3 shrink-0">{i + 1}.</span>
-                          <span className="text-gray-700 truncate">{formatIdentity(u.email)}</span>
+                          <span className="text-gray-700 truncate">{formatIdentity(u.email, spNameMap)}</span>
                         </div>
                         <span className="ml-3 font-medium text-gray-800 shrink-0">{fmt(u.spend)}</span>
                       </div>
@@ -236,6 +238,7 @@ interface Props {
 const PAGE_SIZE = 10;
 
 export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUsers = false, workspaceIds, workspaceNameMap }: Props) {
+  const spNameMap = useSpNameMap();
   const [selectedUser, setSelectedUser] = useState<UserSpend | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Array<"users" | "sps">>(["users", "sps"]);
@@ -300,7 +303,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
     });
   }
   const displayUser = (email: string) =>
-    anonymizeUsers && anonMap.has(email) ? anonMap.get(email)! : formatIdentity(email);
+    anonymizeUsers && anonMap.has(email) ? anonMap.get(email)! : formatIdentity(email, spNameMap);
 
   const filtered = topUsers
     .filter(u => {
@@ -648,7 +651,7 @@ export default function UsersGroups({ startDate, endDate, dateRange, anonymizeUs
               )}
             </div>
             <div className="relative w-44">
-              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input

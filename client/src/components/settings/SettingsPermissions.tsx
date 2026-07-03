@@ -227,7 +227,7 @@ export function SettingsPermissions() {
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-500">SP access to Databricks system tables</span>
-                <svg className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${readinessOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className={`h-4 w-4 text-gray-500 transition-transform duration-200 ${readinessOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>

@@ -20,7 +20,7 @@ interface CloudConnection {
 const PROVIDER_META: Record<CloudProvider, { label: string; color: string; bgClass: string; textClass: string }> = {
   azure: { label: "Azure", color: "#0078D4", bgClass: "bg-blue-100", textClass: "text-blue-600" },
   aws: { label: "AWS", color: "#FF9900", bgClass: "bg-orange-100", textClass: "text-orange-600" },
-  gcp: { label: "GCP", color: "#4285F4", bgClass: "bg-sky-100", textClass: "text-sky-600" },
+  gcp: { label: "GCP", color: "#4285F4", bgClass: "bg-blue-100", textClass: "text-blue-600" },
 };
 
 interface SettingsConnectionsProps {

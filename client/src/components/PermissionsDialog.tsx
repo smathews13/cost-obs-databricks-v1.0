@@ -130,7 +130,7 @@ export function PermissionsDialog() {
                 type="checkbox"
                 checked={acknowledged}
                 onChange={(e) => setAcknowledged(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-emerald-500"
               />
               <span className="text-sm font-semibold text-gray-700">I acknowledge the disclaimer above.</span>
             </label>
@@ -139,7 +139,7 @@ export function PermissionsDialog() {
                 type="checkbox"
                 checked={dontShowAgain}
                 onChange={(e) => setDontShowAgain(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-emerald-500"
               />
               <span className="text-sm font-semibold text-gray-700">Don't show this again.</span>
             </label>
@@ -453,7 +453,7 @@ export function PermissionsDialog() {
               type="checkbox"
               checked={acknowledged}
               onChange={(e) => setAcknowledged(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+              className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-emerald-500"
             />
             <span className="text-sm text-gray-700 font-semibold">
               I acknowledge the disclaimer above.
@@ -466,7 +466,7 @@ export function PermissionsDialog() {
               type="checkbox"
               checked={dontShowAgain}
               onChange={(e) => setDontShowAgain(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+              className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-emerald-500"
             />
             <span className="text-sm text-gray-700 font-semibold">Don't show this permission box again.</span>
           </label>

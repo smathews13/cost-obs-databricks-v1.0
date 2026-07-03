@@ -101,7 +101,7 @@ export function AWSActualView({ actualData, cloudTabSwitcher, onSwitchToEstimate
           {chargeTypePieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie
+                <Pie isAnimationActive={false}
                   data={chargeTypePieData}
                   cx="50%" cy="50%"
                   innerRadius={60} outerRadius={100}
@@ -135,7 +135,7 @@ export function AWSActualView({ actualData, cloudTabSwitcher, onSwitchToEstimate
                 />
                 <Legend />
                 {timeseries.charge_types.map((ct) => (
-                  <Bar key={ct} dataKey={ct} stackId="1" fill={CHARGE_TYPE_COLORS[ct] || CHARGE_TYPE_COLORS.Other} radius={[0, 0, 0, 0]} />
+                  <Bar isAnimationActive={false} key={ct} dataKey={ct} stackId="1" fill={CHARGE_TYPE_COLORS[ct] || CHARGE_TYPE_COLORS.Other} radius={[0, 0, 0, 0]} />
                 ))}
               </BarChart>
             </ResponsiveContainer>

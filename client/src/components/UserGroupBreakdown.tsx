@@ -102,7 +102,7 @@ export function UserGroupBreakdown({ data, isLoading }: UserGroupBreakdownProps)
               borderRadius: "8px",
             }}
           />
-          <Bar dataKey="total_spend" name="Spend" radius={[0, 4, 4, 0]}>
+          <Bar isAnimationActive={false} dataKey="total_spend" name="Spend" radius={[0, 4, 4, 0]}>
             {barData.map((_entry, idx) => (
               <Cell key={idx} fill={GROUP_COLORS[idx % GROUP_COLORS.length]} />
             ))}

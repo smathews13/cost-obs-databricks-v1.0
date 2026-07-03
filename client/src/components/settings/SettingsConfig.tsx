@@ -504,7 +504,7 @@ export function SettingsConfig({
                           <span className="inline-flex items-center gap-1">
                             {label}
                             <span className="relative group">
-                              <svg className="h-3 w-3 text-gray-400 cursor-help flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
+                              <svg className="h-3 w-3 text-gray-500 cursor-help flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
                                 <path fillRule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" clipRule="evenodd" />
                               </svg>
                               <span className={`pointer-events-none invisible absolute ${align === "right" ? "right-0" : "left-0"} top-full z-[9999] mt-1.5 w-56 rounded-lg bg-gray-900 px-2.5 py-2 text-[11px] leading-snug text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100`}>

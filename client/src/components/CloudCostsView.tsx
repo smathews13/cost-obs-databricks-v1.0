@@ -954,7 +954,7 @@ export function CloudCostsView({
                   labelFormatter={(label) => format(parseISO(label as string), "MMM d, yyyy")}
                   contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px" }}
                 />
-                <Area type="monotone" dataKey="Infrastructure Cost" stroke="#f97316" strokeWidth={2} fill="url(#infraCostGradient)" />
+                <Area isAnimationActive={false} type="monotone" dataKey="Infrastructure Cost" stroke="#f97316" strokeWidth={2} fill="url(#infraCostGradient)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1009,7 +1009,7 @@ export function CloudCostsView({
                   labelFormatter={(label) => format(parseISO(label as string), "MMM d, yyyy")}
                   contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px" }}
                 />
-                <Area type="monotone" dataKey="AWS Cost" stroke="#f97316" strokeWidth={2} fill="url(#awsCostGradient)" />
+                <Area isAnimationActive={false} type="monotone" dataKey="AWS Cost" stroke="#f97316" strokeWidth={2} fill="url(#awsCostGradient)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1025,7 +1025,7 @@ export function CloudCostsView({
                 formatter={(value: number | undefined) => [formatNumber(value ?? 0) + " DBU hours", "Usage"]}
                 contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px" }}
               />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+              <Bar isAnimationActive={false} dataKey="value" radius={[0, 4, 4, 0]}>
                 {familyChartData.map((entry, index) => (
                   <Cell key={entry.name} fill={getInstanceColor(entry.name, index)} />
                 ))}
@@ -1042,7 +1042,7 @@ export function CloudCostsView({
               {cloudDisplayName} Cluster Leaderboard
               <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide" style={{ backgroundColor: '#FF9900', color: '#fff' }}>est.</span>
               <span className="inline-flex items-center group relative">
-                <svg className="h-3.5 w-3.5 text-gray-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-3.5 w-3.5 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span className="pointer-events-none absolute top-5 left-0 z-[9999] w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
@@ -1190,7 +1190,7 @@ export function CloudCostsView({
               </div>
             )}
             <div className="relative">
-              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input

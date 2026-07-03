@@ -185,7 +185,7 @@ export function KPITrendModal({
                         boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
                       }}
                     />
-                    <Area
+                    <Area isAnimationActive={false}
                       type="monotone"
                       dataKey="value"
                       stroke="#FF3621"

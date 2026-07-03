@@ -790,7 +790,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             <div className="flex flex-col items-center gap-6 md:flex-row md:items-start">
               <ResponsiveContainer width="100%" height={250} className="max-w-xs">
                 <PieChart>
-                  <Pie
+                  <Pie isAnimationActive={false}
                     data={pieData}
                     cx="50%"
                     cy="50%"
@@ -865,7 +865,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
                     return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
                   }}
                 />
-                <Area
+                <Area isAnimationActive={false}
                   type="monotone"
                   dataKey="Total"
                   stroke="#FF3621"
@@ -962,7 +962,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
             )}
             {/* Search */}
             <div className="relative">
-              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
@@ -1395,7 +1395,7 @@ export function AppsCostCenter({ data: initialData, isLoading: initialLoading, h
 
               {/* Search */}
               <div className="relative shrink-0">
-                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input

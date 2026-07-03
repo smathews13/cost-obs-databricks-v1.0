@@ -1,7 +1,7 @@
 import { Fragment, useState, useRef, useEffect, useMemo, memo } from "react";
 import type { WorkspaceBreakdownResponse } from "@/types/billing";
 import { formatCurrency, formatNumber, workspaceUrl } from "@/utils/formatters";
-import { formatIdentity } from "@/utils/identity";
+import { formatIdentity, useSpNameMap } from "@/utils/identity";
 import { VirtualizedList } from "./VirtualizedList";
 
 interface WorkspaceTableProps {
@@ -41,6 +41,7 @@ function formatProductName(raw: string): string {
 }
 
 export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, host, workspaceNameMap }: WorkspaceTableProps) {
+  const spNameMap = useSpNameMap();
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showHistorical, setShowHistorical] = useState(false);
@@ -223,13 +224,13 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                 onClick={() => { setUserDropdownOpen((o) => !o); setProductDropdownOpen(false); }}
                 className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${isUserFilterActive ? "border-[#FF3621] text-[#FF3621]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
               >
-                {userFilters.length === 1 ? formatIdentity(userFilters[0]) : isUserFilterActive ? `${userFilters.length} Users` : "Users"}
+                {userFilters.length === 1 ? formatIdentity(userFilters[0], spNameMap) : isUserFilterActive ? `${userFilters.length} Users` : "Users"}
                 <svg className={`h-3 w-3 transition-transform ${userDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </button>
               {userDropdownOpen && (() => {
                 const q = userSearch.trim().toLowerCase();
                 const filteredUsers = q
-                  ? allUsers.filter((u) => u.toLowerCase().includes(q) || formatIdentity(u).toLowerCase().includes(q))
+                  ? allUsers.filter((u) => u.toLowerCase().includes(q) || formatIdentity(u, spNameMap).toLowerCase().includes(q))
                   : allUsers;
                 return (
                 <div className="absolute right-0 top-full z-[9999] mt-1 min-w-[220px] rounded-lg border border-gray-200 bg-white shadow-lg">
@@ -265,7 +266,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                           <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${userFilters.includes(u) ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}>
                             {userFilters.includes(u) && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                           </div>
-                          <span className="truncate text-gray-700">{formatIdentity(u)}</span>
+                          <span className="truncate text-gray-700">{formatIdentity(u, spNameMap)}</span>
                         </button>
                       )}
                     />
@@ -276,7 +277,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
             </div>
           )}
           <div className="relative">
-            <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
@@ -365,7 +366,7 @@ export const WorkspaceTable = memo(function WorkspaceTable({ data, isLoading, ho
                     {(ws.top_users || []).map((u) => (
                       <div key={u} className="flex flex-col gap-0.5">
                         <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-35 truncate" title={u}>
-                          {formatIdentity(u)}
+                          {formatIdentity(u, spNameMap)}
                         </span>
                       </div>
                     ))}

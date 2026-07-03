@@ -103,10 +103,10 @@ function PermissionErrorBlock({ error, onGranted }: { error: string; onGranted: 
       {grantSql && (
         <div className="rounded border border-gray-700 bg-gray-900 overflow-hidden">
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-700">
-            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">SQL — run as metastore admin</span>
+            <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">SQL — run as metastore admin</span>
             <button
               onClick={handleCopy}
-              className="text-[11px] font-medium text-gray-400 hover:text-white transition-colors"
+              className="text-[11px] font-medium text-gray-500 hover:text-white transition-colors"
             >
               {copied ? "Copied!" : "Copy"}
             </button>

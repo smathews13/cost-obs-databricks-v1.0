@@ -40,7 +40,7 @@ import {
 import type { PieLabelRenderProps, LegendPayload } from "recharts";
 import type { AIMLDashboardBundle } from "@/types/billing";
 import { KPITrendModal } from "./KPITrendModal";
-import { formatIdentity } from "@/utils/identity";
+import { formatIdentity, useSpNameMap } from "@/utils/identity";
 
 interface AIMLCostCenterProps {
   data: AIMLDashboardBundle | undefined;
@@ -104,6 +104,7 @@ function getClusterUrl(host: string | null | undefined, clusterId: string, works
 }
 
 export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, workspaceIds, workspaceNameMap }: AIMLCostCenterProps) {
+  const spNameMap = useSpNameMap();
   const [endpointsPage, setEndpointsPage] = useState(1);
   const [modelsPage, setModelsPage] = useState(1);
   const [modelsTypeFilters, setModelsTypeFilters] = useState<string[]>([]);
@@ -585,7 +586,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 {data.timeseries.categories.map((category, idx) => (
-                  <Area
+                  <Area isAnimationActive={false}
                     key={category}
                     type="monotone"
                     dataKey={category}
@@ -608,7 +609,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
           {pieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie
+                <Pie isAnimationActive={false}
                   data={pieData}
                   cx="50%"
                   cy="50%"
@@ -824,7 +825,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
           {(() => {
             const TYPE_LABELS: Record<string, string> = { "Foundation Model API": "FMAPI Call" };
             const typeColors: Record<string, string> = {
-              "Feature Store": "bg-teal-50 text-teal-700",
+              "Feature Store": "bg-cyan-50 text-cyan-700",
               "Model Training": "bg-blue-50 text-blue-700",
               "Foundation Model API": "bg-amber-50 text-amber-700",
             };
@@ -864,7 +865,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                       : "Types"}
                   </span>
                   <svg
-                    className={`ml-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${modelsTypeDropdownOpen ? "rotate-180" : ""}`}
+                    className={`ml-0.5 h-4 w-4 shrink-0 text-gray-500 transition-transform ${modelsTypeDropdownOpen ? "rotate-180" : ""}`}
                     fill="none" viewBox="0 0 24 24" stroke="currentColor"
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1033,7 +1034,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     </div>
                   )}
                   <div className="relative w-44">
-                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     <input
@@ -1087,7 +1088,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                             <td className="px-4 py-4">
                               {cluster.owner ? (
                                 <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 max-w-40 truncate" title={cluster.owner}>
-                                  {formatIdentity(cluster.owner)}
+                                  {formatIdentity(cluster.owner, spNameMap)}
                                 </span>
                               ) : <span className="text-sm text-gray-500">—</span>}
                             </td>
@@ -1206,7 +1207,7 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                     );
                   })()}
                   <div className="relative w-44">
-                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     <input
@@ -1262,10 +1263,10 @@ export function AIMLCostCenter({ data, isLoading, startDate, endDate, host, work
                                 {(() => {
                                   const t = agent.agent_type || "Agent";
                                   const cls: Record<string, string> = {
-                                    "Knowledge Assistant": "bg-teal-50 text-teal-700",
+                                    "Knowledge Assistant": "bg-cyan-50 text-cyan-700",
                                     "Supervisor Agent": "bg-amber-50 text-amber-700",
-                                    "Genie Space": "bg-sky-50 text-sky-700",
-                                    "AI Classify": "bg-emerald-50 text-emerald-700",
+                                    "Genie Space": "bg-blue-50 text-blue-700",
+                                    "AI Classify": "bg-green-50 text-green-700",
                                     "AI Extract": "bg-orange-50 text-orange-700",
                                     "Agent": "bg-blue-50 text-blue-700",
                                   };

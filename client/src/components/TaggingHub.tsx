@@ -551,7 +551,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
           {coveragePieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie
+                <Pie isAnimationActive={false}
                   data={coveragePieData}
                   cx="50%"
                   cy="50%"
@@ -594,7 +594,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                   labelFormatter={(label) => new Date(label).toLocaleDateString()}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area
+                <Area isAnimationActive={false}
                   type="monotone"
                   dataKey="Tagged"
                   stackId="1"
@@ -602,7 +602,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                   fill={COLORS.tagged}
                   fillOpacity={0.6}
                 />
-                <Area
+                <Area isAnimationActive={false}
                   type="monotone"
                   dataKey="Untagged"
                   stackId="1"
@@ -999,7 +999,7 @@ export function TaggingHub({ data, isLoading, host, startDate, endDate, workspac
                             obj.object_type === 'Job' ? 'bg-green-100 text-green-700' :
                             obj.object_type === 'SQL Warehouse' ? 'bg-blue-50 text-blue-700' :
                             obj.object_type === 'Pipeline' ? 'bg-cyan-100 text-cyan-700' :
-                            obj.object_type === 'Serving Endpoint' ? 'bg-pink-100 text-pink-700' :
+                            obj.object_type === 'Serving Endpoint' ? 'bg-orange-100 text-orange-700' :
                             'bg-gray-100 text-gray-700'
                           }`}>
                             {obj.object_type}

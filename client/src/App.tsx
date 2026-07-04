@@ -991,17 +991,23 @@ function Dashboard() {
         <div className="mx-auto max-w-7xl px-4 pt-8 pb-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-3 items-center gap-4">
             <div>
-              <h1
-                className="text-3xl font-black tracking-wide text-gray-900 cursor-pointer hover:opacity-75 transition-opacity"
-                style={{ fontFamily: "'Orbitron', sans-serif" }}
-                onClick={() => setActiveTab("dbu")}
-                title="Back to $DBU Spend"
-              >
-                COST-OBS
-              </h1>
-              <p className="mt-1 text-sm text-gray-500">
-                $DBU mission control + analytics center{appSettings.companyName ? ` for ${appSettings.companyName}'s Databricks spend` : ""}
-              </p>
+              <div className="flex items-baseline gap-2">
+                <h1
+                  className="text-3xl font-black tracking-wide text-gray-900 cursor-pointer hover:opacity-75 transition-opacity"
+                  style={{ fontFamily: "'Orbitron', sans-serif" }}
+                  onClick={() => setActiveTab("dbu")}
+                  title="Back to $DBU Spend"
+                >
+                  COST-OBS
+                </h1>
+                <span
+                  className="text-sm font-semibold tracking-wide"
+                  style={{ color: "#FF3621", fontFamily: "'Orbitron', sans-serif" }}
+                  title="cost-obs release tag on the deployed repo"
+                >
+                  v1.1
+                </span>
+              </div>
             </div>
             <div className="flex justify-center items-center gap-3">
               <DateRangePicker value={dateRange} onChange={setDateRange} />

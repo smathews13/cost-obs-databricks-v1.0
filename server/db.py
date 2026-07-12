@@ -77,7 +77,7 @@ def get_host_url() -> str:
     """Return the Databricks workspace URL with https:// prefix.
 
     Handles the common case where DATABRICKS_HOST is set to just the hostname
-    (e.g. 'fevm-cmegdemos.cloud.databricks.com') without a protocol prefix,
+    (e.g. '<workspace>.cloud.databricks.com') without a protocol prefix,
     as well as when the full URL is provided. Falls back to SDK config.
     """
     host = os.getenv("DATABRICKS_HOST", "")

@@ -8,6 +8,9 @@
 > **🔧 Customization Notice**
 > You are welcome to modify and customize this application's source code to fit your organization's requirements. However, be aware that local customizations may conflict with future upstream updates. We recommend tracking your changes in a fork and reviewing diffs carefully before pulling upstream updates.
 
+> **📌 Maintenance Mode — v1 series (currently `v1.1`)**
+> The v1 line is on **bug-fix-only maintenance**. New feature development is happening on the **v2** line: **[smathews13/cost-obs-databricks-v2.0](https://github.com/smathews13/cost-obs-databricks-v2.0)**. Fresh deployments should use v2 when it reaches general availability. Existing v1 customers can migrate via the documented 1.1 → 2.1 upgrade path (in the v2 repo's README). This repo will continue to receive **bug fixes and security patches only** — no new features.
+
 ---
 
 A full-stack Databricks App for account-level compute cost visibility, chargeback, and anomaly detection across your entire Databricks platform.

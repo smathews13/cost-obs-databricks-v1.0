@@ -642,6 +642,9 @@ def delta_cache_invalidate(pattern: str | None = None) -> None:
 _workspace_client: WorkspaceClient | None = None
 _workspace_client_lock = threading.Lock()
 
+_account_client: Any | None = None
+_account_client_lock = threading.Lock()
+
 
 def get_workspace_client() -> WorkspaceClient:
     """Get or create a singleton WorkspaceClient instance.
@@ -692,6 +695,100 @@ def get_user_workspace_client() -> WorkspaceClient:
             # the PAT credential provider, ignoring the M2M OAuth env vars.
             return WorkspaceClient(host=host, token=user_token, auth_type="pat")
     return get_workspace_client()
+
+
+def _account_console_host() -> str:
+    """Derive the account-console host URL from the workspace host, per cloud.
+
+    Account-level APIs (e.g. SCIM listing of account service principals) are served
+    from a different host than the workspace, and Databricks Apps does not inject an
+    env var for it. We map the workspace host's cloud to the documented account
+    console URL. DATABRICKS_ACCOUNT_HOST overrides the derivation when set.
+    """
+    override = os.getenv("DATABRICKS_ACCOUNT_HOST", "").strip()
+    if override:
+        override = override.rstrip("/")
+        return override if override.startswith("http") else f"https://{override}"
+    ws = get_host_url()  # https://<workspace-host>
+    if "azuredatabricks.net" in ws:
+        return "https://accounts.azuredatabricks.net"
+    if "gcp.databricks.com" in ws:
+        return "https://accounts.gcp.databricks.com"
+    return "https://accounts.cloud.databricks.com"  # AWS default
+
+
+def _detect_account_id() -> str:
+    """Return the Databricks account ID.
+
+    DATABRICKS_ACCOUNT_ID env var wins; otherwise auto-detect from system.billing.usage.
+    Returns "" if neither is available.
+    """
+    account_id = os.getenv("DATABRICKS_ACCOUNT_ID", "").strip()
+    if account_id:
+        return account_id
+    try:
+        rows = execute_query(
+            "SELECT DISTINCT account_id FROM system.billing.usage "
+            "WHERE usage_date >= CURRENT_DATE - 7 AND account_id IS NOT NULL LIMIT 1"
+        )
+        return str(rows[0].get("account_id", "")) if rows else ""
+    except Exception as e:
+        logger.debug("Could not auto-detect account_id from billing: %s", e)
+        return ""
+
+
+def get_account_client():
+    """Get or create a singleton AccountClient, or None if account access can't be built.
+
+    Reuses the app SP's OAuth M2M credentials (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET,
+    injected by the Databricks Apps runtime) against the account-console host. Requires the SP
+    to hold account-level permissions (account admin). Best-effort by design: any failure
+    returns None so callers degrade gracefully to workspace-scoped behavior. Failures are
+    NOT cached here — retry throttling is the caller's responsibility (e.g. the SP-name cache
+    fail TTL) — matching get_workspace_client's philosophy.
+    """
+    global _account_client
+
+    if _account_client is not None:
+        return _account_client
+
+    with _account_client_lock:
+        if _account_client is not None:
+            return _account_client
+
+        account_id = _detect_account_id()
+        if not account_id:
+            logger.info(
+                "AccountClient unavailable: no account_id resolved "
+                "(set DATABRICKS_ACCOUNT_ID or ensure system.billing.usage is readable)."
+            )
+            return None
+
+        host = _account_console_host()
+        client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
+        client_secret = os.getenv("DATABRICKS_CLIENT_SECRET", "")
+        try:
+            from databricks.sdk import AccountClient
+            if client_id and client_secret:
+                # Force oauth-m2m so the SDK ignores any ambient DATABRICKS_TOKEN and does
+                # not raise "more than one authorization method configured".
+                client = AccountClient(
+                    host=host,
+                    account_id=account_id,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    auth_type="oauth-m2m",
+                )
+            else:
+                # Local dev / non-Apps: let the SDK resolve ambient auth (config profile).
+                client = AccountClient(host=host, account_id=account_id)
+            _account_client = client  # only cache on successful construction
+            logger.info("Created AccountClient singleton (account %s, host %s)", account_id, host)
+        except Exception as e:
+            logger.warning("AccountClient init failed (account %s, host %s): %s", account_id, host, e)
+            return None
+
+    return _account_client
 
 
 def ensure_dedicated_warehouse() -> tuple[str, str]:

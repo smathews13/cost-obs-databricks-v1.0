@@ -32,21 +32,70 @@ _SP_CACHE_TTL = 24 * 3600  # 24 hours on success
 _SP_CACHE_FAIL_TTL = 300   # 5 minutes on failure — retry sooner
 
 
-def _list_service_principals_sync() -> dict[str, str]:
-    """Call WorkspaceClient.service_principals.list() and build application_id -> display_name.
-
-    Keys are lowercased so lookups from the frontend (which sees SP UUIDs from
-    system.billing.usage identity_metadata.run_as) match regardless of casing
-    differences between SCIM and billing.
-    """
-    from server.db import get_workspace_client
-    w = get_workspace_client()
+def _collect_sp_names(sp_iter) -> dict[str, str]:
+    """Build application_id(lowercased) -> display_name from a SCIM SP iterator."""
     out: dict[str, str] = {}
-    for sp in w.service_principals.list():
+    for sp in sp_iter:
         app_id = getattr(sp, "application_id", None)
         display = getattr(sp, "display_name", None)
         if app_id and display:
             out[str(app_id).lower()] = str(display)
+    return out
+
+
+def _list_service_principals_sync() -> dict[str, str]:
+    """Build application_id -> display_name for service principals.
+
+    Merges ACCOUNT-level SPs (the comprehensive source — `run_as` UUIDs in
+    system.billing.usage are almost all account-wide SPs, which a workspace SCIM
+    list does not see) with WORKSPACE-level SPs. Account resolution is best-effort:
+    if no AccountClient can be built (no account admin, no account_id), we fall back
+    to the workspace list alone so there is no regression from prior behavior.
+
+    Keys are lowercased so lookups from the frontend (which sees SP UUIDs from
+    system.billing.usage identity_metadata.run_as) match regardless of casing
+    differences between SCIM and billing.
+
+    Raises only if BOTH the account and workspace paths fail, so the caller's
+    fail-TTL retry logic still engages on a total outage.
+    """
+    from server.db import get_account_client, get_workspace_client
+
+    out: dict[str, str] = {}
+    account_count = 0
+    account_err: Exception | None = None
+    workspace_err: Exception | None = None
+
+    # 1) Account-level SPs first (comprehensive). Best-effort.
+    try:
+        a = get_account_client()
+        if a is not None:
+            out = _collect_sp_names(a.service_principals.list())
+            account_count = len(out)
+            logger.info("Fetched %d account-level service principals", account_count)
+    except Exception as e:  # 403 (not account admin), transient SCIM error, etc.
+        account_err = e
+        logger.warning("Account service_principals.list() failed: %s", e)
+
+    # 2) Overlay workspace-level SPs to fill any gaps (also the sole source when
+    #    account access is unavailable). Workspace names win on conflict since a
+    #    workspace-local SP display name is the more specific label.
+    try:
+        w = get_workspace_client()
+        ws_names = _collect_sp_names(w.service_principals.list())
+        out.update(ws_names)
+        logger.info(
+            "Merged %d workspace service principals (total %d, account contributed %d)",
+            len(ws_names), len(out), account_count,
+        )
+    except Exception as e:
+        workspace_err = e
+        logger.warning("Workspace service_principals.list() failed: %s", e)
+
+    # Only propagate failure if we got nothing from either source — that lets the
+    # endpoint mark the result unavailable and retry on the short fail TTL.
+    if not out and (account_err or workspace_err):
+        raise (workspace_err or account_err)  # type: ignore[misc]
     return out
 
 
@@ -143,7 +192,7 @@ async def get_service_principals() -> dict[str, Any]:
         _sp_cache = result
         _sp_cache_at = now
         _sp_cache_ok = True
-        logger.info("Fetched %d service principals from workspace", len(result))
+        logger.info("Resolved %d service principal display names (account + workspace)", len(result))
         return {"map": result, "available": True, "cached": False}
     except Exception as e:
         logger.warning("service_principals.list() failed: %s", e)

@@ -75,7 +75,7 @@ If your app used the environment variable `COST_OBS_WORKSPACES`, or any other se
 
 - **Diagnostics surface actionable next steps.** Instead of raw error details, the app maps failures to specific actions — **Grant SQL**, **Rebuild**, or **Configure** — so customers can move directly to the fix.
 
-**Deploy from Git** is the recommended deployment path. The app's first-run flow is built around an environment check, permissions check, and table creation step.
+**Deploy from Git is the only supported deployment path.** The app's first-run flow is built around an environment check, permissions check, and table creation step — the in-app setup wizard handles all onboarding, so no script- or CLI-based deploy is needed or supported.
 
 ---
 

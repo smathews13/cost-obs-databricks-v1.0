@@ -1291,39 +1291,31 @@ _background_tasks: set = set()  # keeps fire-and-forget tasks alive
 
 
 def _get_account_workspace_names() -> dict[str, str]:
-    """Return workspace_id → workspace_name from AccountClient. Cached 1h. Returns {} on failure.
+    """Return workspace_id → workspace_name for ALL account workspaces. Cached 1h; {} on failure.
 
-    Account ID is auto-detected from system.billing.usage so no env var is required.
-    DATABRICKS_ACCOUNT_ID env var takes precedence if set.
+    Uses db.get_account_client() (account-console host + OAuth M2M). Previously this built a
+    bare AccountClient(account_id=...) which has NO account host, so it hit the workspace host,
+    failed, and returned {} — that's why the top-nav workspace filter showed raw IDs for the
+    ~thousands of non-billing account workspaces (names resolve elsewhere via the
+    billing.usage ⋈ workspaces_latest join, which only covers spending workspaces).
     """
     global _account_ws_names, _account_ws_names_ts
     if time.time() - _account_ws_names_ts < 3600:
         return _account_ws_names
 
-    # Prefer explicit env var; auto-detect from billing table as fallback
-    account_id = os.environ.get("DATABRICKS_ACCOUNT_ID", "")
-    if not account_id:
-        try:
-            rows = execute_query(
-                "SELECT DISTINCT account_id FROM system.billing.usage WHERE usage_date >= CURRENT_DATE - 7 AND account_id IS NOT NULL LIMIT 1"
-            )
-            account_id = rows[0].get("account_id", "") if rows else ""
-        except Exception as e:
-            logger.debug("Could not auto-detect account_id from billing: %s", e)
-
-    if not account_id:
-        return {}
-
     try:
-        from databricks.sdk import AccountClient
-        a = AccountClient(account_id=account_id)
+        from server.db import get_account_client
+        a = get_account_client()  # correct account-console host
+        if a is None:
+            _account_ws_names_ts = time.time()
+            return {}
         names = {str(w.workspace_id): w.workspace_name for w in a.workspaces.list() if w.workspace_name}
         _account_ws_names = names
         _account_ws_names_ts = time.time()
-        logger.info("AccountClient: fetched %d workspace names for account %s", len(names), account_id)
+        logger.info("AccountClient: fetched %d workspace names", len(names))
         return names
     except Exception as e:
-        logger.warning("AccountClient workspace list failed (account %s): %s", account_id, e)
+        logger.warning("AccountClient workspace list failed: %s", e)
         _account_ws_names_ts = time.time()  # backoff: don't retry for another hour
         return {}
 

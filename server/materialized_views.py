@@ -1434,6 +1434,45 @@ def _get_refresh_state(catalog: str, schema: str, table_name: str) -> dict | Non
     return None
 
 
+_DEDUP_SKIP: frozenset = frozenset({"dbsql_cost_per_query"})
+
+
+def _dedup_delta_table(catalog: str, schema: str, table_name: str, pk_cols: list) -> int:
+    """Remove duplicate rows on the table's unique key, keeping one per key.
+
+    Delta enforces no primary key, so concurrent MERGE races (or legacy rows) can leave
+    duplicate rows that inflate SUM aggregations on the dashboard. Detect via GROUP BY …
+    HAVING COUNT(*) > 1 (NULL-safe, unlike COUNT(DISTINCT)); if any exist, rewrite the table
+    keeping one row per key via ROW_NUMBER. Returns duplicated keys removed (0 = clean, no
+    rewrite). No-op for tables without a key or in _DEDUP_SKIP.
+    """
+    if not pk_cols or table_name in _DEDUP_SKIP:
+        return 0
+    fq = f"`{catalog}`.`{schema}`.`{table_name}`"
+    partition = ", ".join(f"`{c}`" for c in pk_cols)
+    try:
+        chk = execute_query(
+            f"SELECT COUNT(*) AS dup_keys FROM "
+            f"(SELECT 1 FROM {fq} GROUP BY {partition} HAVING COUNT(*) > 1)",
+            no_cache=True,
+        )
+        dup_keys = int((chk[0].get("dup_keys") if chk else 0) or 0)
+        if dup_keys <= 0:
+            return 0
+        logger.warning("Deduping %s: %d duplicated keys found — rewriting", table_name, dup_keys)
+        execute_query(
+            f"INSERT OVERWRITE TABLE {fq} SELECT * EXCEPT(_dedup_rn) FROM ("
+            f"  SELECT *, ROW_NUMBER() OVER (PARTITION BY {partition} ORDER BY {partition}) AS _dedup_rn "
+            f"  FROM {fq}"
+            f") WHERE _dedup_rn = 1",
+            no_cache=True,
+        )
+        return dup_keys
+    except Exception as e:
+        logger.warning("Dedup of %s failed (non-fatal): %s", table_name, e)
+        return 0
+
+
 def _update_refresh_state(catalog: str, schema: str, table_name: str, refresh_count: int) -> None:
     """Upsert refresh state after a successful table refresh."""
     try:
@@ -1662,6 +1701,10 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
                             reprocess_start=str(reprocess_start),
                             billing_lookback_days=lookback_days,
                         ), no_cache=True)
+                        # Self-heal duplicate rows the incremental MERGE path can leave
+                        # (Delta has no PK enforcement). Full rebuilds are dup-free (GROUP BY).
+                        _dedup_delta_table(catalog, schema, table_name,
+                                           _TABLE_REFRESH_CONFIG.get(table_name, {}).get("pk") or [])
                         new_count = state["refresh_count"] + 1
                         _update_refresh_state(catalog, schema, table_name, new_count)
 

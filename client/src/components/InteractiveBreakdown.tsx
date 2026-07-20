@@ -223,21 +223,6 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
             </span>
           </h3>
           <span className="text-sm text-gray-500 shrink-0">{uniqueUsers} users · {uniqueClusters} clusters · {uniqueNotebooks} notebooks</span>
-          {historicalCount > 0 && (
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showHistorical}
-                onChange={(e) => { setShowHistorical(e.target.checked); setCurrentPage(1); }}
-                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-              />
-              Show historical ({historicalCount})
-              <span className="relative group ml-0.5">
-                <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Clusters whose names could not be resolved — likely terminated or from inaccessible workspaces</span>
-              </span>
-            </label>
-          )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <div ref={viewDropdownRef} className="relative">
               <button
@@ -272,6 +257,21 @@ export function InteractiveBreakdown({ data, isLoading, host }: InteractiveBreak
                 </div>
               )}
             </div>
+            {historicalCount > 0 && (
+              <label className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showHistorical}
+                  onChange={(e) => { setShowHistorical(e.target.checked); setCurrentPage(1); }}
+                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                />
+                Show historical ({historicalCount})
+                <span className="relative group ml-0.5">
+                  <svg className="inline h-3 w-3 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block w-56 rounded-lg bg-gray-900 px-2 py-1.5 text-[10px] text-white shadow-lg z-20">Clusters whose names could not be resolved — likely terminated or from inaccessible workspaces</span>
+                </span>
+              </label>
+            )}
             <div className="relative w-44 shrink-0">
               <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />

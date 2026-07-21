@@ -1369,32 +1369,36 @@ async def get_workspace_list(
         GROUP BY workspace_id
         ORDER BY workspace_id
     """
-    # Secondary enrichment: CDC log fallback for environments where workspaces_latest is empty.
-    # Queried without date params so its result is cached independently for 2h.
-    sql_workspaces_history = """
-        SELECT CAST(workspace_id AS STRING) as workspace_id, MAX(workspace_name) as workspace_name
-        FROM system.access.workspaces
-        GROUP BY workspace_id
-    """
-
     def _fetch_rows() -> list:
         try:
             rows = execute_query(sql_with_names, params)
         except Exception as e:
             logger.warning("get_workspace_list: system.access.workspaces_latest unavailable (%s: %s), falling back to IDs only", type(e).__name__, e)
             rows = execute_query(sql_ids_only, params)
-        # If workspaces_latest was empty, try CDC history table as secondary enrichment
-        if rows and all(r["workspace_name"] is None for r in rows):
-            try:
-                history = execute_query(sql_workspaces_history)
-                history_map = {r["workspace_id"]: r["workspace_name"] for r in history}
-                if history_map:
-                    rows = [{**r, "workspace_name": history_map.get(r["workspace_id"]) or r["workspace_name"]} for r in rows]
-            except Exception:
-                pass
-        # AccountClient names take priority over system table names
+        # AccountClient names (authoritative for CURRENT workspaces).
         if _account_ws_names:
             rows = [{**r, "workspace_name": _account_ws_names.get(r["workspace_id"]) or r["workspace_name"]} for r in rows]
+        # Fill any STILL-unresolved names from the app's own workspace MV — the SAME source
+        # every other dropdown uses. It retains names for workspaces later deleted/renamed
+        # (system.access.workspaces_latest drops those; AccountClient only lists current ones),
+        # so the long tail otherwise renders as raw IDs in the top-nav filter. (The old
+        # fallback queried system.access.workspaces, absent in many workspaces, and only ran
+        # when EVERY row was null — so partial gaps never got filled.)
+        if any(r["workspace_name"] is None for r in rows):
+            try:
+                from server.db import get_catalog_schema
+                _cat, _sch = get_catalog_schema()
+                mv = execute_query(
+                    f"SELECT CAST(workspace_id AS STRING) AS workspace_id, MAX(workspace_name) AS workspace_name "
+                    f"FROM `{_cat}`.`{_sch}`.`daily_workspace_breakdown` "
+                    f"WHERE workspace_name IS NOT NULL GROUP BY workspace_id",
+                    no_cache=True,
+                )
+                mv_map = {r["workspace_id"]: r["workspace_name"] for r in mv}
+                if mv_map:
+                    rows = [{**r, "workspace_name": r["workspace_name"] or mv_map.get(r["workspace_id"])} for r in rows]
+            except Exception as e:
+                logger.debug("get_workspace_list: MV workspace-name fill skipped: %s", e)
         return rows
 
     # Kick off background refresh if stale — never blocks the request path

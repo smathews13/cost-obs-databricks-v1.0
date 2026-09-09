@@ -748,7 +748,7 @@ GRANT SELECT ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;`;
             <div style={{ marginBottom: 12 }}>
               <Callout tone="warning">
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>System-table grants pending</div>
-                <div style={{ marginBottom: 8 }}>Each new app deploy gets a fresh service principal, so grants don't carry over. Until they run, affected metrics show <em>unavailable</em> (never $0.00). Run this as a metastore admin, then re-check.</div>
+                <div style={{ marginBottom: 8 }}>Readiness found a missing service-principal grant. Affected metrics show <em>unavailable</em> (never $0.00) until access is repaired. Run this as a metastore admin, then re-check.</div>
                 <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
                   <SecondaryButton onClick={copyGrantSql}><span className="inline-flex items-center gap-1.5">{copyIcon}{sqlCopied ? "Copied" : "Copy SQL"}</span></SecondaryButton>
                 </div>

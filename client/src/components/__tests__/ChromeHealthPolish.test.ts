@@ -6,6 +6,7 @@ const appSource = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf8");
 const styles = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 const settingsSections = readFileSync(resolve(process.cwd(), "src/components/settings/sections.tsx"), "utf8");
+const settingsPermissions = readFileSync(resolve(process.cwd(), "src/components/settings/SettingsPermissions.tsx"), "utf8");
 
 describe("account rail health polish", () => {
   it("lets definitive server setup state override stale browser completion flags", () => {
@@ -22,6 +23,7 @@ describe("account rail health polish", () => {
     expect(appSource).not.toContain("after the last git deploy");
     expect(appSource).toContain("Use Identity & Permissions to repair the specific access gap.");
     expect(settingsSections).not.toContain("Each new app deploy gets a fresh service principal");
+    expect(settingsPermissions).not.toContain("Each new app deploy gets a fresh service principal");
   });
 
   it("keeps query-cache controls at the bottom of Data and tables", () => {

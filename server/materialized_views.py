@@ -2450,9 +2450,9 @@ def check_materialized_views_exist(catalog: str | None = None, schema: str | Non
     table_names = _MV_TABLES
 
     # Use the Unity Catalog REST API (no SQL warehouse needed — fast even when cold).
-    # Databricks Apps creates a new SP on every redeploy, so the SP may have no grants
-    # on an existing deployment. Try the user's OAuth token first (always has access to
-    # their own tables), then fall back to the SP client. Never fall back to SQL — a
+    # Try the user's OAuth token first so readiness can still inspect the tables if
+    # the SP has access drift or the app was explicitly recreated with a new identity,
+    # then fall back to the SP client. Never fall back to SQL — a
     # schema-not-found error from the UC API means the tables simply don't exist yet,
     # and SQL connections would hang for minutes against a warehouse the SP can't use.
     from server.db import get_user_workspace_client, get_workspace_client

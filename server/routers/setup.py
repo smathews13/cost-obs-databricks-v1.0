@@ -331,9 +331,9 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
 def _grant_warehouse_can_use(w, sp_client_id: str) -> None:
     """Grant CAN_USE on the configured SQL warehouse to the app SP via REST API.
 
-    Called from _grant_sp_schema_access on every /api/setup/status load when
-    a user OAuth token is present. Idempotent — re-running after a redeploy
-    that creates a new SP re-grants without any manual intervention.
+    Called from _grant_sp_schema_access when a user OAuth token is present.
+    Idempotent, so readiness can safely repair a missing warehouse grant or
+    grant access to a replacement SP after the app is explicitly recreated.
     """
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
     if not http_path:

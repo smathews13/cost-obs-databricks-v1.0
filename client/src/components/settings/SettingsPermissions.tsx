@@ -8,6 +8,7 @@ import { READINESS_QUERY_KEY } from "@/hooks/useFeatureAvailability";
 import { Group, Row, SecondaryButton, LinkButton, MonoChip, Callout, T, MONO } from "./dubois";
 import { useToast } from "./duboisToast";
 import { Spinner } from "@/components/Spinner";
+import { organizationForEmail } from "@/utils/domainIcons";
 import "./settings.css";
 import type {
   AuthStatusPayload,
@@ -18,12 +19,48 @@ import type {
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const USER_GRID_STYLE = {
-  "--settings-access-grid-columns": "minmax(210px, 1fr) 90px 112px 112px",
+  "--settings-access-grid-columns": "minmax(210px, 1fr) 190px 90px 112px 112px",
 } as React.CSSProperties;
 const ROLE_OPTIONS = [
   { value: "consumer", label: "Consumer" },
   { value: "admin", label: "Admin" },
 ] as const;
+
+function OrganizationIdentity({ email }: { email: string }) {
+  const organization = organizationForEmail(email);
+  const monogram = organization.name
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+  return (
+    <span
+      data-testid="settings-user-organization"
+      title={`${organization.name} (${organization.domain})`}
+      className="flex min-w-0 items-center gap-2"
+    >
+      <span
+        className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full text-[9px] font-bold text-white"
+        style={{ backgroundColor: organization.icon?.background ?? T.textSecondary }}
+      >
+        {organization.icon ? (
+          <img
+            src={organization.icon.src}
+            alt=""
+            aria-hidden="true"
+            className="aspect-square object-contain"
+            style={{ width: `${organization.icon.scale}%`, height: `${organization.icon.scale}%` }}
+          />
+        ) : monogram}
+      </span>
+      <span className="truncate text-[12.5px]" style={{ color: T.text }}>
+        {organization.name}
+      </span>
+    </span>
+  );
+}
 
 function safeIdentityUrl(value?: string): string | null {
   try {
@@ -493,6 +530,7 @@ GRANT SELECT ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;`;
       <div data-testid="settings-users-table" style={{ border: `1px solid ${T.borderGroup}`, borderRadius: 8, overflowX: "auto" }}>
         <div className="settings-access-user-grid settings-access-user-header" style={{ ...USER_GRID_STYLE, padding: "7px 16px", backgroundColor: T.navBg, borderBottom: `1px solid ${T.borderRow}` }}>
           <span>User</span>
+          <span>Organization</span>
           <span>Persona</span>
           <span>Permission role</span>
           <span aria-hidden="true">Action</span>
@@ -513,6 +551,7 @@ GRANT SELECT ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;`;
               return (
             <div data-testid="access-user-row" className="settings-access-user-grid" key={email} style={{ ...USER_GRID_STYLE, minHeight: 52, padding: "9px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.borderRow}` }}>
               <span title={email} style={{ fontSize: 13, color: T.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</span>
+              <OrganizationIdentity email={email} />
               <span className={`settings-persona settings-persona--${isOwner ? "owner" : "member"}`}>
                 {isOwner ? "Owner" : "User"}
               </span>
@@ -549,6 +588,11 @@ GRANT SELECT ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;`;
               style={{ width: "100%", height: 32, borderRadius: 4, border: `1px solid ${T.borderControl}`, padding: "0 10px", fontSize: 13, color: T.text, backgroundColor: T.surface }}
             />
           </div>
+          {EMAIL_RE.test(newUserEmail.trim()) ? (
+            <OrganizationIdentity email={newUserEmail.trim()} />
+          ) : (
+            <span style={{ fontSize: 12, color: T.textSecondary }}>Organization</span>
+          )}
           <span className="settings-persona settings-persona--member">User</span>
           <RoleMenuSelect value={newUserRole} onChange={setNewUserRole} ariaLabel="Role for new user" />
           <span className="settings-user-action-cell">

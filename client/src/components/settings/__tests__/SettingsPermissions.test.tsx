@@ -238,6 +238,29 @@ describe("SettingsPermissions: grant bundle targets actual SP name", () => {
 });
 
 describe("SettingsPermissions: polished access controls", () => {
+  it("shows each user's organization from the email domain", async () => {
+    mockApis(SP_AUTH_STATUS, undefined, {
+      admins: ["admin@databricks.com", "leader@take2games.com"],
+      consumers: ["player@2k.com", "builder@zynga.com", "james@demonware.net"],
+    });
+    renderPermissions();
+
+    for (const organization of [
+      "Databricks",
+      "Take-Two Interactive Software",
+      "2K",
+      "Zynga",
+      "Demonware",
+    ]) {
+      expect(await screen.findByText(organization)).toBeVisible();
+    }
+    const demonwareRow = screen.getByText("james@demonware.net").closest("[data-testid='access-user-row']");
+    expect(demonwareRow?.querySelector("img")).toHaveAttribute(
+      "src",
+      "/brand/domain-icons/activision.svg",
+    );
+  });
+
   it("describes the server bootstrap policy when no admin is configured", async () => {
     mockApis(SP_AUTH_STATUS, undefined, {
       admins: [],
@@ -350,10 +373,10 @@ describe("SettingsPermissions: polished access controls", () => {
 
     expect(addRow).toHaveClass("settings-access-user-grid");
     expect(addRow.style.getPropertyValue("--settings-access-grid-columns")).toBe(
-      "minmax(210px, 1fr) 90px 112px 112px",
+      "minmax(210px, 1fr) 190px 90px 112px 112px",
     );
     expect(addRow.style.minWidth).toBe("");
-    expect(addRow.children).toHaveLength(4);
+    expect(addRow.children).toHaveLength(5);
     expect(rows).toHaveLength(2);
     rows.forEach((row) => {
       expect(row).toHaveClass("settings-access-user-grid");
@@ -361,7 +384,7 @@ describe("SettingsPermissions: polished access controls", () => {
         addRow.style.getPropertyValue("--settings-access-grid-columns"),
       );
       expect(row.style.minWidth).toBe("");
-      expect(row.children).toHaveLength(4);
+      expect(row.children).toHaveLength(5);
     });
     expect(screen.getByRole("textbox", { name: "User email" })).toHaveStyle({ width: "100%" });
     expect(screen.getByRole("combobox", { name: "Role for new user" }).parentElement).toHaveClass("settings-role-select");

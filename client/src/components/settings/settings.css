@@ -360,7 +360,7 @@
 
 @media (max-width: 760px) {
   .settings-access-user-grid {
-    grid-template-columns: minmax(200px, 1fr) 90px 112px 112px;
+    grid-template-columns: minmax(200px, 1fr) 190px 90px 112px 112px;
   }
 }
 

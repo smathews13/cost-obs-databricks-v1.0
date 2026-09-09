@@ -423,32 +423,34 @@ export function DataTablesSection({ localSettings, updateSetting, caps }: Common
           DuBois-styled, self-contained (owns the table-status polling + rebuild + drop). */}
       <SettingsConfig
         beforeDropContent={(
-          <Group label="Query cache">
-            <Row
-              first
-              label="Clear cached dashboard results"
-              helper="Removes server and shared response-cache entries for every dashboard tab. It does not delete managed tables, settings, or source configuration. Each tab runs fresh warehouse queries the next time it opens."
-              control={(
-                <SecondaryButton
-                  disabled={cacheStatus.kind === "clearing"}
-                  onClick={() => { void clearQueryCache(); }}
+          <div data-testid="query-cache-section" style={{ marginTop: 20 }}>
+            <Group label="Query cache">
+              <Row
+                first
+                label="Clear cached dashboard results"
+                helper="Removes server and shared response-cache entries for every dashboard tab. It does not delete managed tables, settings, or source configuration. Each tab runs fresh warehouse queries the next time it opens."
+                control={(
+                  <SecondaryButton
+                    disabled={cacheStatus.kind === "clearing"}
+                    onClick={() => { void clearQueryCache(); }}
+                  >
+                    {cacheStatus.kind === "clearing" ? "Clearing cache…" : "Clear query cache"}
+                  </SecondaryButton>
+                )}
+              />
+              {cacheStatus.kind !== "idle" && (
+                <div
+                  role={cacheStatus.kind === "error" ? "alert" : "status"}
+                  aria-live="polite"
+                  style={{ padding: "0 16px 12px" }}
                 >
-                  {cacheStatus.kind === "clearing" ? "Clearing cache…" : "Clear query cache"}
-                </SecondaryButton>
+                  <Callout tone={cacheStatus.kind === "error" ? "danger" : cacheStatus.kind === "success" ? "success" : "warning"}>
+                    {cacheStatus.message}
+                  </Callout>
+                </div>
               )}
-            />
-            {cacheStatus.kind !== "idle" && (
-              <div
-                role={cacheStatus.kind === "error" ? "alert" : "status"}
-                aria-live="polite"
-                style={{ padding: "0 16px 12px" }}
-              >
-                <Callout tone={cacheStatus.kind === "error" ? "danger" : cacheStatus.kind === "success" ? "success" : "warning"}>
-                  {cacheStatus.message}
-                </Callout>
-              </div>
-            )}
-          </Group>
+            </Group>
+          </div>
         )}
       />
     </div>

@@ -417,11 +417,6 @@ export function SettingsPermissions() {
   const readinessChecks = [...(readiness?.core ?? []), ...(readiness?.enhanced ?? [])];
   const verifiedTableCount = readinessChecks.filter((check) => check.granted).length;
   const missingRequiredTables = readinessChecks.filter((check) => check.required && !check.granted);
-  const roleCapabilities = permissions?.role_capabilities;
-  const adminSummary = roleCapabilities?.admin?.summary
-    ?? "View dashboards and manage shared app settings, users, data sources, rebuilds, alerts, setup, and experimental features.";
-  const consumerSummary = roleCapabilities?.consumer?.summary
-    ?? "View dashboards and basic app information. Cannot change shared app settings or run administrative actions.";
   const appGrants =
 `-- System tables (billing + query history + compute + lakeflow + serving + access)
 -- WHO: Must be run by a metastore admin or account admin.
@@ -605,31 +600,31 @@ GRANT SELECT ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;`;
       </div>
       {/* ── Role capabilities ── */}
       <div data-testid="settings-role-capabilities" style={{ margin: "20px 0" }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 7 }}>Permission roles</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Permission roles</span>
+          <InfoPopover
+            size="compact"
+            label="Permission role storage details"
+            text={
+              permissionTable
+                ? `Roles are stored in ${permissionTable} and persist across deploys. Owner is sourced from the current Databricks Apps deployment creator.`
+                : "Roles persist in the app's managed permissions table. Owner is sourced from the current Databricks Apps deployment creator."
+            }
+          />
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
           {([
-            ["admin", "Admin", adminSummary],
-            ["consumer", "Consumer", consumerSummary],
-          ] as const).map(([role, label, summary]) => (
+            ["admin", "Admin"],
+            ["consumer", "Consumer"],
+          ] as const).map(([role, label]) => (
             <div key={role} style={{ border: `1px solid ${T.borderGroup}`, borderRadius: 8, padding: "10px 12px", backgroundColor: T.navBg }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{label}</span>
-                <InfoPopover
-                  size="compact"
-                  label={`${label} role details`}
-                  text={summary}
-                />
                 {permissions?.current_role === role && <PermissionState state="verified">Your role</PermissionState>}
               </div>
             </div>
           ))}
         </div>
-        {permissionTable && (
-          <p style={{ fontSize: 11, color: T.textSecondary, margin: "6px 2px 0" }}>
-            Roles are stored in <MonoChip>{permissionTable}</MonoChip> and persist across deploys.
-            {permissions?.owner?.verified && <> Owner is sourced from the current Databricks Apps deployment creator.</>}
-          </p>
-        )}
       </div>
 
       {/* ── Future metastore browser ── */}

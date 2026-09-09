@@ -192,17 +192,18 @@ describe("SettingsPermissions: SP identity panel", () => {
     expect(screen.getByText(/supporting write location/i)).toBeVisible();
   });
 
-  it("renders role capabilities from the backend policy payload", async () => {
+  it("moves role persistence details into one section tooltip", async () => {
     mockApis(SP_AUTH_STATUS);
     renderPermissions();
 
     expect(await screen.findByText("Permission roles")).toBeVisible();
     expect(screen.queryByText("Admin route capabilities.")).not.toBeInTheDocument();
-    const adminDetails = screen.getByRole("button", { name: "Admin role details" });
-    const consumerDetails = screen.getByRole("button", { name: "Consumer role details" });
-    await userEvent.click(adminDetails);
-    expect(screen.getByText("Admin route capabilities.")).toBeVisible();
-    expect(consumerDetails).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Admin role details" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Consumer role details" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Roles are stored in/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Permission role storage details" }));
+    expect(screen.getByText(/Roles are stored in .*app_user_permissions/)).toBeVisible();
+    expect(screen.getByText(/Owner is sourced from the current Databricks Apps deployment creator/)).toBeVisible();
     expect(screen.getByText("Your role")).toBeVisible();
   });
 });

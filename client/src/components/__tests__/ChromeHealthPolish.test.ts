@@ -29,6 +29,7 @@ describe("account rail health polish", () => {
 
   it("puts Drop tables below Query cache at the bottom of Data and tables", () => {
     expect(settingsSections).toContain("beforeDropContent");
+    expect(settingsSections).toContain('data-testid="query-cache-section" style={{ marginTop: 20 }}');
     expect(settingsConfig.indexOf("{beforeDropContent}")).toBeLessThan(
       settingsConfig.indexOf('<Group label="Drop tables"'),
     );

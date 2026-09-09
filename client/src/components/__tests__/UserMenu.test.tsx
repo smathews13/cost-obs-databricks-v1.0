@@ -55,6 +55,7 @@ describe("UserMenu", () => {
     expect(screen.queryByTestId("user-menu-silhouette")).not.toBeInTheDocument();
     const domainIcon = screen.getByTestId("user-menu-domain-icon");
     expect(domainIcon).not.toHaveClass("border", "shadow-sm");
+    expect(domainIcon).not.toHaveAttribute("style");
     expect(domainIcon.querySelector("img")).toHaveAttribute(
       "src",
       "/brand/databricks-symbol-white.svg",
@@ -67,6 +68,9 @@ describe("UserMenu", () => {
     await user.click(trigger);
 
     expect(trigger).toHaveAttribute("data-state", "open");
+    expect(screen.getByTestId("user-menu-expanded-domain-icon")).toHaveStyle({
+      backgroundColor: "rgb(255, 95, 70)",
+    });
     expect(trigger).toHaveClass("bg-[#294A56]");
     const menu = await screen.findByRole("menu", { name: "User menu" });
     expect(menu).toBeInTheDocument();

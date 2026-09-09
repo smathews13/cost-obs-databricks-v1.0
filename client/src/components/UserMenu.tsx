@@ -285,7 +285,6 @@ export function UserMenu({ name, email, isAdmin, workspaceHost }: UserMenuProps)
         <span
           data-testid="user-menu-domain-icon"
           className="flex h-[20px] w-[20px] items-center justify-center overflow-hidden rounded-full"
-          style={{ backgroundColor: domainIcon.background }}
         >
           <img
             src={domainIcon.src}
@@ -308,6 +307,7 @@ export function UserMenu({ name, email, isAdmin, workspaceHost }: UserMenuProps)
         >
           <div className="flex items-center gap-[10px] px-[8px] py-[7px]">
             <span
+              data-testid="user-menu-expanded-domain-icon"
               className="flex h-[36px] w-[36px] shrink-0 items-center justify-center overflow-hidden rounded-full"
               style={{ backgroundColor: domainIcon.background }}
             >

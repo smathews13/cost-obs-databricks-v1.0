@@ -101,12 +101,12 @@ export function PageHero({
       </div>
       <div className="ml-auto flex shrink-0 items-start justify-end gap-2">
         {workspaceScope && (
-          <Chip kind="workspace" label="Workspace(s)">
+          <Chip kind="workspace" label="Workspace(s)" wrapperClassName="min-w-[170px]">
             {workspaceScope}
           </Chip>
         )}
         {sourceLabels.length > 0 && (
-          <Chip kind="filter" label="Data sources">
+          <Chip kind="filter" label="Data source(s)" wrapperClassName="min-w-[128px]">
             {sourceLabels.length === 1
               ? sourceLabels[0]
               : `${sourceLabels.length} sources`}
@@ -238,7 +238,7 @@ const CHIP: Record<ChipKind, { bg: string; fg: string; border?: string }> = {
   workspace: { bg: C.oatMed, fg: C.slate, border: C.hairline },
 };
 
-export function Chip({ kind = "neutral", children, className, label }: { kind?: ChipKind; children: ReactNode; className?: string; label?: string }) {
+export function Chip({ kind = "neutral", children, className, label, wrapperClassName }: { kind?: ChipKind; children: ReactNode; className?: string; label?: string; wrapperClassName?: string }) {
   const t = CHIP[kind];
   const chip = (
     <span
@@ -250,7 +250,7 @@ export function Chip({ kind = "neutral", children, className, label }: { kind?: 
   );
   if (!label) return chip;
   return (
-    <span className="inline-flex flex-col items-start gap-0.5">
+    <span className={cn("inline-flex flex-col items-start gap-0.5", wrapperClassName)}>
       <span className="text-[9px] font-semibold uppercase leading-none tracking-wide text-gray-500">
         {label}
       </span>

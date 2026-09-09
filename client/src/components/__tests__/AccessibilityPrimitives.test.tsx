@@ -81,10 +81,12 @@ describe("shared accessibility primitives", () => {
         />,
       );
       const workspace = screen.getByText("Workspace(s)");
-      const source = screen.getByText("Data sources");
+      const source = screen.getByText("Data source(s)");
       const date = screen.getByText("Date range");
       expect(workspace.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(source.compareDocumentPosition(date) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(workspace.parentElement).toHaveClass("min-w-[170px]");
+      expect(source.parentElement).toHaveClass("min-w-[128px]");
       expect(workspace.parentElement?.parentElement).toHaveClass(
         "ml-auto",
         "justify-end",

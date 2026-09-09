@@ -406,12 +406,14 @@ function CopyableRailBadge({
   value,
   text,
   label,
+  entity,
   icon,
   tooltipAlign = "center",
 }: {
   value: string;
   text: string;
   label: string;
+  entity: string;
   icon: React.ReactNode;
   tooltipAlign?: "start" | "center" | "end";
 }) {
@@ -425,11 +427,11 @@ function CopyableRailBadge({
     <RailBadgeTooltip align={tooltipAlign} text={
       <span className="block space-y-0.5">
         <span className="block">
-          <strong>Display name:</strong>{" "}
+          <strong>{entity} display name:</strong>{" "}
           <code className="font-mono text-[10.5px]">{text}</code>
         </span>
         <span className="block">
-          <strong>ID:</strong>{" "}
+          <strong>{entity} ID:</strong>{" "}
           <code className="font-mono text-[10.5px]">{value}</code>
           {copied ? " (copied)" : ""}
         </span>
@@ -1280,28 +1282,19 @@ function Dashboard() {
       && optimizeIdleData.warehouses.length > 0
     )
   );
-  const cloudCostsOnlyServerless = Boolean(
-    !infraBundleLoading
-    && !infraBundleError
-    && infraCosts?.reason === "serverless_only"
-  );
   const runtimeTabVisibility = useMemo(
     () => ({
       ...tabVisibility,
-      infra: tabVisibility.infra && !cloudCostsOnlyServerless,
       optimizer: tabVisibility.optimizer
         && !(optimizeChecksSettled && !optimizeHasData),
     }),
-    [cloudCostsOnlyServerless, optimizeChecksSettled, optimizeHasData, tabVisibility],
+    [optimizeChecksSettled, optimizeHasData, tabVisibility],
   );
   useEffect(() => {
-    if (
-      (activeTab === "optimizer" && !runtimeTabVisibility.optimizer)
-      || (activeTab === "infra" && !runtimeTabVisibility.infra)
-    ) {
+    if (activeTab === "optimizer" && !runtimeTabVisibility.optimizer) {
       setActiveTab("dbu");
     }
-  }, [activeTab, runtimeTabVisibility.infra, runtimeTabVisibility.optimizer]);
+  }, [activeTab, runtimeTabVisibility.optimizer]);
   const retryScheduledTab = useCallback(
     async (tab: ViewTab, refetch: () => Promise<unknown>) => {
       await requeueDemandTabs([tab]);
@@ -1996,6 +1989,7 @@ function Dashboard() {
                 value={accountInfo?.account_id || accountInfo?.account_name || "Databricks account"}
                 text={accountInfo?.account_name || "Databricks account"}
                 label="account ID"
+                entity="Account"
                 icon={<DuBoisAccountIcon />}
                 tooltipAlign="start"
               />
@@ -2005,6 +1999,7 @@ function Dashboard() {
                     value={authStatus.sp_object_id || authStatus.sp_client_id || ""}
                     text={authStatus.sp_display_name || authStatus.sp_object_id || authStatus.sp_client_id || ""}
                     label="service principal ID"
+                    entity="Service principal"
                     icon={<Bot className="h-2.5 w-2.5 opacity-70" aria-label="Service principal" />}
                   />
                 )
@@ -2016,6 +2011,7 @@ function Dashboard() {
                     text={warehouseStatus.warehouse_name?.trim()
                       || (warehouseStatus.status === "warm" ? "Active" : warehouseStatus.status === "warming_up" ? "Starting" : "Offline")}
                     label="SQL warehouse ID"
+                    entity="SQL warehouse"
                     icon={<DatabricksSqlProductIcon />}
                   />
                 ) : (

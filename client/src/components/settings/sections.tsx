@@ -419,6 +419,9 @@ export function DataTablesSection({ localSettings, updateSetting, caps }: Common
           control={<Toggle checked={localSettings.showWorkspaceNames} disabled={caps ? !caps.workspace_names_available : false} onChange={(v) => updateSetting("showWorkspaceNames", v)} />} />
       </Group>
       <ScheduleGroup />
+      {/* Shared Delta-Sharing sources + managed-tables status/rebuild/history/danger :
+          DuBois-styled, self-contained (owns the table-status polling + rebuild + drop). */}
+      <SettingsConfig />
       <Group label="Query cache">
         <Row
           first
@@ -445,9 +448,6 @@ export function DataTablesSection({ localSettings, updateSetting, caps }: Common
           </div>
         )}
       </Group>
-      {/* Shared Delta-Sharing sources + managed-tables status/rebuild/history/danger :
-          DuBois-styled, self-contained (owns the table-status polling + rebuild + drop). */}
-      <SettingsConfig />
     </div>
   );
 }
@@ -467,7 +467,7 @@ export function GrantsPendingCallout({ sql }: { sql: string }) {
   return (
     <Callout tone="warning">
       <div style={{ fontWeight: 600, marginBottom: 4 }}>System-table grants pending</div>
-      <div style={{ marginBottom: 8 }}>Each new app deploy gets a fresh service principal. Until these grants run, affected metrics show <em>unavailable</em> (never $0.00). Run this as a metastore admin, then re-check:</div>
+      <div style={{ marginBottom: 8 }}>When readiness identifies a missing service-principal grant, affected metrics show <em>unavailable</em> (never $0.00). Run this as a metastore admin, then re-check:</div>
       <pre style={{ backgroundColor: "#11171C", color: "#E8ECF0", borderRadius: 6, padding: 10, fontFamily: MONO, fontSize: 11.5, overflowX: "auto" }}>{sql}</pre>
     </Callout>
   );

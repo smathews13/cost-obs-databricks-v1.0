@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const appSource = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf8");
 const styles = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
+const settingsSections = readFileSync(resolve(process.cwd(), "src/components/settings/sections.tsx"), "utf8");
 
 describe("account rail health polish", () => {
   it("lets definitive server setup state override stale browser completion flags", () => {
@@ -20,6 +21,13 @@ describe("account rail health polish", () => {
   it("does not claim ordinary git redeploys rotate service-principal grants", () => {
     expect(appSource).not.toContain("after the last git deploy");
     expect(appSource).toContain("Use Identity & Permissions to repair the specific access gap.");
+    expect(settingsSections).not.toContain("Each new app deploy gets a fresh service principal");
+  });
+
+  it("keeps query-cache controls at the bottom of Data and tables", () => {
+    expect(settingsSections.indexOf("<SettingsConfig />")).toBeLessThan(
+      settingsSections.indexOf('<Group label="Query cache">'),
+    );
   });
 
   it("keeps manual and source-scope refreshes on the visible tab", () => {
@@ -47,11 +55,10 @@ describe("account rail health polish", () => {
     expect(appSource).toContain('activeTab === "optimizer" && !runtimeTabVisibility.optimizer');
   });
 
-  it("hides Cloud Costs when the selected scope contains only serverless usage", () => {
-    expect(appSource).toContain("const cloudCostsOnlyServerless");
-    expect(appSource).toContain('infraCosts?.reason === "serverless_only"');
-    expect(appSource).toContain("infra: tabVisibility.infra && !cloudCostsOnlyServerless");
-    expect(appSource).toContain('activeTab === "infra" && !runtimeTabVisibility.infra');
+  it("keeps Cloud Costs visible for the serverless-only explanation", () => {
+    expect(appSource).not.toContain("const cloudCostsOnlyServerless");
+    expect(appSource).not.toContain("infra: tabVisibility.infra && !cloudCostsOnlyServerless");
+    expect(appSource).not.toContain('activeTab === "infra" && !runtimeTabVisibility.infra');
   });
 
   it("uses one dark slate border token for rail controls and Export", () => {
@@ -134,8 +141,11 @@ describe("account rail health polish", () => {
     expect(appSource).toContain("<DuBoisAccountIcon");
     expect(appSource).toContain("<Bot");
     expect(appSource).toContain("<DatabricksSqlProductIcon");
-    expect(appSource).toContain("<strong>Display name:</strong>");
-    expect(appSource).toContain("<strong>ID:</strong>");
+    expect(appSource).toContain("<strong>{entity} display name:</strong>");
+    expect(appSource).toContain("<strong>{entity} ID:</strong>");
+    expect(appSource).toContain('entity="Account"');
+    expect(appSource).toContain('entity="Service principal"');
+    expect(appSource).toContain('entity="SQL warehouse"');
     expect(appSource).toContain('className="font-mono text-[10.5px]"');
     expect(appSource).toContain(
       'value={accountInfo?.account_id || accountInfo?.account_name || "Databricks account"}',

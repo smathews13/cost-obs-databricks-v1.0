@@ -12,6 +12,7 @@ __pycache__/
 .env*
 !.env.example
 *.log
+*.deploy-bak
 .databricks/
 docs/
 scripts/

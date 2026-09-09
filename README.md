@@ -339,8 +339,9 @@ the app.
 ## Backup DAB deployment
 
 Use this only when the primary **Deploy from Git** flow is unavailable. The
-`backup` target deploys the same committed `static/`, FastAPI server, `app.yaml`
-contract, and SQL warehouse binding. Its default app name,
+`backup` target deploys the same committed `static/` and FastAPI runtime. Its
+bundle resource supplies the equivalent startup command, SQL warehouse binding,
+and catalog/schema overrides from the required `--var` values. Its default app name,
 `cost-observability-backup`, is deliberately separate from the Git-managed app.
 
 From a clean checkout of the commit you want to deploy:

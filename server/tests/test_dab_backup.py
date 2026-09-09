@@ -43,6 +43,7 @@ def test_dab_upload_excludes_local_state_and_development_files():
 
     for path in (
         ".env*",
+        "*.deploy-bak",
         ".settings/",
         ".git/",
         "client/",

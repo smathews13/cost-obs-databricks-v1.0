@@ -325,6 +325,16 @@ describe("SettingsConfig: managed table layout", () => {
           max_date: null,
           days_behind: null,
         },
+        {
+          name: "app_response_cache",
+          table_type: "Table",
+          exists: true,
+          optional: true,
+          row_count: null,
+          min_date: null,
+          max_date: null,
+          days_behind: null,
+        },
       ],
       refresh_status: HEALTHY_TABLES.refresh_status,
       auth_error: null,
@@ -340,6 +350,10 @@ describe("SettingsConfig: managed table layout", () => {
     expect(unifiedRow).toHaveTextContent("Shared-source view inventory; created on demand");
     expect(unifiedRow).toHaveTextContent("Created on demand");
     expect(unifiedRow).not.toHaveTextContent("N/A");
+    expect(unifiedRow).toHaveAttribute("data-inactive", "true");
+    expect(unifiedRow).toHaveStyle({ opacity: "0.58" });
+    const stateRows = screen.getAllByTestId("durable-app-state-row");
+    expect(stateRows.at(-1)).toBe(unifiedRow);
   });
 
   it("keeps headers and the Materialized View badge on one line in a scrollable wide table", async () => {

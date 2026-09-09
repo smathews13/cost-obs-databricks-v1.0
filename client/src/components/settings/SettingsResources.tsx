@@ -42,10 +42,26 @@ function deploymentSourceLabel(source: string): string | null {
   return source.replaceAll("_", " ");
 }
 
-function InventoryList({ inventory }: { inventory: ResourceInventoryGroup }) {
+function InventoryList({
+  inventory,
+  inactiveNames = [],
+}: {
+  inventory: ResourceInventoryGroup;
+  inactiveNames?: string[];
+}) {
+  const inactive = new Set(inactiveNames);
   return (
     <div className="flex max-w-110 flex-wrap justify-end gap-1.5">
-      {inventory.names.map((name) => <MonoChip key={name}>{name}</MonoChip>)}
+      {inventory.names.map((name) => (
+        <span
+          key={name}
+          data-inactive={inactive.has(name) ? "true" : undefined}
+          title={inactive.has(name) ? "Created when shared-source routing is active" : undefined}
+          className={inactive.has(name) ? "opacity-45 grayscale" : undefined}
+        >
+          <MonoChip>{name}</MonoChip>
+        </span>
+      ))}
     </div>
   );
 }
@@ -154,7 +170,16 @@ export function SettingsResources() {
 
       <Group label="Managed data inventory">
         <Row first label={`Aggregate tables (${data.inventory.aggregates.count})`} helper="Bounded pre-aggregations maintained by the app." control={<InventoryList inventory={data.inventory.aggregates} />} />
-        <Row label={`State tables (${data.inventory.state.count})`} helper="Durable configuration, permissions, refresh, and routing state." control={<InventoryList inventory={data.inventory.state} />} />
+        <Row
+          label={`State tables (${data.inventory.state.count})`}
+          helper={`${data.inventory.state.count} durable tables. app_settings contains six namespaced preference domains; app_unified_views is created only when shared routing is active.`}
+          control={(
+            <InventoryList
+              inventory={data.inventory.state}
+              inactiveNames={data.inventory.unified_views.count === 0 ? ["app_unified_views"] : []}
+            />
+          )}
+        />
         <Row
           label={`Cache layers (${data.inventory.cache.count})`}
           helper={`In-process cache: ${data.inventory.cache.process_entries} of ${data.inventory.cache.process_max_entries} entries; TTL ${Math.round(data.inventory.cache.process_ttl_seconds / 3600)} hours.`}

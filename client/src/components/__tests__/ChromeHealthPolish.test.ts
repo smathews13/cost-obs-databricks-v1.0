@@ -7,6 +7,7 @@ const styles = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 const settingsSections = readFileSync(resolve(process.cwd(), "src/components/settings/sections.tsx"), "utf8");
 const settingsPermissions = readFileSync(resolve(process.cwd(), "src/components/settings/SettingsPermissions.tsx"), "utf8");
+const settingsConfig = readFileSync(resolve(process.cwd(), "src/components/settings/SettingsConfig.tsx"), "utf8");
 
 describe("account rail health polish", () => {
   it("lets definitive server setup state override stale browser completion flags", () => {
@@ -26,10 +27,12 @@ describe("account rail health polish", () => {
     expect(settingsPermissions).not.toContain("Each new app deploy gets a fresh service principal");
   });
 
-  it("keeps query-cache controls at the bottom of Data and tables", () => {
-    expect(settingsSections.indexOf("<SettingsConfig />")).toBeLessThan(
-      settingsSections.indexOf('<Group label="Query cache">'),
+  it("puts Drop tables below Query cache at the bottom of Data and tables", () => {
+    expect(settingsSections).toContain("beforeDropContent");
+    expect(settingsConfig.indexOf("{beforeDropContent}")).toBeLessThan(
+      settingsConfig.indexOf('<Group label="Drop tables"'),
     );
+    expect(settingsConfig).not.toContain('<Group label="Danger zone"');
   });
 
   it("keeps manual and source-scope refreshes on the visible tab", () => {

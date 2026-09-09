@@ -9,6 +9,7 @@ import { Group, Row, SecondaryButton, LinkButton, MonoChip, Callout, T, MONO } f
 import { useToast } from "./duboisToast";
 import { Spinner } from "@/components/Spinner";
 import { organizationForEmail } from "@/utils/domainIcons";
+import { InfoPopover } from "@/components/ui/InfoPopover";
 import "./settings.css";
 import type {
   AuthStatusPayload,
@@ -611,11 +612,15 @@ GRANT SELECT ON SCHEMA \`${cat}\`.\`${sch}\` TO \`${spName}\`;`;
             ["consumer", "Consumer", consumerSummary],
           ] as const).map(([role, label, summary]) => (
             <div key={role} style={{ border: `1px solid ${T.borderGroup}`, borderRadius: 8, padding: "10px 12px", backgroundColor: T.navBg }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{label}</span>
+                <InfoPopover
+                  size="compact"
+                  label={`${label} role details`}
+                  text={summary}
+                />
                 {permissions?.current_role === role && <PermissionState state="verified">Your role</PermissionState>}
               </div>
-              <div style={{ fontSize: 12, lineHeight: 1.45, color: T.textSecondary }}>{summary}</div>
             </div>
           ))}
         </div>

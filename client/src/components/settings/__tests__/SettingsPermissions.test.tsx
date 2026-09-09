@@ -197,8 +197,12 @@ describe("SettingsPermissions: SP identity panel", () => {
     renderPermissions();
 
     expect(await screen.findByText("Permission roles")).toBeVisible();
+    expect(screen.queryByText("Admin route capabilities.")).not.toBeInTheDocument();
+    const adminDetails = screen.getByRole("button", { name: "Admin role details" });
+    const consumerDetails = screen.getByRole("button", { name: "Consumer role details" });
+    await userEvent.click(adminDetails);
     expect(screen.getByText("Admin route capabilities.")).toBeVisible();
-    expect(screen.getByText("Consumer route capabilities.")).toBeVisible();
+    expect(consumerDetails).toBeVisible();
     expect(screen.getByText("Your role")).toBeVisible();
   });
 });

@@ -116,6 +116,31 @@ function renderResources() {
 }
 
 describe("SettingsResources", () => {
+  it("marks the unified-view inventory inactive until shared routing is built", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        ...payload,
+        inventory: {
+          ...payload.inventory,
+          state: {
+            count: 3,
+            names: ["app_settings", "app_user_permissions", "app_unified_views"],
+          },
+          unified_views: { count: 0, names: [] },
+        },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+    renderResources();
+
+    const unifiedViews = await screen.findByText("app_unified_views");
+    expect(unifiedViews.parentElement).toHaveAttribute("data-inactive", "true");
+    expect(unifiedViews.parentElement).toHaveClass("opacity-45", "grayscale");
+    expect(screen.getByText(/app_settings contains six namespaced preference domains/i)).toBeVisible();
+  });
+
   it("keeps useful runtime, inventory, and source metadata without duplicated data-table operations", async () => {
     renderResources();
 

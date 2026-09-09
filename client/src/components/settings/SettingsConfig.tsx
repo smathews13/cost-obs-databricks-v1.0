@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { READINESS_QUERY_KEY } from "@/hooks/useFeatureAvailability";
 import { MvSourcesSection } from "./MvSourcesSection";
@@ -63,7 +63,11 @@ const STATE_TABLE_PURPOSES: Record<string, string> = {
 // Managed-tables surface for the "Data & tables" settings section: DuBois styled.
 // Catalog/schema location, workspace filter, and refresh schedule are rendered by the
 // parent DataTablesSection; this owns table status, rebuild, shared sources, and drop.
-export function SettingsConfig() {
+export function SettingsConfig({
+  beforeDropContent,
+}: {
+  beforeDropContent?: ReactNode;
+} = {}) {
   const queryClient = useQueryClient();
   const [mvRefreshing, setMvRefreshing] = useState(_mvRefreshing);
   const [mvLastResult, setMvLastResult] = useState<string | null>(_mvLastResult);
@@ -199,7 +203,7 @@ export function SettingsConfig() {
   );
   const stateTables = (tablesStatus?.tables ?? []).filter(
     (table) => table.table_type !== "Materialized View",
-  );
+  ).sort((left, right) => Number(left.name === "app_unified_views") - Number(right.name === "app_unified_views"));
   const rebuildBlocked = tablesStatus?.storage_block_reason || rs?.block_reason;
   const refreshFailureCount = rs?.error
     ? Math.max(1, rs.error.match(/:\s*error:/gi)?.length ?? 0)
@@ -366,7 +370,12 @@ export function SettingsConfig() {
                         ? { c: T.textFaint, s: "?", label: "Status unavailable" }
                         : { c: T.successFg, s: "✓", label: "Ready" };
                   return (
-                    <tr key={t.name} data-testid="durable-app-state-row">
+                    <tr
+                      key={t.name}
+                      data-testid="durable-app-state-row"
+                      data-inactive={onDemand ? "true" : undefined}
+                      style={onDemand ? { backgroundColor: T.navBg, opacity: 0.58 } : undefined}
+                    >
                       <td style={{ ...td, fontFamily: MONO }}>
                         <span style={{ color: mark.c, marginRight: 6 }}>{mark.s}</span>
                         {t.name}
@@ -476,9 +485,11 @@ export function SettingsConfig() {
         );
       })()}
 
-      {/* Danger zone */}
+      {beforeDropContent}
+
+      {/* Destructive table controls */}
       <div style={{ marginTop: 20 }}>
-        <Group label="Danger zone" danger>
+        <Group label="Drop tables" danger>
           <div style={{ padding: "12px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20 }}>
               <div style={{ minWidth: 0 }}>

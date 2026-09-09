@@ -15,7 +15,11 @@
 > You are welcome to modify and customize this application's source code to fit your organization's requirements. However, be aware that local customizations may conflict with future upstream updates. We recommend tracking your changes in a fork and reviewing diffs carefully before pulling upstream updates.
 
 > **📌 v1 series (currently `v1.2`)**
-> Visual refresh and ongoing v1 features ship here. A separate v2 line is under development with Lakebase and Declarative Automation Bundles. Existing v1 customers can stay on this app and coordinate any future migration with their Databricks account team.
+> Visual refresh and ongoing v1 features ship here. This repository includes a
+> backup Declarative Automation Bundle, while Deploy from Git remains the primary
+> path. A separate Lakebase-first v2 line is under development. Existing v1
+> customers can stay on this app and coordinate any future migration with their
+> Databricks account team.
 
 ---
 
@@ -102,12 +106,20 @@ counting it. Explicit source filters still expose each source independently.
 ## Release highlights
 
 <a id="release-v12"></a>
-### v1.2 · 2026-08-27
+### v1.2 · refreshed 2026-09-08
 
 [![Release v1.2](https://img.shields.io/badge/release-v1.2-1B3139?style=flat-square)](#release-v12)
 
 - Refreshed the complete cost-obs visual system across navigation, charts, filters, settings, and PDF exports.
 - Standardized semantic chart colors and improved text contrast for faster, more accessible interpretation.
+- Linked date, workspace, and data-source scopes across dashboard tabs, with
+  consistent loading feedback and one-step reset behavior.
+- Improved cross-workspace aggregate sharing, source mapping, and duplicate
+  protection for account-wide deployments.
+- Clarified serverless SQL warehouse metrics and regional SQL billing coverage
+  instead of presenting unsupported idle-time or query-attribution values.
+- Hardened first-run setup recovery, managed-table validation, scoped cache
+  clearing, and unavailable-feature handling.
 - Added a customer-facing architecture report with explicit tab-to-source lineage and refresh behavior.
 
 <a id="release-v11"></a>
@@ -125,7 +137,10 @@ Upgrades from v1.0 or v1.1 require no new environment variables or manual backfi
 
 ## What's changed in the new deployment model
 
-- **Setup is simpler.** The SQL warehouse is bound as an Apps resource and injected as `DATABRICKS_WAREHOUSE_ID`. Workspace scoping is controlled with `COST_OBS_WORKSPACES`. Customers no longer need to select a warehouse or change workspace scope inside the app UI.
+- **Setup is simpler.** The SQL warehouse is bound as an Apps resource and
+  injected as `DATABRICKS_WAREHOUSE_ID`. The setup wizard chooses the managed
+  catalog/schema and the initial workspace pool. Dashboard workspace and data
+  source filters can then narrow that configured scope without a redeploy.
 
 - **`app.yaml` is canonical for warehouse binding.** Its `valueFrom: sql-warehouse` entry supplies `DATABRICKS_WAREHOUSE_ID`; `app_config.json` intentionally contains no warehouse ID or pseudo-ID field.
 
@@ -207,15 +222,20 @@ Do not add a SQL user-authorization scope. Dashboard queries, setup operations, 
 
 ### Step 3 — Review environment variables
 
-The app keeps the initial deployment as simple as possible. For most customers, only these three variables are relevant. They are set at deploy time and are not intended to be changed inside the app UI.
+The app keeps the initial deployment as simple as possible. The SQL warehouse
+is an Apps resource. The setup wizard can choose the managed catalog/schema and
+workspace pool after the app starts; the variables below are optional
+deployment-time overrides.
 
-> The SQL warehouse, workspace scope, and table location are configured once and held constant. If you need to change them, delete the app and recreate it.
+> Environment-variable overrides require a redeploy to change. In-app date,
+> workspace, and data-source filters remain adjustable within the configured
+> scope.
 
 | Variable | Default | Change if… |
 |---|---|---|
-| `COST_OBS_CATALOG` | Set by setup wizard | You want to pre-configure the catalog instead of choosing it in the setup wizard |
-| `COST_OBS_SCHEMA` | Set by setup wizard | You want to pre-configure the schema name |
-| `COST_OBS_WORKSPACES` | All workspaces | You want to scope the app to a comma-separated list of workspace IDs |
+| `COST_OBS_CATALOG` | Set by setup wizard | You want to pre-configure the managed catalog |
+| `COST_OBS_SCHEMA` | Set by setup wizard | You want to pre-configure the managed schema |
+| `COST_OBS_WORKSPACES` | Chosen in setup, or all workspaces | You want to pre-configure the allowed workspace pool |
 
 Keep the first deployment minimal. Add optional cloud-cost or advanced integrations only after the base app is healthy.
 
@@ -272,7 +292,9 @@ The built-in Setup Wizard handles grants and table creation on first run. You do
 
 - **Workspace filter:** If `COST_OBS_WORKSPACES` was not set at deploy time, the wizard prompts you to choose workspace scope before completion. If workspace IDs were set as an environment variable, this step is skipped.
 
-If you need to re-apply grants or rebuild tables later, use **Settings → Permissions & Access** and **Settings → Data & tables**. These are the ongoing management surfaces after initial setup.
+If you need to repair grants or rebuild tables later, use **Settings → Identity
+& Permissions** and **Settings → Data & tables**. These are the ongoing
+management surfaces after initial setup.
 
 ---
 
@@ -285,7 +307,9 @@ After setup completes, confirm:
 - Optional areas only show as unavailable if their supporting system tables were not granted
 - No dashboard tile is blocked by a missing warehouse or system table grant
 
-If anything is degraded, go to **Settings → Permissions & Access** or **Settings → Data & tables** to identify whether the issue is warehouse access, missing system table grants, missing app-managed tables, or a schema mismatch.
+If anything is degraded, go to **Settings → Identity & Permissions** or
+**Settings → Data & tables** to identify whether the issue is warehouse access,
+missing system table grants, missing app-managed tables, or a schema mismatch.
 
 ---
 
@@ -293,7 +317,8 @@ If anything is degraded, go to **Settings → Permissions & Access** or **Settin
 
 This deployment path uses the **app service principal** for SQL execution. End users do not need any additional authentication for normal app usage.
 
-Use **Settings → Permissions & Access** to manage who can administer or view the app.
+Use **Settings → Identity & Permissions** to manage who can administer or view
+the app.
 
 ---
 
@@ -302,7 +327,7 @@ Use **Settings → Permissions & Access** to manage who can administer or view t
 | Symptom | Likely cause | Recommended action |
 |---|---|---|
 | Warehouse access failure after deploy | Warehouse resource missing, wrong warehouse selected, or access drift | Verify the bound SQL warehouse resource; rerun the warehouse-related remediation SQL if prompted |
-| Billing tabs show no data | Core system table grants not applied | Run the required runtime grants from **Settings → Permissions & Access**, then click **Re-check** |
+| Billing tabs show no data | Core system table grants not applied | Run the required runtime grants from **Settings → Identity & Permissions**, then click **Re-check** |
 | Optional tabs are unavailable | Optional system tables (`system.query.history`, `system.compute.clusters`, etc.) were not granted | Grant the optional dependencies you want to enable, then re-check readiness |
 | Rebuild required or schema mismatch | App-managed tables are missing or out of sync | Rebuild from **Settings → Data & tables** |
 | Deploy from Git option not visible | Workspace preview not enabled | Enable the Git deployment preview in **Settings → Workspace Previews** |
@@ -418,11 +443,10 @@ the backup target at the primary app during normal operation.
 ### Settings
 | Feature | Description |
 |---|---|
-| **General** | Date range selection, display preferences, and automatic refresh schedule |
-| **Dashboard tabs** | Visible-tab selection and default landing tab |
+| **General** | Date range, display preferences, automatic refresh, visible tabs, and default landing tab |
 | **Data & tables** | Managed-table status, refresh controls, and rebuild |
 | **Alerts & notifications** | Budget thresholds, anomaly alerts, and delivery settings |
-| **Permissions & Access** | System-table readiness, service principal grants, and app user roles |
+| **Identity & Permissions** | System-table readiness, service principal grants, and app user roles |
 | **Resources** | Bound resources and account-pricing configuration |
 | **Experimental** | Opt-in preview controls for administrators |
 
@@ -458,7 +482,11 @@ The solid left-to-right path is the interactive read flow. Dashed lines show aut
 
 All SQL—including dashboard queries, setup operations, managed-table writes, and scheduled maintenance—runs as the app's **service principal** (SP). The Databricks Apps session supplies user identity for application role checks only; no forwarded user OAuth credential is used for SQL. The setup wizard verifies the SP's system-table, catalog/schema, and warehouse access. End users do not need a SQL authorization scope.
 
-The catalog and schema created during setup are owned by the SP. The installing user receives `USE CATALOG`, `USE SCHEMA`, `SELECT`, and `MANAGE` grants automatically — giving them full visibility in the Unity Catalog browser and the ability to re-grant the SP on future redeploys.
+The catalog and schema created during setup are owned by the SP. The installing
+user receives `USE CATALOG`, `USE SCHEMA`, `SELECT`, and `MANAGE` grants
+automatically, providing full visibility and management in Unity Catalog. A
+normal redeploy keeps the same app service principal and does not require those
+grants to be reapplied.
 
 All nine aggregate tables and all durable app state/cache tables resolve through
 the same `COST_OBS_CATALOG` + `COST_OBS_SCHEMA` pair. Shared-source catalogs are
@@ -484,7 +512,10 @@ All billing and compute data is **account-level** — queries run against Unity 
 
 ### App-Managed Tables
 
-The setup wizard creates **8 pre-aggregated Delta tables** in the Unity Catalog location you configure. The app also creates small Delta tables for settings, permissions, refresh coordination, source configuration, and shared response caching.
+The setup wizard creates **9 pre-aggregated Delta tables** in the Unity Catalog
+location you configure. The app also creates small Delta tables for settings,
+permissions, refresh coordination, source configuration, and shared response
+caching.
 
 | Table | What it stores | Rows (est.) |
 |---|---|---|
@@ -658,7 +689,7 @@ Full interactive API docs at `http://localhost:8000/docs` (FastAPI Swagger UI).
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, Recharts, TanStack Query v5 |
-| Backend | Python 3.11+, FastAPI, Databricks SQL Connector, Databricks SDK 0.81+ |
+| Backend | Python 3.11+, FastAPI, Databricks SQL Connector, Databricks SDK 0.38+ |
 | Data | Databricks system tables (account-level), Unity Catalog, Delta materialized views |
 | Persistence | App-managed Delta aggregates, settings, refresh state, and shared response cache |
 | Deployment | Databricks Apps (service principal auth, serverless compute), multi-cloud (AWS, Azure, and GCP) |

@@ -534,8 +534,8 @@ function SpGrantsBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
           </span>
         ) : (
           <span className="text-xs text-amber-800">
-            <strong>SP grants missing</strong>: the service principal lacks system table access after the last git deploy.
-            Re-run the Permissions setup to restore access.
+            <strong>SP grants missing</strong>: the service principal lacks required system table access.
+            Use Identity & Permissions to repair the specific access gap.
           </span>
         )}
       </div>

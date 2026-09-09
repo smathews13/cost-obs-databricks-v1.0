@@ -812,8 +812,8 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
 async def grant_sp_system_access(request: Request) -> dict[str, Any]:
     """Re-run all SP grants using the current user's OAuth token.
 
-    Call this after a git deploy when the new SP is missing system table or
-    app schema grants. Requires the calling user to be a metastore admin or
+    Call this when readiness reports that the current SP is missing system-table
+    or app-schema grants. Requires the calling user to be a metastore admin or
     account admin so the GRANT statements succeed on system tables.
     Returns a summary of how many grants were applied.
     """
@@ -1425,7 +1425,7 @@ def _grant_user_catalog_visibility(
     """Best-effort: grant the installing user full visibility + MANAGE on the app catalog/schema.
 
     Grants:
-      - USE CATALOG + MANAGE ON CATALOG (navigate + re-grant SP on future redeploys)
+      - USE CATALOG + MANAGE ON CATALOG (navigate and manage future grant changes)
       - USE SCHEMA + SELECT ON SCHEMA + MANAGE ON SCHEMA (see tables, read data, manage grants)
 
     Uses SQL GRANT via the warehouse — NOT the UC REST API — because SP M2M tokens

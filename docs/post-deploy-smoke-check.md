@@ -32,20 +32,20 @@ curl -s "$APP_URL/api/setup/readiness" | python3 -m json.tool
 - All items in `core[]` have `"granted": true`
 - Response arrives in < 30 s (warehouse cold-start excluded)
 
-**Fail signal:** `overall: "not_ready"` → SP grants have not been re-applied after the deploy. The SP client ID rotates on each git deploy; grants from the previous deploy are orphaned.
+**Fail signal:** `overall: "not_ready"` means required access is missing or has
+drifted. A normal Git redeploy keeps the existing app service principal, so do
+not reapply grants unless readiness identifies an actual access gap.
 
 ---
 
 ## 2. SP identity matches deployed credentials
 
-In the Readiness API response, verify `sp_client_id` matches the `DATABRICKS_CLIENT_ID` environment variable configured in the Databricks Apps UI.
+In the Readiness API response, verify `sp_client_id` is populated. Databricks
+Apps injects `DATABRICKS_CLIENT_ID` for the app's service principal; it is not a
+customer-managed environment override.
 
-```bash
-# In Apps UI → Environment variables
-echo $DATABRICKS_CLIENT_ID   # e.g. 0000-aaaa-bbbb-1234
-```
-
-**Fail signal:** `sp_client_id` is empty or differs from the env var → the app is running with a different identity than configured; grants may be targeting the wrong principal.
+**Fail signal:** `sp_client_id` is empty, or the app was deleted and recreated
+with a different principal. In that case, apply grants to the new principal.
 
 ---
 
@@ -75,7 +75,9 @@ echo $DATABRICKS_CLIENT_ID   # e.g. 0000-aaaa-bbbb-1234
 
 ## 5. Cache invalidation after grant apply
 
-1. In **Settings → Permissions & Access**, click **Run SP Grants**.
+If readiness reports a missing grant:
+
+1. In **Settings → Identity & Permissions**, click **Run SP Grants**.
 2. After the grant completes, verify the Readiness section updates within 5 seconds (no manual refresh required).
 
 **Fail signal:** Readiness section still shows stale state after grant → `queryClient.invalidateQueries` is not firing; check the `READINESS_QUERY_KEY` import in `SettingsPermissions.tsx`.
@@ -109,7 +111,7 @@ Call `GET /api/settings/auth-status`:
 | Check | Pass | Fail → Action |
 |---|---|---|
 | Readiness `overall` | `ready` / `core_ready` | Re-apply SP grant bundle |
-| `sp_client_id` matches env var | Match | Update grants to new SP client ID |
+| `sp_client_id` | Populated | Check the app identity; reapply grants only if it changed |
 | Platform KPIs show real values | Non-zero values | Apply missing table grants |
 | Diagnostics all green | All pass | Apply the endpoint's remediation guidance |
 | Cache refreshes after grant | Auto-refresh | Check READINESS_QUERY_KEY import |

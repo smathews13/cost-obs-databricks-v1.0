@@ -17,6 +17,11 @@ describe("account rail health polish", () => {
     expect(setupRequired).not.toContain("if (!prevCompleted())");
   });
 
+  it("does not claim ordinary git redeploys rotate service-principal grants", () => {
+    expect(appSource).not.toContain("after the last git deploy");
+    expect(appSource).toContain("Use Identity & Permissions to repair the specific access gap.");
+  });
+
   it("keeps manual and source-scope refreshes on the visible tab", () => {
     expect(appSource).toContain("await refreshTabData(rqClient, tab);");
     expect(appSource).not.toContain(

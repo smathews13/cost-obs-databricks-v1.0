@@ -363,6 +363,27 @@ def _grant_warehouse_can_use(w, sp_client_id: str) -> None:
         logger.warning(f"Failed to grant warehouse CAN_USE on {warehouse_id}: {e}")
 
 
+def _restore_setup_completion_markers() -> None:
+    """Best-effort marker repair after durable core tables prove setup completed."""
+    try:
+        import time as _time
+
+        os.makedirs(SETTINGS_DIR, exist_ok=True)
+        with open(SETUP_DONE_FILE, "w") as marker:
+            json.dump(
+                {"completed_at": _time.time(), "restored_from_tables": True},
+                marker,
+            )
+    except OSError as error:
+        logger.warning("Could not restore local setup completion marker: %s", error)
+    try:
+        from server.db import write_dbfs_setup_complete
+
+        write_dbfs_setup_complete()
+    except Exception as error:
+        logger.debug("Could not restore DBFS setup completion marker: %s", error)
+
+
 @router.get("/status")
 async def get_setup_status() -> dict[str, Any]:
     """Check setup status for the wizard gate.
@@ -493,6 +514,7 @@ async def get_setup_status() -> dict[str, Any]:
         # configured catalog/schema are durable evidence that setup already ran,
         # so recover instead of forcing the wizard over a healthy deployment.
         if core_exist:
+            await loop.run_in_executor(None, _restore_setup_completion_markers)
             _setup_confirmed_ready = True
             return {
                 "catalog": catalog,

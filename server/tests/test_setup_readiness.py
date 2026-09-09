@@ -87,12 +87,14 @@ async def test_existing_core_tables_recover_setup_after_git_redeploy():
         patch.object(setup_mod.os.path, "exists", return_value=False),
         patch("server.db.read_dbfs_setup_complete", return_value=False),
         patch.object(setup_mod, "check_materialized_views_exist", return_value=tables),
+        patch.object(setup_mod, "_restore_setup_completion_markers") as restore,
     ):
         result = await setup_mod.get_setup_status()
 
     assert result["status"] == "ready"
     assert result["recovered_from_tables"] is True
     assert setup_mod._setup_confirmed_ready is True
+    restore.assert_called_once_with()
 
 
 def test_workspace_filter_save_fails_closed_when_delta_is_unavailable(tmp_path):

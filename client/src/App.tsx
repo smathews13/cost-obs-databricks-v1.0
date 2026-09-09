@@ -835,6 +835,12 @@ function Dashboard() {
       void handleSourceApplied([]);
       return;
     }
+    // Workspace is now the controlling scope. Clear any prior source-owned
+    // module routing before the source filter derives the mapped labels for
+    // this workspace selection.
+    setActiveSourceLabels([]);
+    setActiveSourceRouting([], []);
+    setActiveSourceTables(null);
     setSelectedWorkspaceIds(workspaceIds);
     setScopeOwner("workspace");
   }, [handleSourceApplied]);

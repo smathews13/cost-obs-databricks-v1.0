@@ -51,6 +51,12 @@ describe("account rail health polish", () => {
     expect(appSource).toContain("setSelectedWorkspaceIds(linkedWorkspaceIds)");
     expect(appSource).toContain('workspaces={scopeOwner === "source" ? sourceFilteredWorkspaceList : wsFilterList}');
     expect(appSource).toContain("workspaceSelection={selectedWorkspaceIds}");
+    const workspaceHandler = appSource.slice(
+      appSource.indexOf("const handleWorkspaceChange"),
+      appSource.indexOf("const resetAllScopeFilters"),
+    );
+    expect(workspaceHandler.match(/setActiveSourceLabels\(\[\]\)/g)).toHaveLength(2);
+    expect(workspaceHandler.match(/setActiveSourceRouting\(\[\], \[\]\)/g)).toHaveLength(2);
   });
 
   it("removes Optimize after successful checks find no warehouse data", () => {

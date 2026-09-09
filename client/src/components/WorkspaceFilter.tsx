@@ -90,7 +90,7 @@ export function WorkspaceFilter({
   if (isLoading) {
     return (
       <div className={variant === "rail"
-        ? "rail-workspace-filter rail-control-border flex h-[28px] w-[116px] items-center gap-[6px] whitespace-nowrap rounded-[7px] border bg-white/[.07] px-[8px] text-[11.5px] font-medium text-[#E9EFED] min-[1280px]:w-[190px] min-[1280px]:gap-[8px] min-[1280px]:px-[10px]"
+        ? "rail-workspace-filter rail-control-border flex h-[28px] w-[116px] items-center gap-[6px] whitespace-nowrap rounded-[7px] border bg-white/[.07] px-[8px] text-[11px] font-medium text-[#E9EFED] min-[1280px]:w-[190px] min-[1280px]:gap-[8px] min-[1280px]:px-[10px]"
         : "flex items-center gap-2 whitespace-nowrap rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-500"
       }>
         <Spinner size="sm" />

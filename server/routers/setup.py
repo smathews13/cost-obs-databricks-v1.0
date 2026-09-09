@@ -489,14 +489,22 @@ async def get_setup_status() -> dict[str, Any]:
     missing = [name for name, exists in tables.items() if not exists]
 
     if not os.path.exists(SETUP_DONE_FILE):
-        # No setup_done.json — wizard must run. Tables may already exist from a
-        # previous app or a dropped-and-rebuilt scenario; the wizard handles both
-        # (it detects existing tables and skips re-creation). Do NOT auto-heal here:
-        # auto-heal cannot distinguish a brand-new app deployment from a git
-        # redeploy of the same app, so it would silently skip the wizard for new
-        # apps that share a catalog/schema with an older deployment.
-        # Container-restart recovery (same app, same SP, wiped .settings/) is
-        # handled by the DBFS check above — that path is SP-scoped so it is safe.
+        # Git redeploys wipe the local marker. Existing core tables in this app's
+        # configured catalog/schema are durable evidence that setup already ran,
+        # so recover instead of forcing the wizard over a healthy deployment.
+        if core_exist:
+            _setup_confirmed_ready = True
+            return {
+                "catalog": catalog,
+                "schema": schema,
+                "tables": tables,
+                "all_tables_exist": all_exist,
+                "missing_tables": missing,
+                "status": "ready",
+                "recovered_from_tables": True,
+                "task": _create_task_state.copy(),
+                "next_poll_ms": 30000,
+            }
         return {
             "catalog": catalog,
             "schema": schema,

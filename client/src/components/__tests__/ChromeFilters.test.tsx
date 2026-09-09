@@ -171,7 +171,7 @@ describe("chrome filter variants", () => {
     );
 
     const loading = screen.getByText("Updating…").closest(".rail-workspace-filter");
-    expect(loading).toHaveClass("rail-control-border");
+    expect(loading).toHaveClass("rail-control-border", "text-[11px]");
     expect(loading?.className).not.toContain("border-white");
   });
 

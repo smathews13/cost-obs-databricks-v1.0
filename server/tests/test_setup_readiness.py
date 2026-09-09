@@ -76,6 +76,24 @@ async def test_stale_dbfs_completion_does_not_hide_missing_core_tables():
     assert missing in result["missing_tables"]
 
 
+@pytest.mark.asyncio
+async def test_existing_core_tables_recover_setup_after_git_redeploy():
+    tables = {name: True for name in setup_mod._CORE_REQUIRED_TABLES}
+
+    with (
+        patch.object(setup_mod, "_reconcile_task_state_from_disk"),
+        patch.object(setup_mod, "get_catalog_schema", return_value=("cost_catalog", "cost_obs")),
+        patch.object(setup_mod.os.path, "exists", return_value=False),
+        patch("server.db.read_dbfs_setup_complete", return_value=False),
+        patch.object(setup_mod, "check_materialized_views_exist", return_value=tables),
+    ):
+        result = await setup_mod.get_setup_status()
+
+    assert result["status"] == "ready"
+    assert result["recovered_from_tables"] is True
+    assert setup_mod._setup_confirmed_ready is True
+
+
 # ---------------------------------------------------------------------------
 # Bug 2: cold-warehouse hang + single-flight
 # ---------------------------------------------------------------------------

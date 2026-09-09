@@ -631,7 +631,8 @@ describe("source label reconciliation", () => {
 
     const trigger = await screen.findByRole("button", { name: "Updating sources" });
     expect(trigger).toBeDisabled();
-    expect(screen.getByText("Updating…")).toBeVisible();
+    expect(screen.getByText("Updating…")).toHaveClass("text-[11px]");
+    expect(trigger.querySelector('path[d="M19 9l-7 7-7-7"]')).toBeNull();
   });
 
   it("keeps every source option available while source is the controlling filter", async () => {

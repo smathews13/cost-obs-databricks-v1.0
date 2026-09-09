@@ -377,7 +377,7 @@ export function SourceLabelFilter({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16M6 12h12M9 17h6" />
           </svg>
         )}
-        <span className="max-w-[68px] truncate min-[1280px]:max-w-[140px]">
+        <span className={updating ? "truncate text-[11px]" : "max-w-[68px] truncate min-[1280px]:max-w-[140px]"}>
           {updating ? "Updating…" : (
             <>
               <span className="min-[1180px]:hidden">
@@ -391,9 +391,11 @@ export function SourceLabelFilter({
             </>
           )}
         </span>
-        <svg className={`${variant === "rail" ? "h-[12px] w-[12px] opacity-70" : "h-4 w-4 text-gray-500"} ml-auto shrink-0 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        {!updating && (
+          <svg className={`${variant === "rail" ? "h-[12px] w-[12px] opacity-70" : "h-4 w-4 text-gray-500"} ml-auto shrink-0 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        )}
       </button>
       {err && !open && (
         <div role="alert" className="absolute right-0 top-full z-30 mt-2 flex w-72 items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 shadow-lg">

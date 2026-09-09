@@ -101,12 +101,12 @@ export function PageHero({
       </div>
       <div className="ml-auto flex shrink-0 items-start justify-end gap-2">
         {workspaceScope && (
-          <Chip kind="workspace" label="Workspace(s)" wrapperClassName="min-w-[170px]">
+          <Chip kind="workspace" label="Workspace(s)" wrapperClassName="min-w-[150px]">
             {workspaceScope}
           </Chip>
         )}
         {sourceLabels.length > 0 && (
-          <Chip kind="filter" label="Data source(s)" wrapperClassName="min-w-[128px]">
+          <Chip kind="filter" label="Data source(s)" wrapperClassName="min-w-[112px]">
             {sourceLabels.length === 1
               ? sourceLabels[0]
               : `${sourceLabels.length} sources`}

@@ -85,8 +85,8 @@ describe("shared accessibility primitives", () => {
       const date = screen.getByText("Date range");
       expect(workspace.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(source.compareDocumentPosition(date) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(workspace.parentElement).toHaveClass("min-w-[170px]");
-      expect(source.parentElement).toHaveClass("min-w-[128px]");
+      expect(workspace.parentElement).toHaveClass("min-w-[150px]");
+      expect(source.parentElement).toHaveClass("min-w-[112px]");
       expect(workspace.parentElement?.parentElement).toHaveClass(
         "ml-auto",
         "justify-end",

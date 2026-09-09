@@ -868,18 +868,19 @@ function Dashboard() {
         } else if (status?.status === "setup_required") {
           // Only show wizard on a definitive "setup_required": not on transient states
           // like "initializing". Avoids wizard flash during cold start or mid-build polling.
-          if (!prevCompleted()) {
-            localStorage.removeItem("coc-setup-complete");
-            sessionStorage.removeItem("coc-setup-complete");
-            // The durable administrator claim must happen before any setup
-            // mutation. The server verifies the forwarded Apps OAuth identity
-            // and atomically allows only the first caller to claim ownership.
-            const bootstrap = await fetch("/api/setup/bootstrap-admin", {
-              method: "POST",
-              signal: controller.signal,
-            });
-            setShowSetupWizard(bootstrap.ok);
-          }
+          // The server is authoritative. A browser flag can survive a redeploy
+          // that replaced the app identity or its managed tables, so it must not
+          // suppress a newly-required setup run.
+          localStorage.removeItem("coc-setup-complete");
+          sessionStorage.removeItem("coc-setup-complete");
+          // The durable administrator claim must happen before any setup
+          // mutation. The server verifies the forwarded Apps OAuth identity
+          // and atomically allows only the first caller to claim ownership.
+          const bootstrap = await fetch("/api/setup/bootstrap-admin", {
+            method: "POST",
+            signal: controller.signal,
+          });
+          setShowSetupWizard(bootstrap.ok);
         }
         setSetupCheckPending(false);
         // "initializing" and other transient states: no wizard change, but unblock dashboard
@@ -1969,6 +1970,7 @@ function Dashboard() {
               onApplied={handleSourceApplied}
               resetVersion={scopeResetVersion}
               disabled={scopeOwner === "workspace"}
+              isRefreshing={wsListLoading}
               controlling={scopeOwner === "source"}
             />
             {(selectedWorkspaceIds.length > 0 || getActiveSourceLabels().length > 0) && (

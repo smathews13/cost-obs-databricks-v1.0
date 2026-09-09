@@ -106,7 +106,7 @@ export function PageHero({
           </Chip>
         )}
         {sourceLabels.length > 0 && (
-          <Chip kind="filter" label="Source(s)">
+          <Chip kind="filter" label="Data sources">
             {sourceLabels.length === 1
               ? sourceLabels[0]
               : `${sourceLabels.length} sources`}

@@ -7,6 +7,16 @@ const styles = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 
 describe("account rail health polish", () => {
+  it("lets definitive server setup state override stale browser completion flags", () => {
+    const setupRequired = appSource.slice(
+      appSource.indexOf('status?.status === "setup_required"'),
+      appSource.indexOf("setSetupCheckPending(false)"),
+    );
+    expect(setupRequired).toContain('localStorage.removeItem("coc-setup-complete")');
+    expect(setupRequired).toContain('fetch("/api/setup/bootstrap-admin"');
+    expect(setupRequired).not.toContain("if (!prevCompleted())");
+  });
+
   it("keeps manual and source-scope refreshes on the visible tab", () => {
     expect(appSource).toContain("await refreshTabData(rqClient, tab);");
     expect(appSource).not.toContain(
@@ -175,6 +185,7 @@ describe("account rail health polish", () => {
     expect(appSource).toContain('selectedWorkspaceIds.length > 0');
     expect(appSource).toContain("if (workspaceIds.length === 0)");
     expect(appSource).toContain("isLoading={wsListLoading}");
+    expect(appSource).toContain("isRefreshing={wsListLoading}");
     expect(appSource).not.toContain("isRefreshing={showActiveTabLoading}");
   });
 

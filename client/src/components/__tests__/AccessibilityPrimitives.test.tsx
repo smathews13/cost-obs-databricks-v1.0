@@ -81,7 +81,7 @@ describe("shared accessibility primitives", () => {
         />,
       );
       const workspace = screen.getByText("Workspace(s)");
-      const source = screen.getByText("Source(s)");
+      const source = screen.getByText("Data sources");
       const date = screen.getByText("Date range");
       expect(workspace.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(source.compareDocumentPosition(date) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

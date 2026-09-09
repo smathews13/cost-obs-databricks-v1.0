@@ -51,6 +51,7 @@ describe("chrome filter variants", () => {
       "rail-control-border",
     );
     expect(trigger.className).not.toContain("border-white");
+    expect(trigger.querySelectorAll("svg").item(1)).toHaveClass("ml-auto");
     expect(screen.getByText("2 workspaces")).toHaveClass("min-[1180px]:hidden");
     expect(trigger).not.toHaveClass("co-filter");
   });
@@ -199,6 +200,7 @@ describe("chrome filter variants", () => {
       "rail-control-border",
     );
     expect(trigger.className).not.toContain("border-white");
+    expect(trigger.querySelectorAll("svg").item(1)).toHaveClass("ml-auto");
     expect(screen.getByText("2 sources")).toHaveClass("min-[1180px]:hidden");
     expect(trigger).not.toHaveClass("co-filter");
   });

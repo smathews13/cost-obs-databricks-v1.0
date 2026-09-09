@@ -25,8 +25,17 @@ from server.routers.setup import (
 def clean_caches():
     """Reset all readiness caches before and after each test to prevent state leakage."""
     reset_readiness_caches()
+    setup_mod._setup_confirmed_ready = False
+    setup_mod._create_task_state.update({
+        "status": "idle",
+        "error": None,
+        "started_at": None,
+        "elapsed_seconds": None,
+        "table_progress": {},
+    })
     yield
     reset_readiness_caches()
+    setup_mod._setup_confirmed_ready = False
 
 
 def _mock_token():
@@ -34,6 +43,37 @@ def _mock_token():
     mock = MagicMock()
     mock.set.return_value = mock
     return mock
+
+
+@pytest.mark.asyncio
+async def test_setup_status_requires_wizard_when_storage_is_not_configured():
+    with (
+        patch.object(setup_mod, "_reconcile_task_state_from_disk"),
+        patch.object(setup_mod, "get_catalog_schema", return_value=("", "")),
+    ):
+        result = await setup_mod.get_setup_status()
+
+    assert result["status"] == "setup_required"
+    assert not result["all_tables_exist"]
+
+
+@pytest.mark.asyncio
+async def test_stale_dbfs_completion_does_not_hide_missing_core_tables():
+    tables = {name: True for name in setup_mod._CORE_REQUIRED_TABLES}
+    missing = next(iter(setup_mod._CORE_REQUIRED_TABLES))
+    tables[missing] = False
+
+    with (
+        patch.object(setup_mod, "_reconcile_task_state_from_disk"),
+        patch.object(setup_mod, "get_catalog_schema", return_value=("cost_catalog", "cost_obs")),
+        patch.object(setup_mod.os.path, "exists", return_value=False),
+        patch("server.db.read_dbfs_setup_complete", return_value=True),
+        patch.object(setup_mod, "check_materialized_views_exist", return_value=tables),
+    ):
+        result = await setup_mod.get_setup_status()
+
+    assert result["status"] == "setup_required"
+    assert missing in result["missing_tables"]
 
 
 # ---------------------------------------------------------------------------

@@ -497,21 +497,41 @@ def test_settings_writes_keep_local_fallback_but_propagate_delta_failure(
     assert target.exists()
 
 
-def test_settings_table_replacements_are_atomic():
-    writes: list[str] = []
+def test_settings_namespace_replacements_are_atomic_and_isolated():
+    writes: list[tuple[str, dict]] = []
     with (
-        patch.object(settings, "_ensure_webhook_table"),
-        patch.object(settings, "_ensure_alert_thresholds_table"),
-        patch.object(settings, "_ensure_pricing_table"),
+        patch.object(settings, "_ensure_app_settings_table"),
         patch.object(settings, "_config_table", return_value="config_table"),
-        patch("server.db.execute_write", side_effect=lambda sql, *_args: writes.append(sql)),
+        patch(
+            "server.db.execute_write",
+            side_effect=lambda sql, params: writes.append((sql, params)),
+        ),
     ):
         settings._save_webhook_to_table({"slack_webhook_url": ""})
         settings._save_alert_thresholds_to_table({"daily_budget": 10})
         settings._save_pricing_to_table({"use_account_prices": False})
     assert len(writes) == 3
-    assert all("INSERT OVERWRITE" in sql for sql in writes)
-    assert all("DELETE FROM" not in sql for sql in writes)
+    assert all("MERGE INTO config_table" in sql for sql, _ in writes)
+    assert all("ON target.id = source.id" in sql for sql, _ in writes)
+    assert all("INSERT OVERWRITE" not in sql for sql, _ in writes)
+    assert [params["id"] for _, params in writes] == ["webhook", "alerts", "pricing"]
+
+
+def test_settings_namespace_reads_only_its_named_row():
+    with (
+        patch.object(settings, "_config_table", return_value="config_table"),
+        patch(
+            "server.db.execute_query",
+            return_value=[{"settings_json": '{"frequency":"weekly"}'}],
+        ) as query,
+    ):
+        assert settings._load_settings_namespace("schedule") == {
+            "frequency": "weekly"
+        }
+
+    sql, params = query.call_args.args[:2]
+    assert "WHERE id = :id" in sql
+    assert params == {"id": "schedule"}
 
 
 def test_unified_put_returns_503_when_requested_group_is_not_durable():
@@ -657,7 +677,7 @@ def test_app_settings_partial_saves_are_serialized_across_workers(tmp_path):
 
     def write(_sql, params):
         with state_lock:
-            state.update(json.loads(params["s"]))
+            state.update(json.loads(params["settings_json"]))
         return 1
 
     with (

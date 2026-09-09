@@ -95,6 +95,6 @@ The internal repository is the source of truth. A release lands on internal `ori
 
 **App-managed aggregates (9), in the configured Unity Catalog location:** `daily_usage_summary`, `daily_product_breakdown`, `daily_workspace_breakdown`, `daily_query_stats`, `daily_tag_summary`, `daily_tag_coverage_summary`, `daily_apps_summary`, `sql_tool_attribution`, `dbsql_cost_per_query`
 
-**Durable app state & cache (13):** `app_settings`, `app_schedule_settings`, `app_refresh_log`, `app_cloud_connections`, `app_workspace_filter`, `app_user_permissions`, `app_mv_refresh_state`, `app_alert_thresholds`, `app_webhook_settings`, `app_pricing_settings`, `app_response_cache`, `app_mv_sources`, `app_unified_views`
+**Durable app state & cache (8):** `app_settings` (namespaced general, alert, webhook, pricing, schedule, and workspace-filter settings), `app_refresh_log`, `app_cloud_connections`, `app_user_permissions`, `app_mv_refresh_state`, `app_response_cache`, `app_mv_sources`, `app_unified_views`
 
 **Optional cloud billing sources (administrator-configured):** AWS `<catalog>.<schema>.actuals_gold` · Azure `<catalog>.<schema>.actuals_gold` · GCP `<catalog>.<schema>.<table>` (federated BigQuery billing export or curated Delta)

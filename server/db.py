@@ -1011,10 +1011,8 @@ _DISCOVERY_APP_MARKERS: frozenset[str] = frozenset({
     "app_cloud_connections",
     "app_mv_refresh_state",
     "app_refresh_log",
-    "app_schedule_settings",
     "app_settings",
     "app_user_permissions",
-    "app_workspace_filter",
 })
 
 _catalog_discovery_lock = threading.Lock()

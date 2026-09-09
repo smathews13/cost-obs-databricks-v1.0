@@ -1997,19 +1997,14 @@ def refresh_materialized_views(catalog: str | None = None, schema: str | None = 
 
 
 _APP_CONFIG_TABLES = [
-    "app_alert_thresholds",
     "app_cloud_connections",
     "app_mv_refresh_state",
     "app_mv_sources",
-    "app_pricing_settings",
     "app_refresh_log",
     "app_response_cache",
-    "app_schedule_settings",
     "app_settings",
     "app_unified_views",
     "app_user_permissions",
-    "app_webhook_settings",
-    "app_workspace_filter",
 ]
 
 

@@ -69,16 +69,18 @@ def test_drop_inventory_matches_the_managed_state_contract():
     assert settings._APP_RESPONSE_CACHE_TABLE in materialized_views._APP_CONFIG_TABLES
 
 
-def test_workspace_filter_uses_one_json_delta_schema():
+def test_workspace_filter_uses_the_namespaced_app_settings_schema():
     settings_source = (
         ROOT / "server" / "routers" / "settings.py"
     ).read_text()
     setup_source = (ROOT / "server" / "routers" / "setup.py").read_text()
 
-    assert "(workspace_ids_json STRING, updated_at TIMESTAMP)" in settings_source
-    assert "SELECT workspace_ids_json FROM" in setup_source
+    assert '"workspace_filter"' in settings_source
+    assert '{"workspace_ids": workspace_ids}' in settings_source
+    assert "_load_settings_namespace" in setup_source
+    assert '"workspace_filter"' in setup_source
     assert "save_workspace_filter_to_table" in setup_source
-    assert "(workspace_ids STRING) USING DELTA" not in setup_source
+    assert "app_workspace_filter" not in settings._APP_STATE_TABLES
 
 
 def test_durable_routing_tables_validate_the_write_target():

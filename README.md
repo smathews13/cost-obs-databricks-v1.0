@@ -513,9 +513,10 @@ All billing and compute data is **account-level** — queries run against Unity 
 ### App-Managed Tables
 
 The setup wizard creates **9 pre-aggregated Delta tables** in the Unity Catalog
-location you configure. The app also creates small Delta tables for settings,
-permissions, refresh coordination, source configuration, and shared response
-caching.
+location you configure. The app uses **8 durable state and cache tables** for
+settings, permissions, refresh coordination, source configuration, and shared
+response caching. Low-volume alert, webhook, pricing, schedule, workspace, and
+general preferences share namespaced rows in `app_settings`.
 
 | Table | What it stores | Rows (est.) |
 |---|---|---|

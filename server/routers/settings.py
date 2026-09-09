@@ -34,18 +34,13 @@ _MV_SHARE_RUNBOOK = (
 _SERVER_START_TIME = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M") + " UTC"
 
 _APP_STATE_TABLES = (
-    "app_alert_thresholds",
     "app_cloud_connections",
     "app_mv_refresh_state",
     "app_mv_sources",
-    "app_pricing_settings",
     "app_refresh_log",
-    "app_schedule_settings",
     "app_settings",
     "app_unified_views",
     "app_user_permissions",
-    "app_webhook_settings",
-    "app_workspace_filter",
 )
 
 _APP_RESPONSE_CACHE_TABLE = "app_response_cache"
@@ -239,69 +234,87 @@ def _ensure_connections_table() -> None:
     )
 
 
-def _ensure_webhook_table() -> None:
+_APP_SETTINGS_NAMESPACES = frozenset({
+    "app",
+    "alerts",
+    "webhook",
+    "pricing",
+    "schedule",
+    "workspace_filter",
+})
+
+
+def _ensure_app_settings_table() -> None:
     _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_webhook_settings')} "
-        f"(slack_webhook_url STRING, updated_at TIMESTAMP) USING DELTA"
+        f"CREATE TABLE IF NOT EXISTS {_config_table('app_settings')} "
+        f"(id STRING NOT NULL, settings_json STRING, updated_at TIMESTAMP) USING DELTA"
     )
 
 
-def _ensure_alert_thresholds_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_alert_thresholds')} "
-        f"(settings_json STRING, updated_at TIMESTAMP) USING DELTA"
+def _load_settings_namespace(namespace: str) -> dict | None:
+    if namespace not in _APP_SETTINGS_NAMESPACES:
+        raise ValueError(f"Unknown app settings namespace: {namespace}")
+    try:
+        from server.db import execute_query
+
+        table = _config_table("app_settings")
+        rows = execute_query(
+            f"SELECT settings_json FROM {table} WHERE id = :id LIMIT 1",
+            {"id": namespace},
+            no_cache=True,
+        )
+        if rows and rows[0].get("settings_json"):
+            value = json.loads(rows[0]["settings_json"])
+            return value if isinstance(value, dict) else None
+    except Exception as e:
+        if _table_missing(e):
+            logger.debug("app_settings table not yet created: %s", e)
+        else:
+            logger.warning("Could not load app_settings namespace %s: %s", namespace, e)
+    return None
+
+
+def _write_settings_namespace(namespace: str, settings: dict) -> None:
+    if namespace not in _APP_SETTINGS_NAMESPACES:
+        raise ValueError(f"Unknown app settings namespace: {namespace}")
+    from server.db import execute_write
+
+    _ensure_app_settings_table()
+    table = _config_table("app_settings")
+    execute_write(
+        f"MERGE INTO {table} AS target "
+        f"USING (SELECT :id AS id, :settings_json AS settings_json, "
+        f"current_timestamp() AS updated_at) AS source "
+        f"ON target.id = source.id "
+        f"WHEN MATCHED THEN UPDATE SET settings_json = source.settings_json, "
+        f"updated_at = source.updated_at "
+        f"WHEN NOT MATCHED THEN INSERT (id, settings_json, updated_at) "
+        f"VALUES (source.id, source.settings_json, source.updated_at)",
+        {"id": namespace, "settings_json": json.dumps(settings)},
     )
 
 
-def _ensure_schedule_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_schedule_settings')} "
-        f"(settings_json STRING, updated_at TIMESTAMP) USING DELTA"
-    )
-
-
-def _ensure_pricing_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_pricing_settings')} "
-        f"(settings_json STRING, updated_at TIMESTAMP) USING DELTA"
-    )
+def _save_settings_namespace(namespace: str, settings: dict) -> None:
+    with _settings_write_lock(f"app-settings:{namespace}"):
+        _write_settings_namespace(namespace, settings)
 
 
 # ── Workspace filter pool (survives deploys via Delta) ────────────────────────
 
-def _ensure_workspace_filter_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_workspace_filter')} "
-        f"(workspace_ids_json STRING, updated_at TIMESTAMP) USING DELTA"
-    )
-
-
 def save_workspace_filter_to_table(workspace_ids: list) -> None:
-    """Persist workspace filter pool to the app Delta config table."""
-    import json as _json
-
-    from server.db import execute_write
-    _ensure_workspace_filter_table()
-    table = _config_table("app_workspace_filter")
-    execute_write(f"DELETE FROM {table}", None)
-    execute_write(
-        f"INSERT INTO {table} (workspace_ids_json, updated_at) "
-        f"VALUES (:ws_json, current_timestamp())",
-        {"ws_json": _json.dumps(workspace_ids)},
-    )
+    """Persist workspace filter pool in its app_settings namespace."""
+    _save_settings_namespace("workspace_filter", {"workspace_ids": workspace_ids})
     logger.info("Workspace filter pool saved to Delta: %d ids", len(workspace_ids))
 
 
 def restore_workspace_filter_from_delta() -> None:
-    """Read saved workspace filter pool from Delta and write to .settings file. Called at startup."""
+    """Read saved workspace filter namespace and write the startup file mirror."""
     import json as _json
     try:
-        from server.db import execute_query
-        table = _config_table("app_workspace_filter")
-        rows = execute_query(f"SELECT workspace_ids_json FROM {table} LIMIT 1", None, no_cache=True)
-        if not rows or not rows[0].get("workspace_ids_json"):
+        settings = _load_settings_namespace("workspace_filter")
+        if not settings or not isinstance(settings.get("workspace_ids"), list):
             return
-        workspace_ids = _json.loads(rows[0]["workspace_ids_json"])
+        workspace_ids = settings["workspace_ids"]
         settings_dir = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
         settings_path = os.path.join(settings_dir, "workspace_filter.json")
         os.makedirs(settings_dir, exist_ok=True)
@@ -2764,18 +2777,10 @@ class WebhookSettings(BaseModel):
 
 
 def _load_webhook_settings() -> dict:
-    """Load webhook settings from Delta table, falling back to local file."""
-    try:
-        from server.db import execute_query
-        table = _config_table("app_webhook_settings")
-        rows = execute_query(f"SELECT * FROM {table} LIMIT 1", None, no_cache=True)
-        if rows:
-            return {"slack_webhook_url": rows[0].get("slack_webhook_url") or ""}
-    except Exception as e:
-        if _table_missing(e):
-            logger.debug("Could not load webhook settings from Delta table (not yet created): %s", e)
-        else:
-            logger.warning(f"Could not load webhook settings from Delta table: {e}")
+    """Load webhook settings from app_settings, falling back to the local file."""
+    durable = _load_settings_namespace("webhook")
+    if durable is not None:
+        return {"slack_webhook_url": durable.get("slack_webhook_url") or ""}
 
     # Fallback: file
     if os.path.exists(WEBHOOK_SETTINGS_FILE):
@@ -2795,13 +2800,9 @@ def _load_webhook_settings() -> dict:
 
 
 def _save_webhook_to_table(settings: dict) -> None:
-    from server.db import execute_write
-    _ensure_webhook_table()
-    table = _config_table("app_webhook_settings")
-    execute_write(
-        f"INSERT OVERWRITE {table} "
-        f"SELECT :url AS slack_webhook_url, current_timestamp() AS updated_at",
-        {"url": settings.get("slack_webhook_url") or ""},
+    _save_settings_namespace(
+        "webhook",
+        {"slack_webhook_url": settings.get("slack_webhook_url") or ""},
     )
 
 
@@ -3152,29 +3153,14 @@ _SCHEDULE_DEFAULTS: dict = {"enabled": True, "frequency": "nightly", "hour_utc":
 
 
 def _save_schedule_to_table(settings: dict) -> None:
-    from server.db import execute_write
-    _ensure_schedule_table()
-    table = _config_table("app_schedule_settings")
-    execute_write(
-        f"INSERT OVERWRITE {table} "
-        f"SELECT :s AS settings_json, current_timestamp() AS updated_at",
-        {"s": json.dumps(settings)},
-    )
+    _save_settings_namespace("schedule", settings)
 
 
 def load_schedule_settings() -> dict:
-    """Load schedule settings — Delta first (survives redeploys), file fallback."""
-    try:
-        from server.db import execute_query
-        table = _config_table("app_schedule_settings")
-        rows = execute_query(f"SELECT settings_json FROM {table} LIMIT 1", None, no_cache=True)
-        if rows and rows[0].get("settings_json"):
-            return {**_SCHEDULE_DEFAULTS, **json.loads(rows[0]["settings_json"])}
-    except Exception as e:
-        if _table_missing(e):
-            logger.debug("Could not load schedule settings from Delta (not yet created): %s", e)
-        else:
-            logger.warning("Could not load schedule settings from Delta (storage may not be configured yet): %s", e)
+    """Load schedule settings from app_settings, then the local fallback."""
+    durable = _load_settings_namespace("schedule")
+    if durable is not None:
+        return {**_SCHEDULE_DEFAULTS, **durable}
 
     # Fallback: local file (dev / first run before table exists)
     try:
@@ -3249,18 +3235,10 @@ _ALERT_THRESHOLD_DEFAULTS: dict = {
 
 
 def _load_alert_thresholds() -> dict:
-    """Load alert thresholds — Delta first, file fallback, then hardcoded defaults."""
-    try:
-        from server.db import execute_query
-        table = _config_table("app_alert_thresholds")
-        rows = execute_query(f"SELECT settings_json FROM {table} LIMIT 1", None, no_cache=True)
-        if rows and rows[0].get("settings_json"):
-            return {**_ALERT_THRESHOLD_DEFAULTS, **json.loads(rows[0]["settings_json"])}
-    except Exception as e:
-        if _table_missing(e):
-            logger.debug("Could not load alert thresholds from Delta (not yet created): %s", e)
-        else:
-            logger.warning("Could not load alert thresholds from Delta: %s", e)
+    """Load alert thresholds from app_settings, then file/default fallbacks."""
+    durable = _load_settings_namespace("alerts")
+    if durable is not None:
+        return {**_ALERT_THRESHOLD_DEFAULTS, **durable}
 
     try:
         if os.path.exists(ALERT_THRESHOLDS_FILE):
@@ -3279,15 +3257,7 @@ def _load_alert_thresholds() -> dict:
 
 
 def _save_alert_thresholds_to_table(settings: dict) -> None:
-    from server.db import execute_write
-
-    _ensure_alert_thresholds_table()
-    table = _config_table("app_alert_thresholds")
-    execute_write(
-        f"INSERT OVERWRITE {table} "
-        f"SELECT :s AS settings_json, current_timestamp() AS updated_at",
-        {"s": json.dumps(settings)},
-    )
+    _save_settings_namespace("alerts", settings)
 
 
 def _save_alert_thresholds(settings: dict) -> None:
@@ -3413,29 +3383,14 @@ async def get_account_prices() -> dict[str, Any]:
 # ── Pricing Mode ──────────────────────────────────────────────────────────────
 
 def _save_pricing_to_table(settings: dict) -> None:
-    from server.db import execute_write
-    _ensure_pricing_table()
-    table = _config_table("app_pricing_settings")
-    execute_write(
-        f"INSERT OVERWRITE {table} "
-        f"SELECT :s AS settings_json, current_timestamp() AS updated_at",
-        {"s": json.dumps(settings)},
-    )
+    _save_settings_namespace("pricing", settings)
 
 
 def _load_pricing_settings() -> dict:
-    """Load pricing settings — Delta first (survives redeploys), file fallback."""
-    try:
-        from server.db import execute_query
-        table = _config_table("app_pricing_settings")
-        rows = execute_query(f"SELECT settings_json FROM {table} LIMIT 1", None, no_cache=True)
-        if rows and rows[0].get("settings_json"):
-            return json.loads(rows[0]["settings_json"])
-    except Exception as e:
-        if _table_missing(e):
-            logger.debug("Could not load pricing settings from Delta (not yet created): %s", e)
-        else:
-            logger.warning("Could not load pricing settings from Delta (storage may not be configured yet): %s", e)
+    """Load pricing settings from app_settings, then the local fallback."""
+    durable = _load_settings_namespace("pricing")
+    if durable is not None:
+        return durable
 
     try:
         with open(PRICING_SETTINGS_FILE) as f:
@@ -3577,10 +3532,9 @@ async def get_account_price_multiplier() -> dict[str, Any]:
 
 
 # ── Unified app settings (Phase 2 aggregator) ─────────────────────────────────
-# ONE app-wide prefs table (app_settings) for values that had no home. The
-# per-domain tables (app_alert_thresholds, app_webhook_settings, app_pricing_settings,
-# app_schedule_settings, app_user_permissions) stay the source of truth for their
-# domains — the aggregator composes them and PUT dispatches writes back to them.
+# One namespaced settings table. General preferences use id='app'; the alert,
+# webhook, pricing, schedule, and workspace-filter domains use sibling rows.
+# Permissions and multi-row operational data remain in dedicated tables.
 
 _DEFAULT_TAB_VISIBILITY: dict = {
     "dbu": True, "infra": True, "optimizer": True, "kpis": True, "aiml": True,
@@ -3615,13 +3569,6 @@ class AppSettingsDurabilityError(RuntimeError):
     """The local fallback may be updated, but the durable Delta write failed."""
 
 
-def _ensure_app_settings_table() -> None:
-    _ensure_config_table(
-        f"CREATE TABLE IF NOT EXISTS {_config_table('app_settings')} "
-        f"(id STRING NOT NULL, settings_json STRING, updated_at TIMESTAMP) USING DELTA"
-    )
-
-
 def _sanitize_app_settings(data: dict) -> dict:
     """Remove settings for features that are no longer part of the app."""
     clean = dict(data)
@@ -3646,17 +3593,9 @@ def _sanitize_app_settings(data: dict) -> dict:
 
 def get_app_settings() -> dict:
     """App-wide prefs — Delta first (survives redeploys), file fallback, then defaults."""
-    try:
-        from server.db import execute_query
-        table = _config_table("app_settings")
-        rows = execute_query(f"SELECT settings_json FROM {table} WHERE id = 'app' LIMIT 1", None, no_cache=True)
-        if rows and rows[0].get("settings_json"):
-            return _sanitize_app_settings({**_APP_SETTINGS_DEFAULTS, **json.loads(rows[0]["settings_json"])})
-    except Exception as e:
-        if _table_missing(e):
-            logger.debug("app_settings table not yet created: %s", e)
-        else:
-            logger.warning("Could not load app_settings from Delta: %s", e)
+    durable = _load_settings_namespace("app")
+    if durable is not None:
+        return _sanitize_app_settings({**_APP_SETTINGS_DEFAULTS, **durable})
     try:
         if os.path.exists(APP_SETTINGS_FILE):
             with open(APP_SETTINGS_FILE) as f:
@@ -3697,14 +3636,7 @@ def save_app_settings(partial: dict) -> dict:
         merged = {**current, **clean}
         delta_error: Exception | None = None
         try:
-            from server.db import execute_write
-            _ensure_app_settings_table()
-            table = _config_table("app_settings")
-            execute_write(
-                f"INSERT OVERWRITE {table} "
-                f"SELECT 'app' AS id, :s AS settings_json, current_timestamp() AS updated_at",
-                {"s": json.dumps(merged)},
-            )
+            _write_settings_namespace("app", merged)
         except Exception as e:
             delta_error = e
             logger.warning("Could not persist app_settings to Delta: %s", e)

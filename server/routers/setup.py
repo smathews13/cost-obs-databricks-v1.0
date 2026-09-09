@@ -976,8 +976,7 @@ async def create_tables(
         _create_task_state["elapsed_seconds"] = 0
         _ALL_SETUP_TABLES = _MV_TABLES + [
             "app_response_cache", "app_user_permissions",
-            "app_mv_refresh_state", "app_refresh_log", "app_schedule_settings",
-            "app_workspace_filter", "app_settings",
+            "app_mv_refresh_state", "app_refresh_log", "app_settings",
         ]
         _create_task_state["table_progress"] = {t: "pending" for t in _ALL_SETUP_TABLES}
         _persist_task_state()
@@ -1097,8 +1096,6 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
             _ensure_app_settings_table,
             _ensure_permissions_table,
             _ensure_refresh_log_table,
-            _ensure_schedule_table,
-            _ensure_workspace_filter_table,
         )
         _config_table_fns = [
             (
@@ -1108,8 +1105,6 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
             ("app_response_cache",    _ensure_response_cache_table),
             ("app_user_permissions",  _ensure_permissions_table),
             ("app_refresh_log",       _ensure_refresh_log_table),
-            ("app_schedule_settings", _ensure_schedule_table),
-            ("app_workspace_filter",  _ensure_workspace_filter_table),
             ("app_settings",          _ensure_app_settings_table),
         ]
         for _tname, _fn in _config_table_fns:
@@ -2395,23 +2390,20 @@ async def get_workspace_filter() -> dict:
     except (FileNotFoundError, json.JSONDecodeError):
         pass
 
-    # Locked = Delta table has a row (written on first save, survives redeploys)
+    # Locked = app_settings has a workspace_filter namespace row.
     locked = False
     try:
-        from server.db import execute_query
-        from server.routers.settings import _config_table
+        from server.routers.settings import _load_settings_namespace
 
-        table = _config_table("app_workspace_filter")
-        rows = await asyncio.to_thread(execute_query,
-            f"SELECT workspace_ids_json FROM {table} LIMIT 1",
-            no_cache=True,
+        durable = await asyncio.to_thread(
+            _load_settings_namespace,
+            "workspace_filter",
         )
-        if rows:
+        if durable is not None:
             locked = True
-            if not workspace_ids and rows[0].get("workspace_ids_json"):
-                parsed = json.loads(str(rows[0]["workspace_ids_json"]))
+            if not workspace_ids and isinstance(durable.get("workspace_ids"), list):
                 workspace_ids = [
-                    str(i) for i in parsed
+                    str(i) for i in durable["workspace_ids"]
                     if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))
                 ]
     except Exception:
@@ -2424,9 +2416,9 @@ def restore_workspace_filter_from_delta() -> None:
     """Restore workspace filter from Delta to the settings file on startup.
 
     The .settings/ directory is ephemeral in Databricks Apps — wiped on every
-    git deploy. This function reads the last-saved filter from the Delta table
-    and writes it back to the file so workspace_filter.py can read it normally.
-    Safe to call when the table doesn't exist yet (first deploy).
+    git deploy. This function reads the last-saved filter from its app_settings
+    namespace and writes it back so workspace_filter.py can read it normally.
+    Safe to call before that namespace exists on first deploy.
     """
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
     if os.path.exists(settings_path):
@@ -2456,15 +2448,13 @@ async def save_workspace_filter(request: Request) -> dict:
 
     # Lock check — workspace filter is one-time, set during initial setup only
     try:
-        from server.db import execute_query
-        from server.routers.settings import _config_table
+        from server.routers.settings import _load_settings_namespace
 
-        table = _config_table("app_workspace_filter")
-        _rows = await asyncio.to_thread(execute_query,
-            f"SELECT COUNT(*) as cnt FROM {table}",
-            no_cache=True,
+        durable = await asyncio.to_thread(
+            _load_settings_namespace,
+            "workspace_filter",
         )
-        if _rows and int(_rows[0].get("cnt", 0)) > 0:
+        if durable is not None:
             raise HTTPException(
                 status_code=409,
                 detail="Workspace filter is already configured and cannot be changed after initial setup.",

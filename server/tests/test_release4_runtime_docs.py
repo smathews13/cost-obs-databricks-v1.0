@@ -267,3 +267,17 @@ def test_architecture_inventory_tracks_runtime_aggregate_tables():
     assert "`/api/cache/clear`" in architecture
     assert "service principal performs every SQL operation" in architecture
     assert "There is no generic prewarm endpoint" in architecture
+
+
+def test_architecture_inventory_tracks_consolidated_state_tables():
+    architecture = (ROOT / "cost-obs-architecture.md").read_text()
+
+    assert "Durable app state & cache (8)" in architecture
+    for retired_table in (
+        "app_alert_thresholds",
+        "app_webhook_settings",
+        "app_pricing_settings",
+        "app_schedule_settings",
+        "app_workspace_filter",
+    ):
+        assert retired_table not in architecture

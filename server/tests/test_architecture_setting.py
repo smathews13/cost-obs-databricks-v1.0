@@ -126,7 +126,11 @@ def test_save_app_settings_persists_architecture_view_to_delta_and_file(tmp_path
     assert "not_an_allowed_setting" not in saved
     persisted = json.loads(file_path.read_text())
     assert persisted["enable_architecture_view"] is True
-    delta_payload = next(params["s"] for sql, params in writes if "INSERT OVERWRITE" in sql and params)
+    delta_params = next(
+        params for sql, params in writes if "MERGE INTO" in sql and params
+    )
+    assert delta_params["id"] == "app"
+    delta_payload = delta_params["settings_json"]
     assert json.loads(delta_payload)["enable_architecture_view"] is True
 
 

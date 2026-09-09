@@ -53,8 +53,8 @@ def test_admin_can_save_feedback_target_without_discarding_other_settings(
     writes: list[dict] = []
 
     def capture_write(sql, params=None):
-        if "INSERT OVERWRITE" in sql:
-            writes.append(json.loads(params["s"]))
+        if "MERGE INTO" in sql:
+            writes.append(json.loads(params["settings_json"]))
 
     request = _JsonRequest({"feedback": {"slack_url": slack_url}})
     with (

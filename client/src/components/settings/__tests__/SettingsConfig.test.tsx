@@ -292,6 +292,56 @@ describe("SettingsConfig: rebuild history recovery state", () => {
 });
 
 describe("SettingsConfig: managed table layout", () => {
+  it("separates refreshed aggregates from durable app state without N/A metric cells", async () => {
+    renderSettingsConfig({
+      tables: [
+        {
+          name: "daily_usage_summary",
+          table_type: "Materialized View",
+          exists: true,
+          optional: false,
+          row_count: 1000,
+          min_date: "2026-01-01",
+          max_date: "2026-09-09",
+          days_behind: 0,
+        },
+        {
+          name: "app_settings",
+          table_type: "Table",
+          exists: true,
+          optional: true,
+          row_count: null,
+          min_date: null,
+          max_date: null,
+          days_behind: null,
+        },
+        {
+          name: "app_unified_views",
+          table_type: "Table",
+          exists: false,
+          optional: true,
+          row_count: null,
+          min_date: null,
+          max_date: null,
+          days_behind: null,
+        },
+      ],
+      refresh_status: HEALTHY_TABLES.refresh_status,
+      auth_error: null,
+    });
+
+    expect(await screen.findByText("Refreshed aggregates")).toBeVisible();
+    expect(screen.getByText("Durable app state")).toBeVisible();
+    const settingsRow = screen.getByText("app_settings").closest("tr");
+    const unifiedRow = screen.getByText("app_unified_views").closest("tr");
+    expect(settingsRow).toHaveTextContent("Namespaced application preferences");
+    expect(settingsRow).toHaveTextContent("Ready");
+    expect(settingsRow).not.toHaveTextContent("N/A");
+    expect(unifiedRow).toHaveTextContent("Shared-source view inventory; created on demand");
+    expect(unifiedRow).toHaveTextContent("Created on demand");
+    expect(unifiedRow).not.toHaveTextContent("N/A");
+  });
+
   it("keeps headers and the Materialized View badge on one line in a scrollable wide table", async () => {
     renderSettingsConfig({
       tables: [{

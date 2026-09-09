@@ -49,6 +49,17 @@ const RETENTION: Record<string, string> = {
   dbsql_cost_per_query: "~13mo (query.history)",
 };
 
+const STATE_TABLE_PURPOSES: Record<string, string> = {
+  app_cloud_connections: "Optional cloud billing connection settings",
+  app_mv_refresh_state: "Incremental refresh watermarks",
+  app_mv_sources: "Shared aggregate source routing",
+  app_refresh_log: "Rebuild and source-change history",
+  app_settings: "Namespaced application preferences",
+  app_unified_views: "Shared-source view inventory; created on demand",
+  app_user_permissions: "Application roles and owner",
+  app_response_cache: "Shared dashboard response cache",
+};
+
 // Managed-tables surface for the "Data & tables" settings section: DuBois styled.
 // Catalog/schema location, workspace filter, and refresh schedule are rendered by the
 // parent DataTablesSection; this owns table status, rebuild, shared sources, and drop.
@@ -183,6 +194,12 @@ export function SettingsConfig() {
   };
 
   const rs = tablesStatus?.refresh_status;
+  const refreshedTables = (tablesStatus?.tables ?? []).filter(
+    (table) => table.table_type === "Materialized View",
+  );
+  const stateTables = (tablesStatus?.tables ?? []).filter(
+    (table) => table.table_type !== "Materialized View",
+  );
   const rebuildBlocked = tablesStatus?.storage_block_reason || rs?.block_reason;
   const refreshFailureCount = rs?.error
     ? Math.max(1, rs.error.match(/:\s*error:/gi)?.length ?? 0)
@@ -288,13 +305,22 @@ export function SettingsConfig() {
                 </tr>
               </thead>
               <tbody>
-                {tablesStatus.tables.map((t) => {
+                {refreshedTables.length > 0 && (
+                  <tr data-testid="refreshed-aggregates-heading">
+                    <th colSpan={6} scope="rowgroup" style={{ ...td, backgroundColor: T.navBg, textAlign: "left", fontWeight: 600 }}>
+                      Refreshed aggregates
+                      <span style={{ marginLeft: 8, color: T.textSecondary, fontWeight: 400 }}>
+                        Rebuilt and freshness-checked on the configured schedule
+                      </span>
+                    </th>
+                  </tr>
+                )}
+                {refreshedTables.map((t) => {
                   const billingSource = RETENTION[t.name]?.includes("billing.usage") ?? false;
                   const queryHistorySource = RETENTION[t.name]?.includes("query.history") ?? false;
                   const missing = t.exists === false && !t.optional;
-                  const notConfigured = t.exists === false && t.optional;
                   const unknown = t.exists === null;
-                  const mark = missing ? { c: T.dangerFg, s: "✗" } : notConfigured ? { c: T.textFaint, s: "N/A" } : unknown ? { c: T.textFaint, s: "?" } : { c: T.successFg, s: "✓" };
+                  const mark = missing ? { c: T.dangerFg, s: "✗" } : unknown ? { c: T.textFaint, s: "?" } : { c: T.successFg, s: "✓" };
                   let fresh: React.ReactNode = <span style={{ color: T.textFaint }}>N/A</span>;
                   if (t.days_behind != null) {
                     if (t.days_behind === 0) fresh = <span style={{ color: T.successFg, fontWeight: 600 }}>Today</span>;
@@ -315,6 +341,46 @@ export function SettingsConfig() {
                       <td style={{ ...td, textAlign: "right", color: T.textSecondary, fontSize: 11 }}>{RETENTION[t.name] ?? "N/A"}</td>
                       <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: T.textSecondary }}>{t.max_date ? t.max_date.slice(0, 10) : "N/A"}</td>
                       <td style={{ ...td, textAlign: "right" }}>{fresh}</td>
+                    </tr>
+                  );
+                })}
+                {stateTables.length > 0 && (
+                  <tr data-testid="durable-app-state-heading">
+                    <th colSpan={6} scope="rowgroup" style={{ ...td, backgroundColor: T.navBg, textAlign: "left", fontWeight: 600 }}>
+                      Durable app state
+                      <span style={{ marginLeft: 8, color: T.textSecondary, fontWeight: 400 }}>
+                        Persisted configuration and cache; not part of scheduled rebuilds
+                      </span>
+                    </th>
+                  </tr>
+                )}
+                {stateTables.map((t) => {
+                  const missing = t.exists === false && !t.optional;
+                  const onDemand = t.exists === false && t.optional;
+                  const unknown = t.exists === null;
+                  const mark = missing
+                    ? { c: T.dangerFg, s: "✗", label: "Missing" }
+                    : onDemand
+                      ? { c: T.textSecondary, s: "○", label: "Created on demand" }
+                      : unknown
+                        ? { c: T.textFaint, s: "?", label: "Status unavailable" }
+                        : { c: T.successFg, s: "✓", label: "Ready" };
+                  return (
+                    <tr key={t.name} data-testid="durable-app-state-row">
+                      <td style={{ ...td, fontFamily: MONO }}>
+                        <span style={{ color: mark.c, marginRight: 6 }}>{mark.s}</span>
+                        {t.name}
+                        {t.error && <ColWarn error={t.error} />}
+                      </td>
+                      <td colSpan={4} style={{ ...td, color: T.textSecondary }}>
+                        <span style={{ display: "inline-block", whiteSpace: "nowrap", fontSize: 10, fontWeight: 500, color: T.textSecondary, backgroundColor: T.codeBg, borderRadius: 3, padding: "1px 6px", marginRight: 8 }}>
+                          App state
+                        </span>
+                        {STATE_TABLE_PURPOSES[t.name] ?? "Durable application state"}
+                      </td>
+                      <td style={{ ...td, textAlign: "right", color: mark.c, fontWeight: 600 }}>
+                        {mark.label}
+                      </td>
                     </tr>
                   );
                 })}

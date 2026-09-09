@@ -2,10 +2,11 @@
 
 Run with: pytest server/tests/test_setup_readiness.py -v
 """
+import asyncio
 import time
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -92,6 +93,38 @@ async def test_existing_core_tables_recover_setup_after_git_redeploy():
     assert result["status"] == "ready"
     assert result["recovered_from_tables"] is True
     assert setup_mod._setup_confirmed_ready is True
+
+
+def test_workspace_filter_save_fails_closed_when_delta_is_unavailable(tmp_path):
+    class Request:
+        headers: dict[str, str] = {}
+
+        async def json(self):
+            return {"workspace_ids": ["workspace-1"]}
+
+    settings_path = tmp_path / "workspace_filter.json"
+    with (
+        patch.object(setup_mod, "SETTINGS_DIR", str(tmp_path)),
+        patch.object(
+            setup_mod,
+            "_require_setup_admin",
+            new=AsyncMock(return_value="admin@example.com"),
+        ),
+        patch(
+            "server.routers.settings._load_settings_namespace",
+            return_value=None,
+        ),
+        patch(
+            "server.routers.settings.save_workspace_filter_to_table",
+            side_effect=RuntimeError("Delta unavailable"),
+        ),
+    ):
+        with pytest.raises(setup_mod.HTTPException) as exc:
+            asyncio.run(setup_mod.save_workspace_filter(Request()))
+
+    assert exc.value.status_code == 503
+    assert "durable Delta storage" in exc.value.detail
+    assert not settings_path.exists()
 
 
 # ---------------------------------------------------------------------------

@@ -2484,7 +2484,23 @@ async def save_workspace_filter(request: Request) -> dict:
         await asyncio.to_thread(save_workspace_filter_to_table, valid_ids)
         logger.info("save-workspace-filter: persisted to Delta in %.1fms", (_time.monotonic() - t0) * 1000)
     except Exception as e:
-        logger.warning("save-workspace-filter: Delta write failed (non-fatal — file is primary): %s", e)
+        try:
+            os.remove(settings_path)
+        except FileNotFoundError:
+            pass
+        except OSError as cleanup_error:
+            logger.warning(
+                "save-workspace-filter: could not roll back local file after Delta failure: %s",
+                cleanup_error,
+            )
+        logger.error("save-workspace-filter: durable Delta write failed: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Workspace filter was not saved because durable Delta storage is "
+                "unavailable. Retry after app storage is ready."
+            ),
+        ) from e
 
     return {"saved": valid_ids}
 

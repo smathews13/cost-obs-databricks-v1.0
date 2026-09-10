@@ -294,6 +294,18 @@ def test_shared_source_payload_marks_provider_managed_refresh():
             "server.materialized_views._rebuild_unified_views_locked",
             return_value={"ok": True},
         ) as rebuild,
+        patch(
+            "server.materialized_views._table_columns",
+            side_effect=lambda table: (
+                None if "daily_workspace_breakdown" in table else ["usage_date"]
+            ),
+        ),
+        patch.object(
+            settings,
+            "_visible_shared_tables",
+            return_value={"daily_usage_summary", "daily_workspace_breakdown"},
+        ),
+        patch.object(settings, "_shared_source_grants", return_value=["GRANT SELECT;"]),
     ):
         payload = asyncio.run(settings.get_mv_sources_endpoint(detail=True))
 
@@ -313,6 +325,7 @@ def test_shared_source_payload_marks_provider_managed_refresh():
     assert rebuild.call_args.kwargs["sources_override"][0]["workspace_ids"] == [
         "workspace-west"
     ]
+    assert payload["sources"][0]["required_grants"] == ["GRANT SELECT;"]
 
 
 @pytest.mark.parametrize("catalog", ["west4_share", "east1_share", "central1_share"])
@@ -321,7 +334,7 @@ def test_shared_source_cloud_falls_back_to_gcp_region_name(catalog):
         assert settings._detect_source_cloud(catalog) == "gcp"
 
 
-def test_shared_source_workspace_scope_matches_region_label():
+def test_shared_source_workspace_scope_uses_all_ids_published_by_share():
     rows = [
         {"workspace_id": "east-id", "workspace_name": "east1-serverless"},
         {"workspace_id": "west-id", "workspace_name": "west4-serverless"},
@@ -334,10 +347,10 @@ def test_shared_source_workspace_scope_matches_region_label():
             "schema": "cost_obs_shared",
         })
 
-    assert result == ["west-id"]
+    assert result == ["east-id", "west-id", "central-id"]
 
 
-def test_shared_source_workspace_scope_keeps_multiple_region_matches():
+def test_shared_source_workspace_scope_does_not_depend_on_source_label():
     rows = [
         {"workspace_id": "west-a", "workspace_name": "west4-primary"},
         {"workspace_id": "west-b", "workspace_name": "west4-secondary"},
@@ -350,10 +363,10 @@ def test_shared_source_workspace_scope_keeps_multiple_region_matches():
             "schema": "cost_obs_shared",
         })
 
-    assert result == ["west-a", "west-b"]
+    assert result == ["west-a", "west-b", "east-id"]
 
 
-def test_shared_source_workspace_scope_rejects_a_mismatched_single_candidate():
+def test_shared_source_workspace_scope_accepts_a_single_published_candidate():
     rows = [
         {"workspace_id": "east-id", "workspace_name": "east1-serverless"},
     ]
@@ -364,10 +377,10 @@ def test_shared_source_workspace_scope_rejects_a_mismatched_single_candidate():
             "schema": "cost_obs_shared",
         })
 
-    assert result == []
+    assert result == ["east-id"]
 
 
-def test_shared_source_workspace_scope_rejects_embedded_region_substrings():
+def test_shared_source_workspace_scope_ignores_workspace_name_format():
     rows = [
         {"workspace_id": "north-id", "workspace_name": "northeast1-serverless"},
     ]
@@ -378,7 +391,23 @@ def test_shared_source_workspace_scope_rejects_embedded_region_substrings():
             "schema": "cost_obs_shared",
         })
 
-    assert result == []
+    assert result == ["north-id"]
+
+
+def test_shared_source_workspace_scope_does_not_truncate_large_shares():
+    rows = [
+        {"workspace_id": f"workspace-{index}", "workspace_name": f"workspace-{index}"}
+        for index in range(250)
+    ]
+    with patch("server.db.execute_query", return_value=rows) as query:
+        result = settings._infer_shared_source_workspace_ids({
+            "label": "shared",
+            "catalog": "shared_catalog",
+            "schema": "cost_obs_shared",
+        })
+
+    assert len(result) == 250
+    assert "LIMIT" not in query.call_args.args[0]
 
 
 def test_current_workspace_cloud_detects_all_provider_hosts():

@@ -9,6 +9,92 @@ afterEach(() => {
 });
 
 describe("shared source freshness", () => {
+  it("shows copyable grants beside a source that the app cannot read", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        local_label: "local",
+        sources: [{
+          label: "west4",
+          catalog: "west4_share",
+          schema: "cost_obs_shared",
+          tables: ["daily_usage_summary"],
+          required_grants: [
+            "GRANT USE CATALOG ON CATALOG `west4_share` TO `app-id`;",
+            "GRANT SELECT ON SCHEMA `west4_share`.`cost_obs_shared` TO `app-id`;",
+          ],
+        }],
+      }),
+    })));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MvSourcesSection />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Grant the app read access to activate this share")).toBeVisible();
+    expect(screen.getByText(/GRANT SELECT ON SCHEMA/)).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Copy grants" }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("GRANT SELECT ON SCHEMA"));
+    expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
+  });
+
+  it("automatically applies workspace mappings discovered in the share", async () => {
+    let submittedBody: Record<string, unknown> | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/setup/list-catalogs")) {
+        return { ok: true, json: async () => ({ catalogs: ["west4_share"] }) };
+      }
+      if (url.includes("/setup/list-schemas")) {
+        return { ok: true, json: async () => ({ schemas: ["cost_obs_shared"] }) };
+      }
+      if (url.includes("/mv-sources/preview")) {
+        return {
+          ok: true,
+          json: async () => ({
+            matched: 1,
+            total: 1,
+            tables: [{ table: "daily_usage_summary", status: "match" }],
+            workspace_candidates: [
+              { workspace_id: "workspace-a", workspace_name: "west4-a" },
+              { workspace_id: "workspace-b", workspace_name: "west4-b" },
+            ],
+          }),
+        };
+      }
+      if (url.endsWith("/api/settings/mv-sources") && init?.method === "POST") {
+        submittedBody = JSON.parse(String(init.body));
+        return { ok: true, json: async () => ({ ok: true }) };
+      }
+      return { ok: true, json: async () => ({ local_label: "local", sources: [] }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MvSourcesSection />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Browse" }));
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Catalog" }), "west4_share");
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Schema" }), "cost_obs_shared");
+
+    expect(await screen.findByText("west4-a")).toBeVisible();
+    expect(screen.getByText("west4-b")).toBeVisible();
+    await userEvent.type(screen.getByPlaceholderText("e.g. EU workspace"), "west4");
+    await userEvent.click(screen.getByRole("button", { name: "Add source" }));
+
+    await waitFor(() => expect(submittedBody).toMatchObject({
+      workspace_ids: ["workspace-a", "workspace-b"],
+    }));
+  });
+
   it("offers existing labels while preserving free-form label entry", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).includes("/setup/list-catalogs")) {

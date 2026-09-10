@@ -23,6 +23,7 @@ interface MvSource {
   region?: string;
   added_at?: string;
   share_last_updated?: string;
+  required_grants?: string[];
   catalog_explorer_tables?: Array<{ fqn: string; url: string }>;
   catalog_explorer_schema_url?: string;
 }
@@ -51,6 +52,10 @@ interface PreviewResult {
   total: number;
   tables: PreviewTable[];
   required_grants?: string[];
+  workspace_candidates?: Array<{
+    workspace_id: string;
+    workspace_name: string;
+  }>;
 }
 
 // Settings → Config: register additional materialized-view source locations
@@ -92,8 +97,10 @@ export function MvSourcesSection() {
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [checkingLabel, setCheckingLabel] = useState<string | null>(null);
+  const [copiedGrantLabel, setCopiedGrantLabel] = useState<string | null>(null);
   const [lastChecked, setLastChecked] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [requiredGrants, setRequiredGrants] = useState<string[]>([]);
@@ -110,6 +117,7 @@ export function MvSourcesSection() {
     setSchemas([]);
     setPreview(null);
     setSelected(new Set());
+    setSelectedWorkspaceIds(new Set());
     if (!catalog) return;
     fetch(`/api/setup/list-schemas?catalog=${encodeURIComponent(catalog)}`)
       .then((r) => r.json()).then((r) => setSchemas(r.schemas ?? [])).catch(() => setSchemas([]));
@@ -120,13 +128,19 @@ export function MvSourcesSection() {
   useEffect(() => {
     setPreview(null);
     setSelected(new Set());
+    setSelectedWorkspaceIds(new Set());
     if (!catalog || !schema) return;
     setPreviewing(true);
     fetch(`/api/settings/mv-sources/preview?catalog=${encodeURIComponent(catalog)}&schema=${encodeURIComponent(schema)}`)
       .then((r) => r.json())
       .then((r: PreviewResult) => {
         setPreview(r);
-        setSelected(new Set((r.tables || []).filter((t) => t.status === "match").map((t) => t.table)));
+        setSelected(new Set(
+          (r.tables || []).filter((t) => t.status === "match").map((t) => t.table),
+        ));
+        setSelectedWorkspaceIds(new Set(
+          (r.workspace_candidates ?? []).map((workspace) => workspace.workspace_id),
+        ));
       })
       .catch(() => setPreview(null))
       .finally(() => setPreviewing(false));
@@ -147,10 +161,18 @@ export function MvSourcesSection() {
     });
   };
 
-  const canAdd = Boolean(label.trim() && catalog && schema && selected.size > 0 && !busy);
+  const canAdd = Boolean(
+    label.trim()
+    && catalog
+    && schema
+    && selected.size > 0
+    && selectedWorkspaceIds.size > 0
+    && !busy,
+  );
 
   const resetForm = () => {
-    setCatalog(""); setSchema(""); setLabel(""); setPreview(null); setSelected(new Set()); setError(null);
+    setCatalog(""); setSchema(""); setLabel(""); setPreview(null); setSelected(new Set());
+    setSelectedWorkspaceIds(new Set()); setError(null);
   };
 
   const addSource = async () => {
@@ -160,7 +182,13 @@ export function MvSourcesSection() {
       const res = await fetch("/api/settings/mv-sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: label.trim(), catalog, schema, tables: Array.from(selected) }),
+        body: JSON.stringify({
+          label: label.trim(),
+          catalog,
+          schema,
+          tables: Array.from(selected),
+          workspace_ids: Array.from(selectedWorkspaceIds),
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
@@ -365,6 +393,32 @@ export function MvSourcesSection() {
                       </span>
                     ))}
                   </div>
+                  {(s.required_grants?.length ?? 0) > 0 && (
+                    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold text-amber-900">
+                          Grant the app read access to activate this share
+                        </p>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(s.required_grants!.join("\n"));
+                              setCopiedGrantLabel(s.label);
+                            } catch {
+                              setError("Could not copy the grants. Select the SQL below and copy it manually.");
+                            }
+                          }}
+                          className="shrink-0 rounded border border-amber-300 bg-white px-2 py-1 text-[10px] font-semibold text-amber-900 hover:bg-amber-100"
+                        >
+                          {copiedGrantLabel === s.label ? "Copied" : "Copy grants"}
+                        </button>
+                      </div>
+                      <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] leading-4 text-amber-900">
+                        {s.required_grants!.join("\n")}
+                      </pre>
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 self-center items-center gap-1">
                   <button
@@ -499,6 +553,40 @@ export function MvSourcesSection() {
                   </>
                 )
               ) : null}
+            </div>
+          )}
+
+          {preview && !previewing && (
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-medium text-gray-700">
+                Workspaces discovered in the share ({selectedWorkspaceIds.size})
+              </label>
+              {(preview.workspace_candidates?.length ?? 0) > 0 ? (
+                <>
+                  <p className="text-[10px] text-gray-500">
+                    Pulled automatically from the shared workspace breakdown and kept in sync by the app.
+                  </p>
+                  <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-gray-200 bg-white p-1.5">
+                    {preview.workspace_candidates!.map((workspace) => (
+                      <div
+                        key={workspace.workspace_id}
+                        className="flex items-center gap-2 rounded px-1.5 py-1 text-xs"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-gray-700">
+                          {workspace.workspace_name || "Unnamed workspace"}
+                        </span>
+                        <span className="shrink-0 font-mono text-[10px] text-gray-500">
+                          {workspace.workspace_id}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                  No workspace mappings could be read from the shared workspace breakdown. Check the schema grant, then browse again.
+                </p>
+              )}
             </div>
           )}
 

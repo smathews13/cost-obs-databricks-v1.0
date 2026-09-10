@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import threading
 import time
 import uuid
@@ -1869,14 +1868,11 @@ def _visible_shared_tables(catalog: str, schema: str) -> set[str]:
         return set()
 
 
-def _infer_shared_source_workspace_ids(source: dict[str, Any]) -> list[str]:
-    """Resolve a workspace-labelled shared source to its actual workspace id."""
+def _shared_source_workspace_candidates(catalog: str, schema: str) -> list[dict[str, str]]:
+    """List the bounded workspace scope published by a shared source."""
     from server.db import execute_query
 
-    catalog = str(source.get("catalog") or "").strip()
-    schema = str(source.get("schema") or "").strip()
-    label = str(source.get("label") or "").strip()
-    if not catalog or not schema or not label:
+    if not catalog or not schema:
         return []
     try:
         rows = execute_query(
@@ -1890,34 +1886,31 @@ def _infer_shared_source_workspace_ids(source: dict[str, Any]) -> list[str]:
     except Exception as exc:
         logger.debug(
             "Could not infer workspace scope for shared source %s (non-fatal): %s",
-            label,
+            f"{catalog}.{schema}",
             exc,
         )
         return []
 
-    candidates = [
-        (
-            str(row.get("workspace_id") or "").strip(),
-            str(row.get("workspace_name") or "").strip(),
-        )
+    return [
+        {
+            "workspace_id": str(row.get("workspace_id") or "").strip(),
+            "workspace_name": str(row.get("workspace_name") or "").strip(),
+        }
         for row in (rows or [])
         if str(row.get("workspace_id") or "").strip()
     ]
-    normalized_label = re.sub(r"[^a-z0-9]", "", label.lower())
-    label_token = label.lower()
-    matches = [
-        workspace_id
-        for workspace_id, workspace_name in candidates
-        if normalized_label
-        and (
-            normalized_label == re.sub(r"[^a-z0-9]", "", workspace_id.lower())
-            or label_token in [
-                token for token in re.split(r"[^a-z0-9]+", workspace_name.lower())
-                if token
-            ]
-        )
-    ]
-    return list(dict.fromkeys(matches))
+
+
+def _infer_shared_source_workspace_ids(source: dict[str, Any]) -> list[str]:
+    """Use the workspace scope published by the shared aggregate itself."""
+    catalog = str(source.get("catalog") or "").strip()
+    schema = str(source.get("schema") or "").strip()
+    if not catalog or not schema:
+        return []
+    candidates = _shared_source_workspace_candidates(catalog, schema)
+    return list(dict.fromkeys(
+        candidate["workspace_id"] for candidate in candidates
+    ))
 
 
 def _shared_source_grants(catalog: str, schema: str) -> list[str]:
@@ -1959,6 +1952,7 @@ async def get_mv_sources_endpoint(detail: bool = False) -> dict:
             from server.materialized_views import (
                 _MV_TABLES,
                 _rebuild_unified_views_locked,
+                _table_columns,
                 unified_views_rebuild_lock,
             )
 
@@ -2026,6 +2020,28 @@ async def get_mv_sources_endpoint(detail: bool = False) -> dict:
                     s["catalog_explorer_schema_url"] = _catalog_explorer_schema_url(
                         s.get("catalog"), s.get("schema")
                     )
+                    expected_tables = list(dict.fromkeys([
+                        *(s.get("tables") or _MV_TABLES),
+                        "daily_workspace_breakdown",
+                    ]))
+                    visible_tables = _visible_shared_tables(
+                        s.get("catalog"), s.get("schema")
+                    )
+                    unreadable_tables = [
+                        table_name
+                        for table_name in expected_tables
+                        if (
+                            table_name.lower() in visible_tables
+                            and _table_columns(
+                                f"`{s.get('catalog')}`.`{s.get('schema')}`.`{table_name}`"
+                            ) is None
+                        )
+                    ]
+                    s["required_grants"] = (
+                        _shared_source_grants(s.get("catalog"), s.get("schema"))
+                        if unreadable_tables
+                        else []
+                    )
                 return current_sources
         sources = await asyncio.to_thread(_enrich)
     return {
@@ -2068,10 +2084,14 @@ async def preview_mv_source(catalog: str, schema: str) -> dict:
         return out
 
     tables = await asyncio.to_thread(_probe)
+    workspace_candidates = await asyncio.to_thread(
+        _shared_source_workspace_candidates, src_cat, src_sch
+    )
     matched = sum(1 for x in tables if x["status"] == "match")
     unreadable = sum(1 for x in tables if x["status"] == "unreadable")
     return {"catalog": src_cat, "schema": src_sch, "tables": tables,
             "matched": matched, "total": len(_MV_TABLES),
+            "workspace_candidates": workspace_candidates,
             "required_grants": _shared_source_grants(src_cat, src_sch) if unreadable else []}
 
 
@@ -2108,6 +2128,14 @@ async def check_mv_source_freshness(request: Request, label: str) -> dict:
                 if workspace_ids:
                     source["workspace_ids"] = workspace_ids
                     save_mv_sources(sources)
+            if not source.get("workspace_ids"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "The app cannot read the workspace mapping from this share yet. "
+                        "Apply the grants shown in Settings, then re-check metadata."
+                    ),
+                )
             local_catalog, local_schema = get_catalog_schema()
             selected_tables = source.get("tables") or _MV_TABLES
             visible_tables = _visible_shared_tables(source["catalog"], source["schema"])
@@ -2211,15 +2239,25 @@ async def add_mv_source(request: Request, body: dict) -> dict:
                 entry["tables"] = tables
             requested_workspace_ids = body.get("workspace_ids")
             if isinstance(requested_workspace_ids, list):
-                entry["workspace_ids"] = [
+                workspace_ids = list(dict.fromkeys(
                     str(value).strip()
                     for value in requested_workspace_ids
                     if str(value).strip()
-                ]
+                ))
+                entry["workspace_ids"] = workspace_ids
             if not entry.get("workspace_ids"):
                 inferred_workspace_ids = _infer_shared_source_workspace_ids(entry)
                 if inferred_workspace_ids:
                     entry["workspace_ids"] = inferred_workspace_ids
+            if not entry.get("workspace_ids"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Select at least one workspace before activating this shared source. "
+                        "Unmapped sources are not queried because that could mix unrelated "
+                        "workspace spend."
+                    ),
+                )
             cloud = _detect_source_cloud(catalog)
             if not cloud:
                 prior = next(

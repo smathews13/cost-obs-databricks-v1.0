@@ -18,6 +18,7 @@ def test_shared_source_freshness_check_reprobes_and_rebuilds_views():
     with (
         patch.object(settings, "_require_admin"),
         patch("server.db.get_mv_sources", return_value=sources),
+        patch("server.db.save_mv_sources"),
         patch("server.db.get_catalog_schema", return_value=("local_catalog", "cost_obs")),
         patch("server.materialized_views._MV_TABLES", ["daily_usage_summary", "daily_query_stats"]),
         patch(
@@ -32,6 +33,7 @@ def test_shared_source_freshness_check_reprobes_and_rebuilds_views():
         patch("server.materialized_views.unified_views_rebuild_lock"),
         patch.object(settings, "_visible_shared_tables", return_value={"daily_usage_summary"}),
         patch.object(settings, "_share_last_updated", return_value="2026-08-28T12:00:00Z"),
+        patch.object(settings, "_infer_shared_source_workspace_ids", return_value=["west-id"]),
         patch.object(settings, "_invalidate_mv_caches") as invalidate,
     ):
         result = asyncio.run(settings.check_mv_source_freshness(None, "west"))
@@ -58,6 +60,46 @@ def test_shared_source_freshness_check_rejects_unknown_label():
     assert exc.value.status_code == 404
 
 
+def test_shared_source_freshness_check_requires_workspace_mapping():
+    source = {
+        "label": "west",
+        "catalog": "shared_catalog",
+        "schema": "cost_obs",
+        "tables": ["daily_usage_summary"],
+    }
+    with (
+        patch.object(settings, "_require_admin"),
+        patch("server.db.get_mv_sources", return_value=[source]),
+        patch("server.materialized_views.unified_views_rebuild_lock"),
+        patch.object(settings, "_infer_shared_source_workspace_ids", return_value=[]),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(settings.check_mv_source_freshness(None, "west"))
+
+    assert exc.value.status_code == 409
+    assert "Apply the grants shown in Settings" in exc.value.detail
+
+
+def test_shared_source_add_rejects_an_unmapped_source():
+    with (
+        patch.object(settings, "_require_admin"),
+        patch("server.db.get_catalog_schema", return_value=("local_catalog", "cost_obs")),
+        patch("server.db.get_mv_sources", return_value=[]),
+        patch("server.materialized_views.unified_views_rebuild_lock"),
+        patch.object(settings, "_infer_shared_source_workspace_ids", return_value=[]),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(settings.add_mv_source(None, {
+                "label": "west",
+                "catalog": "shared_catalog",
+                "schema": "cost_obs",
+                "tables": ["daily_usage_summary"],
+            }))
+
+    assert exc.value.status_code == 400
+    assert "Unmapped sources are not queried" in exc.value.detail
+
+
 def test_shared_source_preview_lists_recipient_objects_before_probing():
     columns = {
         "`local_catalog`.`cost_obs`.`daily_usage_summary`": ["usage_date", "total_spend"],
@@ -75,6 +117,14 @@ def test_shared_source_preview_lists_recipient_objects_before_probing():
             "_visible_shared_tables",
             return_value={"daily_usage_summary"},
         ) as visible,
+        patch.object(
+            settings,
+            "_shared_source_workspace_candidates",
+            return_value=[{
+                "workspace_id": "west-id",
+                "workspace_name": "west4-serverless",
+            }],
+        ),
     ):
         result = asyncio.run(
             settings.preview_mv_source("shared_catalog", "cost_obs")
@@ -82,6 +132,10 @@ def test_shared_source_preview_lists_recipient_objects_before_probing():
 
     assert result["matched"] == 1
     assert result["required_grants"] == []
+    assert result["workspace_candidates"] == [{
+        "workspace_id": "west-id",
+        "workspace_name": "west4-serverless",
+    }]
     visible.assert_called_once_with("shared_catalog", "cost_obs")
 
 
@@ -98,6 +152,7 @@ def test_shared_source_preview_distinguishes_unreadable_tables_from_absent_table
             "_visible_shared_tables",
             return_value={"daily_usage_summary"},
         ),
+        patch.object(settings, "_shared_source_workspace_candidates", return_value=[]),
         patch.dict("os.environ", {"DATABRICKS_CLIENT_ID": "app-client-id"}),
     ):
         result = asyncio.run(

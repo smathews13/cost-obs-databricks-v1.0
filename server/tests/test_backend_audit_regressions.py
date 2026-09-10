@@ -820,6 +820,7 @@ def test_concurrent_source_adds_do_not_lose_updates():
         patch("server.db.save_mv_sources", side_effect=save_sources),
             patch("server.db.save_unified_view_tables"),
         patch.object(settings, "_detect_source_cloud", return_value=None),
+        patch.object(settings, "_infer_shared_source_workspace_ids", return_value=["workspace-id"]),
         patch.object(settings, "append_refresh_history"),
         patch.object(materialized_views, "unified_views_rebuild_lock", operation_lock),
         patch.object(
@@ -856,6 +857,7 @@ def test_shared_source_add_rolls_back_when_view_build_is_partial():
         patch("server.db.save_mv_sources") as save_sources,
         patch("server.db.save_unified_view_tables"),
         patch.object(settings, "_detect_source_cloud", return_value=None),
+        patch.object(settings, "_infer_shared_source_workspace_ids", return_value=["workspace-id"]),
         patch.object(materialized_views, "unified_views_rebuild_lock", operation_lock),
         patch.object(
             materialized_views,

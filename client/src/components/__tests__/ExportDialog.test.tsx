@@ -187,6 +187,21 @@ describe("ExportDialog report data loading", () => {
     );
   });
 
+  it("hides the admin runbook when its experimental toggle is off", () => {
+    render(
+      <ExportDialog
+        isOpen
+        isAdmin
+        enableMvShareRunbook={false}
+        onClose={vi.fn()}
+        onExport={vi.fn()}
+        tabVisibility={visibility}
+      />,
+    );
+
+    expect(screen.queryByRole("heading", { name: "MV Share Runbook" })).not.toBeInTheDocument();
+  });
+
   it("labels the architecture and cost report as separate ordered export products", () => {
     render(
       <ExportDialog

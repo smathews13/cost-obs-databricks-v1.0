@@ -106,31 +106,6 @@
   justify-self: end;
 }
 
-.settings-runbook-download {
-  display: inline-flex;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--dob-primary-fill, #2272B4);
-  border-radius: 4px;
-  background: var(--dob-primary-fill, #2272B4);
-  color: #FFFFFF;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.settings-runbook-download:hover {
-  border-color: var(--dob-primary-fill-hover, #0E538B);
-  background: var(--dob-primary-fill-hover, #0E538B);
-}
-
-.settings-runbook-download:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--dob-focus-ring, rgba(34, 114, 180, 0.2));
-}
-
 .settings-icon-button {
   display: inline-flex;
   width: 32px;

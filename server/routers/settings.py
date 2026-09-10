@@ -3557,6 +3557,7 @@ _APP_SETTINGS_DEFAULTS: dict = {
     "exp_setup_wizard_link": False,
     "exp_debugger_link": False,
     "enable_architecture_view": True,
+    "enable_mv_share_runbook": True,
     "anonymize_users": False,
     "tab_visibility": _DEFAULT_TAB_VISIBILITY,
     "feedback_slack_url": None,
@@ -3580,6 +3581,11 @@ def _sanitize_app_settings(data: dict) -> dict:
     clean["enable_architecture_view"] = (
         clean.get("enable_architecture_view")
         if isinstance(clean.get("enable_architecture_view"), bool)
+        else True
+    )
+    clean["enable_mv_share_runbook"] = (
+        clean.get("enable_mv_share_runbook")
+        if isinstance(clean.get("enable_mv_share_runbook"), bool)
         else True
     )
     feedback_slack_url = clean.get("feedback_slack_url")
@@ -3749,6 +3755,7 @@ def _settings_snapshot(request: Request) -> dict:
             "exp_setup_wizard_link": bool(app.get("exp_setup_wizard_link", False)),
             "exp_debugger_link": bool(app.get("exp_debugger_link", False)),
             "enable_architecture_view": bool(app.get("enable_architecture_view", True)),
+            "enable_mv_share_runbook": bool(app.get("enable_mv_share_runbook", True)),
         },
         "capabilities": _capabilities(request),
     }
@@ -3820,7 +3827,12 @@ async def put_unified_settings(request: Request) -> dict:
                     app_updated_count += 1
         exp = body.get("experimental")
         if isinstance(exp, dict):
-            for k in ("exp_setup_wizard_link", "exp_debugger_link", "enable_architecture_view"):
+            for k in (
+                "exp_setup_wizard_link",
+                "exp_debugger_link",
+                "enable_architecture_view",
+                "enable_mv_share_runbook",
+            ):
                 if k in exp:
                     app_partial[k] = bool(exp[k])
                     app_updated_count += 1

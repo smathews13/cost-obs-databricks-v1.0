@@ -2357,6 +2357,7 @@ function Dashboard() {
         onClose={closeExportDialog}
         onExport={handleExport}
         enableArchitectureView={appSettings.enableArchitectureView}
+        enableMvShareRunbook={appSettings.enableMvShareRunbook}
         isAdmin={user?.role === "admin"}
         onExportArchitecture={handleArchitectureExport}
         tabVisibility={tabVisibility}

@@ -249,9 +249,8 @@ it("renders, toggles, saves, and reloads user anonymization", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "Experimental" }));
   expect(screen.getByText(/Replace human email addresses with User 1/)).toBeInTheDocument();
   expect(screen.queryByText("Preview")).not.toBeInTheDocument();
-  const runbook = screen.getByRole("link", { name: "Download notebook" });
-  expect(runbook).toHaveAttribute("href", "/api/settings/materialized-view-runbook");
-  expect(runbook).toHaveAttribute("download", "cost_obs_mv_share_publisher.py");
+  expect(screen.getByRole("switch", { name: "Materialized view share runbook" }))
+    .toHaveAttribute("aria-checked", "true");
   const toggle = screen.getByRole("switch", { name: "User anonymization" });
   expect(toggle).toHaveAttribute("aria-checked", "false");
 
@@ -323,6 +322,57 @@ it("defaults, saves, reloads, and resets the architecture view setting", async (
   await userEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
   await waitFor(() => expect(putBodies.at(-1)?.experimental.enable_architecture_view).toBe(true));
   expect(loadAppSettings().enableArchitectureView).toBe(true);
+});
+
+it("defaults the MV share runbook on and persists an administrator opt-out", async () => {
+  expect(loadAppSettings().enableMvShareRunbook).toBe(true);
+  let serverValue = true;
+  const putBodies: Array<{ experimental: { enable_mv_share_runbook: boolean } }> = [];
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/settings") && init?.method === "PUT") {
+      const body = JSON.parse(String(init.body));
+      putBodies.push(body);
+      serverValue = body.experimental.enable_mv_share_runbook;
+      return { ok: true, status: 200, json: async () => ({ updated_count: 1 }) };
+    }
+    if (url.endsWith("/api/settings")) {
+      return { ok: true, status: 200, json: async () => ({ experimental: { enable_mv_share_runbook: serverValue } }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ current_role: "admin" }) };
+  }));
+
+  const renderDialog = () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <SettingsDialog
+          isOpen
+          onClose={vi.fn()}
+          onTabVisibilityChange={vi.fn()}
+          onSettingsChange={vi.fn()}
+          tabVisibility={loadTabVisibility()}
+          appSettings={loadAppSettings()}
+        />
+      </QueryClientProvider>,
+    );
+  };
+
+  const first = renderDialog();
+  await userEvent.click(await screen.findByRole("button", { name: "Experimental" }));
+  const toggle = screen.getByRole("switch", { name: "Materialized view share runbook" });
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  await userEvent.click(toggle);
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(putBodies.at(-1)?.experimental.enable_mv_share_runbook).toBe(false));
+  expect(loadAppSettings().enableMvShareRunbook).toBe(false);
+
+  first.unmount();
+  localStorage.clear();
+  renderDialog();
+  await userEvent.click(await screen.findByRole("button", { name: "Experimental" }));
+  await waitFor(() => expect(screen.getByRole("switch", { name: "Materialized view share runbook" }))
+    .toHaveAttribute("aria-checked", "false"));
 });
 
 it("persists the default when user anonymization is reset", async () => {

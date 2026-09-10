@@ -26,6 +26,14 @@ def test_architecture_view_setting_defaults_and_sanitizes_to_boolean():
     assert settings._sanitize_app_settings({"enable_architecture_view": "true"})["enable_architecture_view"] is True
 
 
+def test_mv_share_runbook_defaults_on_and_preserves_boolean_opt_out():
+    assert settings._APP_SETTINGS_DEFAULTS["enable_mv_share_runbook"] is True
+    assert "enable_mv_share_runbook" in settings._APP_SETTINGS_ALLOWED
+    assert settings._sanitize_app_settings({})["enable_mv_share_runbook"] is True
+    assert settings._sanitize_app_settings({"enable_mv_share_runbook": False})["enable_mv_share_runbook"] is False
+    assert settings._sanitize_app_settings({"enable_mv_share_runbook": "false"})["enable_mv_share_runbook"] is True
+
+
 def test_architecture_view_setting_is_in_unified_snapshot():
     with (
         patch.object(settings, "get_app_settings", return_value={
@@ -41,6 +49,7 @@ def test_architecture_view_setting_is_in_unified_snapshot():
         snapshot = settings._settings_snapshot(_Request())
 
     assert snapshot["experimental"]["enable_architecture_view"] is True
+    assert snapshot["experimental"]["enable_mv_share_runbook"] is True
 
 
 def test_unified_put_dispatches_architecture_view_setting():
@@ -59,6 +68,20 @@ def test_unified_put_dispatches_architecture_view_setting():
         "updated_count": 1,
         "domains": {"app": {"ok": True}},
     }
+
+
+def test_unified_put_dispatches_mv_share_runbook_opt_out():
+    request = _Request({"experimental": {"enable_mv_share_runbook": False}})
+    with (
+        patch.object(settings, "_require_admin"),
+        patch.object(settings, "save_app_settings") as save,
+        patch.object(settings, "_settings_snapshot") as snapshot,
+    ):
+        result = asyncio.run(settings.put_unified_settings(request))
+
+    save.assert_called_once_with({"enable_mv_share_runbook": False})
+    snapshot.assert_not_called()
+    assert result["updated_count"] == 1
 
 
 def test_unified_put_tab_only_skips_thresholds_webhook_and_snapshot():

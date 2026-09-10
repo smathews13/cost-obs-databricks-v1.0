@@ -23,6 +23,7 @@ export interface AppSettings {
   expSetupWizardLink: boolean;
   expDebuggerLink: boolean;
   enableArchitectureView: boolean;
+  enableMvShareRunbook: boolean;
   companyName: string;
   appDisplayName: string;
   monthlyBudget: number;
@@ -47,6 +48,7 @@ export interface UnifiedSettings {
     exp_setup_wizard_link?: unknown;
     exp_debugger_link?: unknown;
     enable_architecture_view?: unknown;
+    enable_mv_share_runbook?: unknown;
   };
   webhook?: {
     configured?: boolean;
@@ -98,6 +100,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   expSetupWizardLink: false,
   expDebuggerLink: false,
   enableArchitectureView: true,
+  enableMvShareRunbook: true,
   companyName: "",
   appDisplayName: "",
   monthlyBudget: 0,
@@ -244,6 +247,9 @@ export function hydrateSettingsFromServer(
     enableArchitectureView: typeof server.experimental?.enable_architecture_view === "boolean"
       ? server.experimental.enable_architecture_view
       : currentSettings.enableArchitectureView,
+    enableMvShareRunbook: typeof server.experimental?.enable_mv_share_runbook === "boolean"
+      ? server.experimental.enable_mv_share_runbook
+      : currentSettings.enableMvShareRunbook,
   };
   appSettings.darkMode = appSettings.theme === "dark";
   appSettings.compactMode = appSettings.density === "compact";
@@ -292,6 +298,7 @@ const EXPERIMENTAL_FIELDS = {
   expSetupWizardLink: "exp_setup_wizard_link",
   expDebuggerLink: "exp_debugger_link",
   enableArchitectureView: "enable_architecture_view",
+  enableMvShareRunbook: "enable_mv_share_runbook",
 } as const satisfies Partial<Record<keyof AppSettings, string>>;
 
 function collectChangedSettings(

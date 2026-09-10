@@ -39,6 +39,7 @@ describe("settings hydration", () => {
         exp_setup_wizard_link: true,
         exp_debugger_link: true,
         enable_architecture_view: true,
+        enable_mv_share_runbook: false,
       },
       tab_visibility: {
         dbu: false,
@@ -66,6 +67,7 @@ describe("settings hydration", () => {
       expSetupWizardLink: true,
       expDebuggerLink: true,
       enableArchitectureView: true,
+      enableMvShareRunbook: false,
     });
     expect(hydrated.tabVisibility).toMatchObject({
       dbu: false,

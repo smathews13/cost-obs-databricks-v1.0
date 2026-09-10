@@ -19,6 +19,7 @@ interface ExportDialogProps {
   onClose: () => void;
   onExport: (sections: ExportSections, format: ExportFormat) => void;
   enableArchitectureView?: boolean;
+  enableMvShareRunbook?: boolean;
   isAdmin?: boolean;
   onExportArchitecture?: () => Promise<void>;
   tabVisibility: TabVisibility;
@@ -69,6 +70,7 @@ export function ExportDialog({
   onClose,
   onExport,
   enableArchitectureView = false,
+  enableMvShareRunbook = true,
   isAdmin = false,
   onExportArchitecture,
   tabVisibility,
@@ -236,9 +238,9 @@ export function ExportDialog({
             </div>
           </div>
 
-          {(enableArchitectureView || isAdmin) && (
+          {(enableArchitectureView || (isAdmin && enableMvShareRunbook)) && (
             <div className="px-6 pt-5" style={{ background: C.oatPage }}>
-              <div className={`grid grid-cols-1 gap-3 ${enableArchitectureView && isAdmin ? "lg:grid-cols-2" : ""}`}>
+              <div className={`grid grid-cols-1 gap-3 ${enableArchitectureView && isAdmin && enableMvShareRunbook ? "lg:grid-cols-2" : ""}`}>
               {enableArchitectureView && (
                 <div
                   className="flex flex-col justify-between gap-4 px-4 py-3.5"
@@ -281,7 +283,7 @@ export function ExportDialog({
                 </button>
                 </div>
               )}
-              {isAdmin && (
+              {isAdmin && enableMvShareRunbook && (
                 <div
                   className="flex flex-col justify-between gap-4 px-4 py-3.5"
                   style={{

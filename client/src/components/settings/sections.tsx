@@ -288,15 +288,7 @@ export function ExperimentalSection({ localSettings, updateSetting }: CommonProp
         <Row
           label={<span className="inline-flex items-center gap-2">Materialized view share runbook <Badge>Experimental</Badge></span>}
           helper="Download a standalone Databricks Run All notebook that builds the same nine cost-obs aggregates in a publisher workspace and adds them to a Delta Share."
-          control={(
-            <a
-              href="/api/settings/materialized-view-runbook"
-              download="cost_obs_mv_share_publisher.py"
-              className="settings-runbook-download"
-            >
-              Download notebook
-            </a>
-          )}
+          control={<Toggle label="Materialized view share runbook" checked={localSettings.enableMvShareRunbook} onChange={(v) => updateSetting("enableMvShareRunbook", v)} />}
         />
       </Group>
     </div>

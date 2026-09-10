@@ -2360,7 +2360,10 @@ async def remove_mv_source(request: Request, label: str = None) -> dict:
 @router.post("/catalog")
 async def save_catalog_settings(request: Request, body: dict):
     """Save catalog/schema override from the Setup Wizard."""
-    await _require_admin_async(request)
+    # Initial setup reaches this route before the durable permissions table can
+    # exist. The verified provisional setup owner is the only allowed fallback.
+    from server.auth import require_setup_admin
+    await require_setup_admin(request)
     import asyncio as _asyncio
 
     from fastapi import HTTPException

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -20,6 +21,9 @@ _PERMISSION_CACHE_TTL_SECONDS = 60.0
 _PERMISSION_LKG_MAX_AGE_SECONDS = 300.0
 _PERMISSION_READ_TIMEOUT_SECONDS = 8.0
 _IDENTITY_VERIFY_TIMEOUT_SECONDS = 8.0
+_PROVISIONAL_SETUP_OWNER_FILE = os.path.join(
+    os.path.dirname(__file__), "..", ".settings", "provisional_setup_owner.json"
+)
 
 
 class PermissionState(str, Enum):
@@ -178,6 +182,46 @@ def reset_permission_cache() -> None:
         )
 
 
+def _read_provisional_setup_owner() -> str | None:
+    """Read the verified owner claim used before app storage exists."""
+    try:
+        with open(_PROVISIONAL_SETUP_OWNER_FILE) as handle:
+            email = str(json.load(handle).get("email") or "").strip().lower()
+            return email or None
+    except (FileNotFoundError, json.JSONDecodeError, OSError, AttributeError):
+        return None
+
+
+def _claim_provisional_setup_owner(email: str) -> bool:
+    """Atomically claim setup ownership while catalog/schema are unconfigured."""
+    normalized = email.strip().lower()
+    os.makedirs(os.path.dirname(_PROVISIONAL_SETUP_OWNER_FILE), exist_ok=True)
+    payload = json.dumps({"email": normalized}).encode()
+    try:
+        descriptor = os.open(
+            _PROVISIONAL_SETUP_OWNER_FILE,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+    except FileExistsError:
+        return _read_provisional_setup_owner() == normalized
+    try:
+        os.write(descriptor, payload)
+    finally:
+        os.close(descriptor)
+    return True
+
+
+def _clear_provisional_setup_owner(email: str) -> None:
+    """Remove the temporary claim after the same user becomes durable owner."""
+    if _read_provisional_setup_owner() != email.strip().lower():
+        return
+    try:
+        os.remove(_PROVISIONAL_SETUP_OWNER_FILE)
+    except FileNotFoundError:
+        pass
+
+
 def _set_permission_cache(snapshot: PermissionSnapshot) -> PermissionSnapshot:
     global _permission_cache
     with _permission_cache_lock:
@@ -272,6 +316,41 @@ async def require_admin(request: Request) -> str:
             status_code=503,
             detail="Administrator authorization timed out",
         ) from exc
+
+
+async def require_setup_admin(request: Request) -> str:
+    """Authorize setup, including the verified owner before storage is created."""
+    try:
+        return await require_admin(request)
+    except HTTPException as exc:
+        if exc.status_code == 403 and exc.detail != (
+            "An administrator must be bootstrapped before this action"
+        ):
+            raise
+        if exc.status_code not in (403, 503):
+            raise
+
+    email = await resolve_verified_apps_identity(request)
+    if _read_provisional_setup_owner() != email:
+        raise HTTPException(status_code=403, detail="The verified setup owner must complete initial setup")
+
+    try:
+        won, _durable = await asyncio.wait_for(
+            asyncio.to_thread(bootstrap_admin_atomic_sync, email),
+            timeout=_PERMISSION_READ_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        # The catalog or schema may be selected but not created yet. The atomic
+        # provisional claim remains authoritative until a later setup step can
+        # create and populate the durable permissions table.
+        return email
+    if not won:
+        raise HTTPException(
+            status_code=409,
+            detail="An administrator has already been configured",
+        )
+    _clear_provisional_setup_owner(email)
+    return email
 
 
 async def get_user_role(request: Request) -> str:
@@ -377,6 +456,17 @@ async def bootstrap_admin_atomic(request: Request) -> tuple[str, bool]:
     """Verify identity and atomically bootstrap exactly one durable administrator."""
 
     email = await resolve_verified_apps_identity(request)
+    from server.db import get_catalog_schema
+
+    catalog, schema = get_catalog_schema()
+    if not catalog or not schema:
+        first_claim = _read_provisional_setup_owner() is None
+        if not _claim_provisional_setup_owner(email):
+            raise HTTPException(
+                status_code=409,
+                detail="Initial setup has already been claimed by another user",
+            )
+        return email, first_claim
     try:
         won, snapshot = await asyncio.wait_for(
             asyncio.to_thread(bootstrap_admin_atomic_sync, email),
@@ -400,6 +490,7 @@ async def bootstrap_admin_atomic(request: Request) -> tuple[str, bool]:
             status_code=409,
             detail="An administrator has already been configured",
         )
+    _clear_provisional_setup_owner(email)
     return email, snapshot.admins[0] == email
 
 

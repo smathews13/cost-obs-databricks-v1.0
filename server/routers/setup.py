@@ -31,10 +31,10 @@ logger = logging.getLogger(__name__)
 
 
 async def _require_setup_admin(request: Request) -> str:
-    """Reuse the configured app-role policy for setup mutations."""
-    from server.auth import require_admin
+    """Use the setup-aware policy while initial storage is being created."""
+    from server.auth import require_setup_admin
 
-    return await require_admin(request)
+    return await require_setup_admin(request)
 
 
 SETTINGS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")

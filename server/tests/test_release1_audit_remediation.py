@@ -87,6 +87,76 @@ def test_local_identity_fallback_requires_explicit_mode(monkeypatch):
     assert auth.request_identity(_Request()) == "dev@example.com"
 
 
+def test_first_run_claims_verified_owner_before_storage_exists(tmp_path):
+    owner_file = tmp_path / "provisional_setup_owner.json"
+    request = _Request()
+    with (
+        patch.object(auth, "_PROVISIONAL_SETUP_OWNER_FILE", str(owner_file)),
+        patch.object(
+            auth,
+            "resolve_verified_apps_identity",
+            new=AsyncMock(return_value="installer@example.com"),
+        ),
+        patch("server.db.get_catalog_schema", return_value=("", "")),
+    ):
+        email, first_claim = asyncio.run(auth.bootstrap_admin_atomic(request))
+
+    assert email == "installer@example.com"
+    assert first_claim is True
+    assert owner_file.read_text() == '{"email": "installer@example.com"}'
+
+
+def test_first_run_rejects_a_different_verified_owner(tmp_path):
+    owner_file = tmp_path / "provisional_setup_owner.json"
+    request = _Request()
+    with (
+        patch.object(auth, "_PROVISIONAL_SETUP_OWNER_FILE", str(owner_file)),
+        patch.object(
+            auth,
+            "resolve_verified_apps_identity",
+            new=AsyncMock(side_effect=["installer@example.com", "other@example.com"]),
+        ),
+        patch("server.db.get_catalog_schema", return_value=("", "")),
+    ):
+        asyncio.run(auth.bootstrap_admin_atomic(request))
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(auth.bootstrap_admin_atomic(request))
+
+    assert exc.value.status_code == 409
+
+
+def test_provisional_owner_can_save_initial_storage(tmp_path):
+    owner_file = tmp_path / "provisional_setup_owner.json"
+    owner_file.write_text('{"email": "installer@example.com"}')
+    request = _Request()
+    with (
+        patch.object(auth, "_PROVISIONAL_SETUP_OWNER_FILE", str(owner_file)),
+        patch.object(
+            auth,
+            "require_admin",
+            new=AsyncMock(
+                side_effect=HTTPException(
+                    status_code=503,
+                    detail="Administrator authorization is temporarily unavailable",
+                )
+            ),
+        ),
+        patch.object(
+            auth,
+            "resolve_verified_apps_identity",
+            new=AsyncMock(return_value="installer@example.com"),
+        ),
+        patch.object(
+            auth,
+            "bootstrap_admin_atomic_sync",
+            side_effect=RuntimeError("schema does not exist yet"),
+        ),
+    ):
+        email = asyncio.run(auth.require_setup_admin(request))
+
+    assert email == "installer@example.com"
+
+
 def test_concurrent_bootstrap_has_exactly_one_winner():
     rows: list[dict] = []
     lock = threading.Lock()

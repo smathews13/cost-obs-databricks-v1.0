@@ -107,6 +107,28 @@ async def test_existing_core_tables_recover_setup_after_git_redeploy():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("task_status", ["cancelled", "interrupted", "error"])
+async def test_incomplete_build_does_not_recover_setup_from_core_tables(task_status):
+    tables = {name: True for name in setup_mod._CORE_REQUIRED_TABLES}
+    setup_mod._create_task_state["status"] = task_status
+
+    with (
+        patch.object(setup_mod, "_reconcile_task_state_from_disk"),
+        patch.object(setup_mod, "get_catalog_schema", return_value=("cost_catalog", "cost_obs")),
+        patch.object(setup_mod.os.path, "exists", return_value=False),
+        patch("server.db.read_dbfs_setup_complete", return_value=False),
+        patch.object(setup_mod, "check_materialized_views_exist", return_value=tables),
+        patch.object(setup_mod, "_restore_setup_completion_markers") as restore,
+    ):
+        result = await setup_mod.get_setup_status()
+
+    assert result["status"] == "setup_required"
+    assert result["task"]["status"] == task_status
+    assert setup_mod._setup_confirmed_ready is False
+    restore.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_cancel_table_creation_requests_sql_cancel_and_persists_state(tmp_path):
     setup_mod._create_task_state.update(
         {

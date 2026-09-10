@@ -662,7 +662,15 @@ async def get_setup_status() -> dict[str, Any]:
         # Git redeploys wipe the local marker. Existing core tables in this app's
         # configured catalog/schema are durable evidence that setup already ran,
         # so recover instead of forcing the wizard over a healthy deployment.
-        if core_exist:
+        # Do not treat a stopped or failed in-progress build as completion: the
+        # three core tables can exist after Stop and reset, and writing the
+        # marker would hide the wizard before the user finished.
+        incomplete_build = _create_task_state.get("status") in (
+            "cancelled",
+            "interrupted",
+            "error",
+        )
+        if core_exist and not incomplete_build:
             await loop.run_in_executor(None, _restore_setup_completion_markers)
             _setup_confirmed_ready = True
             return {

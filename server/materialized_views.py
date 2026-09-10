@@ -1477,6 +1477,7 @@ THEN DELETE
 
 # Step 5: Helper functions for incremental refresh
 
+
 def _ensure_refresh_state_table(catalog: str, schema: str) -> None:
     """Create app_mv_refresh_state tracking table if it doesn't exist."""
     try:
@@ -1525,9 +1526,7 @@ def _load_source_watermarks() -> dict[str, date | None]:
     for source_kind, query in _SOURCE_WATERMARK_SQL.items():
         try:
             rows = execute_query(query, no_cache=True, timeout=30)
-            watermarks[source_kind] = _watermark_date(
-                rows[0].get("watermark") if rows else None
-            )
+            watermarks[source_kind] = _watermark_date(rows[0].get("watermark") if rows else None)
         except Exception as exc:
             logger.warning(
                 "Could not read %s source watermark (non-fatal): %s",
@@ -1558,10 +1557,7 @@ def _refresh_gap_exceeds_window(
     if source_watermark <= prior_watermark:
         # The source has not advanced, so there are no new rows to recover.
         return False
-    return (
-        elapsed_days > window_days
-        or (source_watermark - prior_watermark).days > window_days
-    )
+    return elapsed_days > window_days or (source_watermark - prior_watermark).days > window_days
 
 
 def _resolved_refresh_watermark(
@@ -1656,9 +1652,7 @@ def _update_refresh_state(
             WHEN NOT MATCHED BY TARGET THEN INSERT *""",
             {
                 "table_name": table_name,
-                "source_watermark": (
-                    source_watermark.isoformat() if source_watermark else None
-                ),
+                "source_watermark": (source_watermark.isoformat() if source_watermark else None),
                 "reprocess_days": reprocess_days,
                 "refresh_count": refresh_count,
             },
@@ -1668,7 +1662,15 @@ def _update_refresh_state(
         logger.warning("Could not update refresh state for %s (non-fatal): %s", table_name, e)
 
 
-def create_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None, force_full_rebuild: bool = False) -> dict:
+def create_materialized_views(
+    catalog: str | None = None,
+    schema: str | None = None,
+    lookback_days: int = 180,
+    on_table_event: "Callable[[str, str, str | None], None] | None" = None,
+    force_full_rebuild: bool = False,
+    should_cancel: "Callable[[], bool] | None" = None,
+    operation_id: str | None = None,
+) -> dict:
     """Refresh base tables and dependent unified views as one ordered operation."""
     with unified_views_rebuild_lock():
         return _create_materialized_views_locked(
@@ -1677,10 +1679,20 @@ def create_materialized_views(catalog: str | None = None, schema: str | None = N
             lookback_days=lookback_days,
             on_table_event=on_table_event,
             force_full_rebuild=force_full_rebuild,
+            should_cancel=should_cancel,
+            operation_id=operation_id,
         )
 
 
-def _create_materialized_views_locked(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None, force_full_rebuild: bool = False) -> dict:
+def _create_materialized_views_locked(
+    catalog: str | None = None,
+    schema: str | None = None,
+    lookback_days: int = 180,
+    on_table_event: "Callable[[str, str, str | None], None] | None" = None,
+    force_full_rebuild: bool = False,
+    should_cancel: "Callable[[], bool] | None" = None,
+    operation_id: str | None = None,
+) -> dict:
     """Create all materialized view tables.
 
     Args:
@@ -1698,6 +1710,7 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
 
     # Hard safety gate — never touch forbidden or unconfigured locations
     from server.db import StorageConfigurationError, validate_app_storage_target
+
     try:
         validate_app_storage_target(catalog, schema)
     except StorageConfigurationError as e:
@@ -1705,6 +1718,9 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
         return {"error": f"error: {e}"}
 
     results = {}
+
+    if should_cancel and should_cancel():
+        return {"__cancelled__": True}
 
     # ── Step 0: ensure the catalog exists ────────────────────────────────────
     # `CREATE CATALOG IF NOT EXISTS` is a no-op when the catalog already exists,
@@ -1715,7 +1731,10 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
     # permission error bubble up from the CREATE SCHEMA step.
     if catalog != "main":
         try:
-            execute_query(f"CREATE CATALOG IF NOT EXISTS `{catalog}` COMMENT 'Cost Observability data'", no_cache=True)
+            execute_query(
+                f"CREATE CATALOG IF NOT EXISTS `{catalog}` COMMENT 'Cost Observability data'",
+                no_cache=True,
+            )
             logger.info(f"Catalog `{catalog}` is ready")
             results["catalog"] = "ok"
         except Exception as _cat_e:
@@ -1724,6 +1743,7 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
             _cat_exists = False
             try:
                 from server.db import get_user_workspace_client, get_workspace_client
+
                 for _wc in [get_user_workspace_client(), get_workspace_client()]:
                     try:
                         next(iter(_wc.schemas.list(catalog_name=catalog)), None)
@@ -1734,10 +1754,14 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
             except Exception:
                 pass
             if _cat_exists:
-                logger.info(f"Catalog `{catalog}` already exists (CREATE CATALOG not permitted but catalog is accessible)")
+                logger.info(
+                    f"Catalog `{catalog}` already exists (CREATE CATALOG not permitted but catalog is accessible)"
+                )
                 results["catalog"] = "exists"
             else:
-                logger.error(f"Catalog `{catalog}` does not exist and could not be created: {_cat_err}")
+                logger.error(
+                    f"Catalog `{catalog}` does not exist and could not be created: {_cat_err}"
+                )
                 results["catalog"] = (
                     f"error: Catalog `{catalog}` does not exist. "
                     f"Create it in the Databricks catalog explorer (Data > Create catalog), "
@@ -1755,19 +1779,26 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
     # uses and is reliably authorised by the SQL-scoped token.
     try:
         from server.db import get_user_workspace_client, get_workspace_client
+
         _schema_exists = False
         for label, _wc in [("user", get_user_workspace_client()), ("sp", get_workspace_client())]:
             try:
                 # Consume the iterator — empty list means schema exists with no tables yet
                 list(_wc.tables.list(catalog_name=catalog, schema_name=schema))
                 _schema_exists = True
-                logger.info(f"Schema {catalog}.{schema} exists (confirmed via tables.list, {label})")
+                logger.info(
+                    f"Schema {catalog}.{schema} exists (confirmed via tables.list, {label})"
+                )
                 break
             except Exception as _e:
                 _emsg = str(_e)
-                if any(x in _emsg for x in ("SCHEMA_DOES_NOT_EXIST", "does not exist", "not found")):
+                if any(
+                    x in _emsg for x in ("SCHEMA_DOES_NOT_EXIST", "does not exist", "not found")
+                ):
                     # Definitive: schema is absent — no need to try other clients
-                    logger.info(f"Schema {catalog}.{schema} confirmed absent via tables.list ({label}): {_emsg}")
+                    logger.info(
+                        f"Schema {catalog}.{schema} confirmed absent via tables.list ({label}): {_emsg}"
+                    )
                     break
                 logger.debug(f"tables.list schema check failed ({label}): {_emsg}")
         if _schema_exists:
@@ -1780,17 +1811,34 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
     except Exception as e:
         err_str = str(e)
         err_lower = err_str.lower()
-        if any(kw in err_lower for kw in ("insufficient_privileges", "does not have", "permission", "unauthorized", "error during request")):
+        if any(
+            kw in err_lower
+            for kw in (
+                "insufficient_privileges",
+                "does not have",
+                "permission",
+                "unauthorized",
+                "error during request",
+            )
+        ):
             from server.db import _user_token, get_workspace_client
+
             # Identify who actually ran the query so the error message is accurate
             running_as_user = bool(_user_token.get())
             try:
                 if running_as_user:
                     from server.db import get_user_workspace_client
-                    identity = get_user_workspace_client().current_user.me().user_name or "your user account"
+
+                    identity = (
+                        get_user_workspace_client().current_user.me().user_name
+                        or "your user account"
+                    )
                     grant_note = "As a metastore admin, run:"
                 else:
-                    identity = get_workspace_client().current_user.me().user_name or "<app-service-principal>"
+                    identity = (
+                        get_workspace_client().current_user.me().user_name
+                        or "<app-service-principal>"
+                    )
                     grant_note = "A catalog owner or metastore admin must run:"
             except Exception:
                 identity = "your user account" if running_as_user else "<app-service-principal>"
@@ -1801,7 +1849,9 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
                 f"GRANT USE CATALOG ON CATALOG {catalog} TO `{identity}`; "
                 f"GRANT CREATE SCHEMA ON CATALOG {catalog} TO `{identity}`"
             )
-            logger.error(f"Failed to create schema (permission error, running_as_user={running_as_user}): {err_str}")
+            logger.error(
+                f"Failed to create schema (permission error, running_as_user={running_as_user}): {err_str}"
+            )
             results["schema"] = f"error: {friendly}"
         else:
             logger.error(f"Failed to create schema: {e}")
@@ -1824,9 +1874,14 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
 
     def _create_table(table_name: str, create_sql: str) -> tuple[str, str, float]:
         from datetime import timedelta as _td
+
         t0 = _time.monotonic()
+        if should_cancel and should_cancel():
+            if on_table_event:
+                on_table_event(table_name, "cancelled", None)
+            return table_name, "cancelled", 0.0
         if on_table_event:
-            on_table_event(table_name, "running")
+            on_table_event(table_name, "running", None)
         try:
             logger.info(f"Refreshing table {catalog}.{schema}.{table_name}...")
             cfg = _TABLE_REFRESH_CONFIG.get(table_name, {})
@@ -1888,15 +1943,25 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
 
                 if merge_sql:
                     try:
-                        execute_query(merge_sql.format(
-                            catalog=catalog, schema=schema,
-                            reprocess_start=str(reprocess_start),
-                            billing_lookback_days=lookback_days,
-                        ), no_cache=True, timeout=_MV_DDL_TIMEOUT_SECONDS)
+                        execute_query(
+                            merge_sql.format(
+                                catalog=catalog,
+                                schema=schema,
+                                reprocess_start=str(reprocess_start),
+                                billing_lookback_days=lookback_days,
+                            ),
+                            no_cache=True,
+                            timeout=_MV_DDL_TIMEOUT_SECONDS,
+                            operation_id=operation_id,
+                        )
                         # Self-heal duplicate rows the incremental MERGE path can leave
                         # (Delta has no PK enforcement). Full rebuilds are dup-free (GROUP BY).
-                        _dedup_delta_table(catalog, schema, table_name,
-                                           _TABLE_REFRESH_CONFIG.get(table_name, {}).get("pk") or [])
+                        _dedup_delta_table(
+                            catalog,
+                            schema,
+                            table_name,
+                            _TABLE_REFRESH_CONFIG.get(table_name, {}).get("pk") or [],
+                        )
                         new_count = state["refresh_count"] + 1
                         _update_refresh_state(
                             catalog,
@@ -1915,21 +1980,35 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
                         # Periodic OPTIMIZE
                         if new_count % _OPTIMIZE_EVERY_N_REFRESHES == 0:
                             try:
-                                logger.info(f"Running OPTIMIZE on {table_name} (refresh #{new_count})")
-                                execute_query(f"OPTIMIZE `{catalog}`.`{schema}`.`{table_name}`", no_cache=True)
+                                logger.info(
+                                    f"Running OPTIMIZE on {table_name} (refresh #{new_count})"
+                                )
+                                execute_query(
+                                    f"OPTIMIZE `{catalog}`.`{schema}`.`{table_name}`", no_cache=True
+                                )
                             except Exception as opt_e:
-                                logger.warning("OPTIMIZE %s failed (non-fatal): %s", table_name, opt_e)
+                                logger.warning(
+                                    "OPTIMIZE %s failed (non-fatal): %s", table_name, opt_e
+                                )
 
                         elapsed = _time.monotonic() - t0
-                        logger.info(f"✓ {table_name} incremental refresh done in {elapsed:.1f}s (window: {reprocess_start})")
+                        logger.info(
+                            f"✓ {table_name} incremental refresh done in {elapsed:.1f}s (window: {reprocess_start})"
+                        )
                         if on_table_event:
-                            on_table_event(table_name, "done")
+                            on_table_event(table_name, "done", None)
                         return table_name, "refreshed", elapsed
                     except Exception as merge_e:
-                        logger.warning(f"Incremental MERGE failed for {table_name}, falling back to full rebuild: {merge_e}")
+                        logger.warning(
+                            f"Incremental MERGE failed for {table_name}, falling back to full rebuild: {merge_e}"
+                        )
                         # fall through to full rebuild below
 
             # Full rebuild path (bootstrap or fallback)
+            if should_cancel and should_cancel():
+                if on_table_event:
+                    on_table_event(table_name, "cancelled", None)
+                return table_name, "cancelled", _time.monotonic() - t0
             execute_query(
                 create_sql.format(
                     catalog=catalog,
@@ -1938,6 +2017,7 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
                 ),
                 no_cache=True,
                 timeout=_MV_DDL_TIMEOUT_SECONDS,
+                operation_id=operation_id,
             )
             _update_refresh_state(
                 catalog,
@@ -1955,19 +2035,21 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
             elapsed = _time.monotonic() - t0
             logger.info(f"✓ {table_name} full rebuild done in {elapsed:.1f}s")
             if on_table_event:
-                on_table_event(table_name, "done")
+                on_table_event(table_name, "done", None)
             return table_name, "created", elapsed
         except Exception as e:
             elapsed = _time.monotonic() - t0
+            if should_cancel and should_cancel():
+                if on_table_event:
+                    on_table_event(table_name, "cancelled", None)
+                return table_name, "cancelled", elapsed
             logger.error(f"✗ Failed to refresh {table_name}: {e}")
             if on_table_event:
-                on_table_event(table_name, "error")
+                on_table_event(table_name, "error", str(e))
             return table_name, f"error: {e}", elapsed
 
     mv_timings: dict[str, float] = {}
-    with ThreadPoolExecutor(
-        max_workers=min(_MV_REFRESH_MAX_WORKERS, len(tables))
-    ) as executor:
+    with ThreadPoolExecutor(max_workers=min(_MV_REFRESH_MAX_WORKERS, len(tables))) as executor:
         futures = {executor.submit(_create_table, name, sql): name for name, sql in tables}
         for future in as_completed(futures):
             table_name, status, elapsed = future.result()
@@ -1975,6 +2057,9 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
             mv_timings[table_name] = round(elapsed, 2)
 
     results["__mv_timings__"] = mv_timings  # type: ignore[assignment]
+    if should_cancel and should_cancel():
+        results["__cancelled__"] = True
+        return results
 
     # A full CREATE OR REPLACE can swap the base Delta table object underneath an
     # existing view. Rebuild the shared-source views only after every base-table
@@ -1991,9 +2076,21 @@ def _create_materialized_views_locked(catalog: str | None = None, schema: str | 
     return results
 
 
-def refresh_materialized_views(catalog: str | None = None, schema: str | None = None, lookback_days: int = 180, on_table_event: "Callable[[str, str], None] | None" = None, force_full_rebuild: bool = False) -> dict:
+def refresh_materialized_views(
+    catalog: str | None = None,
+    schema: str | None = None,
+    lookback_days: int = 180,
+    on_table_event: "Callable[[str, str, str | None], None] | None" = None,
+    force_full_rebuild: bool = False,
+) -> dict:
     """Refresh all materialized view tables (same as create - full refresh)."""
-    return create_materialized_views(catalog, schema, lookback_days=lookback_days, on_table_event=on_table_event, force_full_rebuild=force_full_rebuild)
+    return create_materialized_views(
+        catalog,
+        schema,
+        lookback_days=lookback_days,
+        on_table_event=on_table_event,
+        force_full_rebuild=force_full_rebuild,
+    )
 
 
 _APP_CONFIG_TABLES = [
@@ -2078,6 +2175,7 @@ def _table_columns(full_table: str) -> list[str] | None:
     from raises here and is skipped rather than breaking the union.
     """
     from server.db import execute_query
+
     try:
         rows = execute_query(f"DESCRIBE TABLE {full_table}", no_cache=True)
     except Exception as e:
@@ -2227,9 +2325,7 @@ def _rebuild_unified_views_locked(
         else get_mv_sources()
     )
     if not sources:
-        _drop_unified_views_locked(
-            catalog, schema, persist_registry=persist_registry
-        )
+        _drop_unified_views_locked(catalog, schema, persist_registry=persist_registry)
         return {"ok": True, "sources": 0, "views": {}}
 
     local_label = get_local_source_label().replace("'", "''")
@@ -2256,9 +2352,7 @@ def _rebuild_unified_views_locked(
         if not local_cols:
             summary[t] = {"built": False, "reason": "local table missing"}
             continue
-        selects = [
-            f"SELECT *, '{local_label}' AS source_label FROM {local_full}"
-        ]
+        selects = [f"SELECT *, '{local_label}' AS source_label FROM {local_full}"]
         included, skipped = [get_local_source_label()], []
         for src in sources:
             # A source may restrict which views it contributes (chosen via the
@@ -2284,25 +2378,23 @@ def _rebuild_unified_views_locked(
                     "'" + value.replace("'", "''") + "'" for value in workspace_ids
                 )
                 if "workspace_id" in cols and not workspace_ids:
-                    skipped.append({
-                        "label": src["label"],
-                        "reason": "workspace mapping missing",
-                    })
+                    skipped.append(
+                        {
+                            "label": src["label"],
+                            "reason": "workspace mapping missing",
+                        }
+                    )
                     continue
                 workspace_scope = (
-                    " WHERE CAST(workspace_id AS STRING) IN "
-                    f"({quoted_workspace_ids})"
+                    f" WHERE CAST(workspace_id AS STRING) IN ({quoted_workspace_ids})"
                     if "workspace_id" in cols and workspace_ids
                     else ""
                 )
-                selects.append(
-                    f"SELECT *, '{slabel}' AS source_label FROM {full}{workspace_scope}"
-                )
+                selects.append(f"SELECT *, '{slabel}' AS source_label FROM {full}{workspace_scope}")
                 included.append(src["label"])
         source_rows_sql = "\nUNION ALL\n".join(selects)
         dedupe_keys = [
-            column for column in _MV_DEDUPE_KEYS.get(t, ())
-            if column in local_cols
+            column for column in _MV_DEDUPE_KEYS.get(t, ()) if column in local_cols
         ] or local_cols
         partition_sql = ", ".join(f"`{column.replace('`', '``')}`" for column in dedupe_keys)
         deduped_sql = (
@@ -2322,9 +2414,7 @@ def _rebuild_unified_views_locked(
                 existed=source_rows_existed,
                 view_suffix=MV_SOURCE_ROWS_SUFFIX,
             )
-            deduped_action = _replace_unified_view(
-                catalog, schema, t, deduped_sql, existed=existed
-            )
+            deduped_action = _replace_unified_view(catalog, schema, t, deduped_sql, existed=existed)
             known_existing.add(t)
             summary[t] = {
                 "built": True,
@@ -2340,9 +2430,7 @@ def _rebuild_unified_views_locked(
             # ALTER failures leave the previous view intact. A DROP/CREATE
             # fallback can fail after DROP, so re-check before preserving it.
             still_exists = _unified_view_exists(catalog, schema, view_name)
-            source_rows_still_exists = _unified_view_exists(
-                catalog, schema, source_rows_name
-            )
+            source_rows_still_exists = _unified_view_exists(catalog, schema, source_rows_name)
             if still_exists is True and source_rows_still_exists is True:
                 known_existing.add(t)
             elif still_exists is False or source_rows_still_exists is False:
@@ -2353,8 +2441,7 @@ def _rebuild_unified_views_locked(
     # one table from truncating routing for every other still-live view.
     routed_tables = [t for t in _MV_TABLES if t in known_existing]
     build_ok = all(
-        isinstance(result, dict) and bool(result.get("built"))
-        for result in summary.values()
+        isinstance(result, dict) and bool(result.get("built")) for result in summary.values()
     ) and len(summary) == len(_MV_TABLES)
     if persist_registry and build_ok:
         save_unified_view_tables(routed_tables)
@@ -2451,6 +2538,7 @@ def check_materialized_views_exist(catalog: str | None = None, schema: str | Non
     # schema-not-found error from the UC API means the tables simply don't exist yet,
     # and SQL connections would hang for minutes against a warehouse the SP can't use.
     from server.db import get_user_workspace_client, get_workspace_client
+
     clients_to_try = []
     try:
         user_client = get_user_workspace_client()

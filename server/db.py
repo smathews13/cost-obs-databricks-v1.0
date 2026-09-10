@@ -86,7 +86,8 @@ def set_auth_mode_override(mode: str) -> None:
     if mode != "sp":
         logger.warning(
             "set_auth_mode_override('%s') ignored — OAuth is disabled. "
-            "Auth mode is permanently locked to 'sp'.", mode
+            "Auth mode is permanently locked to 'sp'.",
+            mode,
         )
     # Always keep _auth_mode as "sp" — no mutation needed
 
@@ -119,9 +120,7 @@ class _DaemonExecutor:
     def __init__(self, max_workers: int, *, thread_name_prefix: str):
         self._max_workers = max_workers
         self._prefix = thread_name_prefix
-        self._queue: queue.Queue[tuple[Future, Callable[[], Any]] | None] = (
-            queue.Queue()
-        )
+        self._queue: queue.Queue[tuple[Future, Callable[[], Any]] | None] = queue.Queue()
         self._threads: list[threading.Thread] = []
         self._lock = threading.Lock()
         self._shutdown = False
@@ -221,9 +220,7 @@ class BundleOverloadedError(RuntimeError):
     code = "BUNDLE_OVERLOADED"
 
 
-SQL_EXECUTOR_MAX_WORKERS = _bounded_env_int(
-    "COST_OBS_SQL_MAX_WORKERS", 12, minimum=2, maximum=32
-)
+SQL_EXECUTOR_MAX_WORKERS = _bounded_env_int("COST_OBS_SQL_MAX_WORKERS", 12, minimum=2, maximum=32)
 SQL_EXECUTOR_QUEUE_CAPACITY = _bounded_env_int(
     "COST_OBS_SQL_QUEUE_CAPACITY", 24, minimum=0, maximum=128
 )
@@ -244,14 +241,12 @@ _sql_executor = _DaemonExecutor(
     SQL_EXECUTOR_MAX_WORKERS,
     thread_name_prefix="bounded-sql",
 )
-_sql_admission = threading.BoundedSemaphore(
-    SQL_EXECUTOR_MAX_WORKERS + SQL_EXECUTOR_QUEUE_CAPACITY
-)
-_sql_cancel_executor = _DaemonExecutor(
-    2, thread_name_prefix="sql-cancel"
-)
+_sql_admission = threading.BoundedSemaphore(SQL_EXECUTOR_MAX_WORKERS + SQL_EXECUTOR_QUEUE_CAPACITY)
+_sql_cancel_executor = _DaemonExecutor(2, thread_name_prefix="sql-cancel")
 _sql_cancel_admission = threading.BoundedSemaphore(18)
 _sql_executor_local = threading.local()
+_sql_operation_controls_lock = threading.Lock()
+_sql_operation_controls: dict[str, dict[int, "_SQLTaskControl"]] = {}
 _sql_metrics_lock = threading.Lock()
 _sql_metrics: dict[str, int] = {
     "submitted": 0,
@@ -333,6 +328,15 @@ class _SQLTaskControl:
         future.add_done_callback(lambda _future: _sql_cancel_admission.release())
 
 
+def cancel_sql_operation(operation_id: str) -> int:
+    """Request cancellation for every active SQL statement in one operation."""
+    with _sql_operation_controls_lock:
+        controls = list(_sql_operation_controls.get(operation_id, {}).values())
+    for control in controls:
+        control.request_cancel()
+    return len(controls)
+
+
 _sql_task_control: ContextVar[_SQLTaskControl | None] = ContextVar(
     "_sql_task_control", default=None
 )
@@ -346,8 +350,7 @@ def get_sql_executor_metrics() -> dict[str, int]:
         {
             "max_workers": SQL_EXECUTOR_MAX_WORKERS,
             "queue_capacity": SQL_EXECUTOR_QUEUE_CAPACITY,
-            "admission_capacity": SQL_EXECUTOR_MAX_WORKERS
-            + SQL_EXECUTOR_QUEUE_CAPACITY,
+            "admission_capacity": SQL_EXECUTOR_MAX_WORKERS + SQL_EXECUTOR_QUEUE_CAPACITY,
         }
     )
     return metrics
@@ -357,6 +360,7 @@ def _submit_sql_future(
     fn: Callable[[], Any],
     *,
     label: str,
+    operation_id: str | None = None,
 ) -> tuple[Future, _SQLTaskControl]:
     """Admit one SQL unit without ever growing an unbounded executor queue."""
     if not _sql_admission.acquire(blocking=False):
@@ -365,6 +369,10 @@ def _submit_sql_future(
         raise SQLOverloadedError("SQL capacity is full; retry the request shortly.")
 
     control = _SQLTaskControl.create()
+    control_key = id(control)
+    if operation_id:
+        with _sql_operation_controls_lock:
+            _sql_operation_controls.setdefault(operation_id, {})[control_key] = control
     request_context = __import__("contextvars").copy_context()
     with _sql_metrics_lock:
         _sql_metrics["submitted"] += 1
@@ -397,12 +405,26 @@ def _submit_sql_future(
     try:
         future = _sql_executor.submit(run)
     except Exception:
+        if operation_id:
+            with _sql_operation_controls_lock:
+                operation_controls = _sql_operation_controls.get(operation_id)
+                if operation_controls is not None:
+                    operation_controls.pop(control_key, None)
+                    if not operation_controls:
+                        _sql_operation_controls.pop(operation_id, None)
         with _sql_metrics_lock:
             _sql_metrics["queued"] -= 1
         _sql_admission.release()
         raise
 
     def release_admission(done: Future) -> None:
+        if operation_id:
+            with _sql_operation_controls_lock:
+                operation_controls = _sql_operation_controls.get(operation_id)
+                if operation_controls is not None:
+                    operation_controls.pop(control_key, None)
+                    if not operation_controls:
+                        _sql_operation_controls.pop(operation_id, None)
         if done.cancelled():
             with control.lock:
                 started = control.started
@@ -421,11 +443,12 @@ def _run_sql_bounded(
     *,
     timeout: float | None,
     label: str,
+    operation_id: str | None = None,
 ) -> Any:
     """Run connector work through the single process-wide bounded executor."""
     if getattr(_sql_executor_local, "in_worker", False):
         return fn()
-    future, control = _submit_sql_future(fn, label=label)
+    future, control = _submit_sql_future(fn, label=label, operation_id=operation_id)
     try:
         return future.result(timeout=timeout)
     except FutureTimeoutError as exc:
@@ -451,9 +474,7 @@ BUNDLE_EXECUTOR_QUEUE_CAPACITY = _bounded_env_int(
 BUNDLE_LEASE_SECONDS = _bounded_env_int(
     "COST_OBS_BUNDLE_LEASE_SECONDS", 600, minimum=300, maximum=1800
 )
-_BUNDLE_LEASE_DIR = os.getenv(
-    "COST_OBS_BUNDLE_LEASE_DIR", "/tmp/cost-obs-bundle-leases"
-)
+_BUNDLE_LEASE_DIR = os.getenv("COST_OBS_BUNDLE_LEASE_DIR", "/tmp/cost-obs-bundle-leases")
 _bundle_executor = _DaemonExecutor(
     BUNDLE_EXECUTOR_MAX_WORKERS,
     thread_name_prefix="bounded-bundle",
@@ -507,10 +528,10 @@ class BundleLease:
                             state = json.load(state_file)
                     except (FileNotFoundError, json.JSONDecodeError, OSError):
                         return False
-                    if (
-                        state.get("owner") != self.owner
-                        or state.get("state") not in {"queued", "running"}
-                    ):
+                    if state.get("owner") != self.owner or state.get("state") not in {
+                        "queued",
+                        "running",
+                    }:
                         return False
                     deadline_at = float(state.get("deadline_at", self.deadline_at))
                     if now >= deadline_at:
@@ -748,6 +769,7 @@ def start_bundle_compute(
         succeeded = False
         terminal_error_code = "BUNDLE_PRODUCER_FAILED"
         try:
+
             def run_owned_producer() -> None:
                 owner_token = _bundle_lease_owner.set((cache_key, lease.owner))
                 write_token = _bundle_remote_write_result.set(None)
@@ -762,9 +784,7 @@ def start_bundle_compute(
             try:
                 request_context.run(run_owned_producer)
             except Exception as producer_error:
-                terminal_error_code = str(
-                    getattr(producer_error, "code", "BUNDLE_PRODUCER_FAILED")
-                )
+                terminal_error_code = str(getattr(producer_error, "code", "BUNDLE_PRODUCER_FAILED"))
                 raise
             if not bundle_lease_owner_is_current(cache_key, lease.owner):
                 terminal_error_code = "BUNDLE_PRODUCER_OWNER_LOST"
@@ -825,9 +845,8 @@ def get_bundle_compute_state(cache_key: str) -> dict[str, Any] | None:
                     with open(state_path) as state_file:
                         state = json.load(state_file)
                     now = time.time()
-                    if (
-                        state.get("state") in {"queued", "running"}
-                        and now >= float(state.get("deadline_at", 0))
+                    if state.get("state") in {"queued", "running"} and now >= float(
+                        state.get("deadline_at", 0)
                     ):
                         _mark_bundle_state_failed(
                             state,
@@ -843,9 +862,8 @@ def get_bundle_compute_state(cache_key: str) -> dict[str, Any] | None:
                         with _bundle_inflight_lock:
                             if _bundle_inflight.get(cache_key) == state.get("owner"):
                                 _bundle_inflight.pop(cache_key, None)
-                    if (
-                        state.get("state") == "failed"
-                        and now >= float(state.get("terminal_expires_at", 0))
+                    if state.get("state") == "failed" and now >= float(
+                        state.get("terminal_expires_at", 0)
                     ):
                         with _bundle_inflight_lock:
                             if _bundle_inflight.get(cache_key) == state.get("owner"):
@@ -881,9 +899,7 @@ def get_bundle_compute_state(cache_key: str) -> dict[str, Any] | None:
 def bundle_lease_owner_is_current(cache_key: str, owner: str) -> bool:
     state = get_bundle_compute_state(cache_key)
     return bool(
-        state
-        and state.get("owner") == owner
-        and state.get("state") in {"queued", "running"}
+        state and state.get("owner") == owner and state.get("state") in {"queued", "running"}
     )
 
 
@@ -959,6 +975,7 @@ def get_host_url() -> str:
         # Try SDK workspace client (works in Databricks Apps with OAuth)
         try:
             from databricks.sdk import WorkspaceClient
+
             w = WorkspaceClient()
             host = w.config.host or ""
         except Exception:
@@ -982,38 +999,44 @@ _CATALOG_OVERRIDE_FILE = os.path.join(
 _SP_ID = os.getenv("DATABRICKS_CLIENT_ID", "").replace("-", "_")
 _DBFS_OVERRIDE_PATH = (
     f"/databricks/cost-obs-app/{_SP_ID}/catalog_override.json"
-    if _SP_ID else
-    "/databricks/cost-obs-app/catalog_override.json"
+    if _SP_ID
+    else "/databricks/cost-obs-app/catalog_override.json"
 )
 
 # Locations that are forbidden as app storage targets. main.cost_obs is the old
 # hardcoded default that shipped in app.yaml — it must never be auto-created.
-_FORBIDDEN_STORAGE_LOCATIONS: frozenset[tuple[str, str]] = frozenset({
-    ("main", "cost_obs"),
-})
+_FORBIDDEN_STORAGE_LOCATIONS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("main", "cost_obs"),
+    }
+)
 
 # Catalogs that are platform-owned or too broadly shared to be selected
 # automatically. An administrator can still explicitly configure a dedicated
 # schema in a non-system catalog; discovery is intentionally more conservative.
-_RESERVED_DISCOVERY_CATALOGS: frozenset[str] = frozenset({
-    "__databricks_internal",
-    "hive_metastore",
-    "main",
-    "samples",
-    "system",
-})
+_RESERVED_DISCOVERY_CATALOGS: frozenset[str] = frozenset(
+    {
+        "__databricks_internal",
+        "hive_metastore",
+        "main",
+        "samples",
+        "system",
+    }
+)
 
 # A schema is a cost-observability candidate only when it contains the core MV
 # plus at least one app-owned configuration marker. Requiring both classes keeps
 # an unrelated table with a common name from becoming a write target.
 _DISCOVERY_CORE_MARKERS: frozenset[str] = frozenset({"daily_usage_summary"})
-_DISCOVERY_APP_MARKERS: frozenset[str] = frozenset({
-    "app_cloud_connections",
-    "app_mv_refresh_state",
-    "app_refresh_log",
-    "app_settings",
-    "app_user_permissions",
-})
+_DISCOVERY_APP_MARKERS: frozenset[str] = frozenset(
+    {
+        "app_cloud_connections",
+        "app_mv_refresh_state",
+        "app_refresh_log",
+        "app_settings",
+        "app_user_permissions",
+    }
+)
 
 _catalog_discovery_lock = threading.Lock()
 _catalog_discovery_cache: dict[str, Any] = {
@@ -1030,6 +1053,7 @@ _CATALOG_WRITE_SAFETY_TTL = 5 * 60
 
 class StorageConfigurationError(ValueError):
     """Catalog/schema config is invalid or resolves to a forbidden location."""
+
     pass
 
 
@@ -1064,7 +1088,8 @@ def validate_app_storage_target(catalog: str, schema: str) -> None:
             catalog_info = get_workspace_client().catalogs.get(catalog)
             catalog_type = _enum_value(getattr(catalog_info, "catalog_type", None))
             if (
-                catalog_type in {
+                catalog_type
+                in {
                     "DELTASHARING_CATALOG",
                     "FOREIGN_CATALOG",
                     "SYSTEM_CATALOG",
@@ -1101,9 +1126,11 @@ def _read_dbfs_catalog_override() -> tuple[str, str]:
     """
     try:
         import base64
+
         w = get_workspace_client()
         resp = w.api_client.do(
-            "GET", "/api/2.0/dbfs/read",
+            "GET",
+            "/api/2.0/dbfs/read",
             query={"path": _DBFS_OVERRIDE_PATH, "length": 4096},
         )
         raw = resp.get("data", "")
@@ -1179,7 +1206,9 @@ def _discover_app_storage_target() -> tuple[str, str, str | None]:
         # DELTASHARING_CATALOG and FOREIGN_CATALOG must never become write targets.
         if catalog_type not in {"MANAGED_CATALOG"}:
             continue
-        if getattr(catalog_info, "share_name", None) or getattr(catalog_info, "provider_name", None):
+        if getattr(catalog_info, "share_name", None) or getattr(
+            catalog_info, "provider_name", None
+        ):
             continue
 
         try:
@@ -1201,7 +1230,9 @@ def _discover_app_storage_target() -> tuple[str, str, str | None]:
             try:
                 tables = list(w.tables.list(catalog_name=catalog, schema_name=schema))
             except Exception as e:
-                logger.debug("Storage discovery could not list tables in %s.%s: %s", catalog, schema, e)
+                logger.debug(
+                    "Storage discovery could not list tables in %s.%s: %s", catalog, schema, e
+                )
                 continue
 
             by_name = {
@@ -1298,13 +1329,15 @@ def _write_dbfs_catalog_override(catalog: str, schema: str) -> None:
     """
     try:
         import base64
+
         existing = _read_dbfs_settings()
         existing["catalog"] = catalog
         existing["schema"] = schema
         w = get_workspace_client()
         content = base64.b64encode(json.dumps(existing).encode()).decode("ascii")
         w.api_client.do(
-            "POST", "/api/2.0/dbfs/put",
+            "POST",
+            "/api/2.0/dbfs/put",
             body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True},
         )
         logger.info("DBFS catalog override saved: %s.%s", catalog, schema)
@@ -1316,9 +1349,11 @@ def _read_dbfs_settings() -> dict:
     """Read the raw DBFS settings JSON. Returns {} on any error."""
     try:
         import base64
+
         w = get_workspace_client()
-        resp = w.api_client.do("GET", "/api/2.0/dbfs/read",
-                               query={"path": _DBFS_OVERRIDE_PATH, "length": 8192})
+        resp = w.api_client.do(
+            "GET", "/api/2.0/dbfs/read", query={"path": _DBFS_OVERRIDE_PATH, "length": 8192}
+        )
         raw = resp.get("data", "")
         if raw:
             return json.loads(base64.b64decode(raw).decode("utf-8"))
@@ -1335,12 +1370,16 @@ def write_dbfs_setup_complete() -> None:
     """
     try:
         import base64
+
         existing = _read_dbfs_settings()
         existing["setup_complete"] = True
         w = get_workspace_client()
         content = base64.b64encode(json.dumps(existing).encode()).decode("ascii")
-        w.api_client.do("POST", "/api/2.0/dbfs/put",
-                        body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True})
+        w.api_client.do(
+            "POST",
+            "/api/2.0/dbfs/put",
+            body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True},
+        )
         logger.info("DBFS setup_complete flag written")
     except Exception as e:
         logger.warning("Could not write DBFS setup_complete flag (non-fatal): %s", e)
@@ -1359,12 +1398,16 @@ def write_dbfs_build_state(state: dict) -> None:
     """
     try:
         import base64
+
         existing = _read_dbfs_settings()
         existing["build_state"] = state
         w = get_workspace_client()
         content = base64.b64encode(json.dumps(existing).encode()).decode("ascii")
-        w.api_client.do("POST", "/api/2.0/dbfs/put",
-                        body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True})
+        w.api_client.do(
+            "POST",
+            "/api/2.0/dbfs/put",
+            body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True},
+        )
         logger.debug("DBFS build_state written (status=%s)", state.get("status"))
     except Exception as e:
         logger.debug("Could not write DBFS build_state (non-fatal): %s", e)
@@ -1397,7 +1440,8 @@ def get_catalog_schema() -> tuple[str, str]:
                 "COST_OBS_CATALOG=%s and COST_OBS_SCHEMA=%s resolve to a forbidden default location. "
                 "Update the app environment variables to a dedicated catalog and schema. "
                 "Returning empty to prevent writes to a reserved location.",
-                catalog, schema,
+                catalog,
+                schema,
             )
             return "", ""
         return catalog, schema
@@ -1413,7 +1457,8 @@ def get_catalog_schema() -> tuple[str, str]:
                 if (cat.lower(), sch.lower()) in _FORBIDDEN_STORAGE_LOCATIONS:
                     logger.warning(
                         "catalog_override.json contains forbidden location %s.%s — ignoring.",
-                        cat, sch,
+                        cat,
+                        sch,
                     )
                 else:
                     return cat, sch
@@ -1468,7 +1513,9 @@ def get_mv_table_overrides() -> dict[str, str]:
     try:
         with open(_MV_OVERRIDES_FILE) as f:
             data = json.load(f)
-        return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str) and v.strip()}
+        return {
+            k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str) and v.strip()
+        }
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
 
@@ -1490,9 +1537,7 @@ def save_mv_table_overrides(overrides: dict[str, str]) -> None:
 # table with each source's same-named table, tagging every row with a
 # `source_label` column. This is additive — local data is always included.
 
-_MV_SOURCES_FILE = os.path.join(
-    os.path.dirname(__file__), "..", ".settings", "mv_sources.json"
-)
+_MV_SOURCES_FILE = os.path.join(os.path.dirname(__file__), "..", ".settings", "mv_sources.json")
 
 # Default all-source view is deduplicated. Explicit source filters route through
 # the companion raw source-row view so each source remains independently queryable.
@@ -1661,9 +1706,7 @@ def read_delta_unified_view_tables() -> list[str]:
         return []
 
 
-def write_delta_unified_view_tables(
-    tables: list[str], *, strict: bool = False
-) -> None:
+def write_delta_unified_view_tables(tables: list[str], *, strict: bool = False) -> None:
     """Persist the built-unified-view list to the durable Delta table, ATOMICALLY.
 
     Uses a single `INSERT OVERWRITE` (one statement) rather than a DELETE followed by
@@ -1686,9 +1729,7 @@ def write_delta_unified_view_tables(
         # but single-quote-escape defensively. INSERT OVERWRITE atomically replaces
         # all rows, so an interrupted write leaves the prior list intact rather than
         # a partial one.
-        values = ", ".join(
-            "('" + t.replace("'", "''") + "', current_timestamp())" for t in clean
-        )
+        values = ", ".join("('" + t.replace("'", "''") + "', current_timestamp())" for t in clean)
         execute_write(f"INSERT OVERWRITE {table} VALUES {values}", None)
     except Exception as e:
         logger.warning("Could not persist unified-view list to Delta (non-fatal): %s", e)
@@ -1699,9 +1740,12 @@ def write_delta_unified_view_tables(
 def _valid_mv_source(s: object) -> bool:
     return (
         isinstance(s, dict)
-        and isinstance(s.get("label"), str) and bool(s["label"].strip())
-        and isinstance(s.get("catalog"), str) and bool(s["catalog"].strip())
-        and isinstance(s.get("schema"), str) and bool(s["schema"].strip())
+        and isinstance(s.get("label"), str)
+        and bool(s["label"].strip())
+        and isinstance(s.get("catalog"), str)
+        and bool(s["catalog"].strip())
+        and isinstance(s.get("schema"), str)
+        and bool(s["schema"].strip())
     )
 
 
@@ -1738,16 +1782,18 @@ def save_mv_sources(sources: list[dict]) -> None:
     for s in sources:
         if not _valid_mv_source(s):
             continue
-        entry = {"label": s["label"].strip(), "catalog": s["catalog"].strip(), "schema": s["schema"].strip()}
+        entry = {
+            "label": s["label"].strip(),
+            "catalog": s["catalog"].strip(),
+            "schema": s["schema"].strip(),
+        }
         if isinstance(s.get("tables"), list):
             picked = [str(t).strip() for t in s["tables"] if str(t).strip()]
             if picked:
                 entry["tables"] = picked
         if isinstance(s.get("workspace_ids"), list):
             workspace_ids = [
-                str(value).strip()
-                for value in s["workspace_ids"]
-                if str(value).strip()
+                str(value).strip() for value in s["workspace_ids"] if str(value).strip()
             ]
             if workspace_ids:
                 entry["workspace_ids"] = workspace_ids
@@ -1818,14 +1864,17 @@ def read_delta_mv_sources() -> list[dict]:
             return []
         _ensure_mv_sources_table()
         rows = execute_query(
-            f"SELECT label, catalog, schema, tables, workspace_ids, cloud, added_at "
-            f"FROM {table}",
+            f"SELECT label, catalog, schema, tables, workspace_ids, cloud, added_at FROM {table}",
             None,
             no_cache=True,
         )
         out: list[dict] = []
-        for r in (rows or []):
-            entry = {"label": r.get("label"), "catalog": r.get("catalog"), "schema": r.get("schema")}
+        for r in rows or []:
+            entry = {
+                "label": r.get("label"),
+                "catalog": r.get("catalog"),
+                "schema": r.get("schema"),
+            }
             raw = r.get("tables")
             if raw:
                 try:
@@ -1839,9 +1888,7 @@ def read_delta_mv_sources() -> list[dict]:
                 try:
                     parsed_workspace_ids = json.loads(raw_workspace_ids)
                     if isinstance(parsed_workspace_ids, list) and parsed_workspace_ids:
-                        entry["workspace_ids"] = [
-                            str(x) for x in parsed_workspace_ids
-                        ]
+                        entry["workspace_ids"] = [str(x) for x in parsed_workspace_ids]
                 except (json.JSONDecodeError, TypeError):
                     pass
             if r.get("cloud"):
@@ -1884,19 +1931,21 @@ def write_delta_mv_sources(sources: list[dict]) -> None:
                 f":tables_{index}, :workspace_ids_{index}, :cloud_{index}, "
                 f":added_at_{index})"
             )
-            params.update({
-                f"label_{index}": source["label"],
-                f"catalog_{index}": source["catalog"],
-                f"schema_{index}": source["schema"],
-                f"tables_{index}": json.dumps(source["tables"])
-                if isinstance(source.get("tables"), list)
-                else None,
-                f"workspace_ids_{index}": json.dumps(source["workspace_ids"])
-                if isinstance(source.get("workspace_ids"), list)
-                else None,
-                f"cloud_{index}": source.get("cloud"),
-                f"added_at_{index}": source.get("added_at"),
-            })
+            params.update(
+                {
+                    f"label_{index}": source["label"],
+                    f"catalog_{index}": source["catalog"],
+                    f"schema_{index}": source["schema"],
+                    f"tables_{index}": json.dumps(source["tables"])
+                    if isinstance(source.get("tables"), list)
+                    else None,
+                    f"workspace_ids_{index}": json.dumps(source["workspace_ids"])
+                    if isinstance(source.get("workspace_ids"), list)
+                    else None,
+                    f"cloud_{index}": source.get("cloud"),
+                    f"added_at_{index}": source.get("added_at"),
+                }
+            )
         execute_write(
             f"INSERT OVERWRITE {table} "
             "SELECT source.label, source.catalog, source.schema, source.tables, "
@@ -1913,12 +1962,16 @@ def write_dbfs_mv_sources(sources: list[dict]) -> None:
     """Persist MV sources to DBFS so they survive git redeploys. Best-effort."""
     try:
         import base64
+
         existing = _read_dbfs_settings()
         existing["mv_sources"] = sources
         w = get_workspace_client()
         content = base64.b64encode(json.dumps(existing).encode()).decode("ascii")
-        w.api_client.do("POST", "/api/2.0/dbfs/put",
-                        body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True})
+        w.api_client.do(
+            "POST",
+            "/api/2.0/dbfs/put",
+            body={"path": _DBFS_OVERRIDE_PATH, "contents": content, "overwrite": True},
+        )
         logger.debug("DBFS mv_sources written (%d source(s))", len(sources))
     except Exception as e:
         logger.debug("Could not write DBFS mv_sources (non-fatal): %s", e)
@@ -2023,10 +2076,7 @@ def source_label_filter_clause(mv_query: str | None = None) -> str:
     if mv_query is not None:
         referenced = _mv_tables_referenced_by_template(mv_query)
         local_label = get_local_source_label()
-        configured_sources = {
-            str(source.get("label") or ""): source
-            for source in get_mv_sources()
-        }
+        configured_sources = {str(source.get("label") or ""): source for source in get_mv_sources()}
         any_capable_source = False
         for label in labels:
             if label == local_label:
@@ -2045,13 +2095,11 @@ def source_label_filter_clause(mv_query: str | None = None) -> str:
                 any_capable_source = True
         if not any_capable_source:
             raise SourceScopeUnsupportedError(
-                "None of the selected sources publish the managed data "
-                "required by this view."
+                "None of the selected sources publish the managed data required by this view."
             )
         local_label = get_local_source_label()
-        mixed_local_selection = (
-            local_label in labels
-            and any(label != local_label for label in labels)
+        mixed_local_selection = local_label in labels and any(
+            label != local_label for label in labels
         )
         live = (
             _list_existing_unified_views(force_refresh=True)
@@ -2086,8 +2134,7 @@ def apply_mv_overrides(sql: str, catalog: str, schema: str) -> str:
     overrides = dict(get_mv_table_overrides())
     selected = selected_source_labels()
     if selected and not any(
-        f"`{catalog}`.`{schema}`.`{table}`" in sql
-        or f"{catalog}.{schema}.{table}" in sql
+        f"`{catalog}`.`{schema}`.`{table}`" in sql or f"{catalog}.{schema}.{table}" in sql
         for table in MV_UNIFIED_TABLE_NAMES
     ):
         # Raw system-table queries are already scoped by their workspace clause.
@@ -2095,17 +2142,19 @@ def apply_mv_overrides(sql: str, catalog: str, schema: str) -> str:
         return sql
     local_label = get_local_source_label()
     mixed_local_selection = bool(
-        selected
-        and local_label in selected
-        and any(label != local_label for label in selected)
+        selected and local_label in selected and any(label != local_label for label in selected)
     )
     # Selected-source routing is strict: verify physical views now rather than
     # trusting the normal five-minute discovery cache.
     live = (
-        _list_existing_unified_views(force_refresh=True)
-        if mixed_local_selection
-        else _list_existing_source_row_views()
-    ) if selected else None
+        (
+            _list_existing_unified_views(force_refresh=True)
+            if mixed_local_selection
+            else _list_existing_source_row_views()
+        )
+        if selected
+        else None
+    )
     if selected and live is None:
         raise RuntimeError(
             "Selected shared sources cannot be queried because unified-view "
@@ -2117,9 +2166,7 @@ def apply_mv_overrides(sql: str, catalog: str, schema: str) -> str:
     for t in routable:
         # Don't override a table the user already remapped explicitly.
         suffix = (
-            MV_UNIFIED_SUFFIX
-            if not selected or mixed_local_selection
-            else MV_SOURCE_ROWS_SUFFIX
+            MV_UNIFIED_SUFFIX if not selected or mixed_local_selection else MV_SOURCE_ROWS_SUFFIX
         )
         overrides.setdefault(t, f"`{catalog}`.`{schema}`.`{t}{suffix}`")
     if selected:
@@ -2306,7 +2353,9 @@ def _ensure_response_cache_table() -> bool:
         return False
 
 
-def bundle_cache_key(endpoint: str, start_date: str, end_date: str, workspace_ids: list[str] | None) -> str:
+def bundle_cache_key(
+    endpoint: str, start_date: str, end_date: str, workspace_ids: list[str] | None
+) -> str:
     """Stable MD5 cache key for a bundle request.
 
     Includes the active source-label selection so the data-source filter actually
@@ -2358,10 +2407,7 @@ def _read_cache_generation_state() -> dict[str, Any]:
             return {
                 "sequence": int(state.get("sequence", 0)),
                 "global": int(state.get("global", 0)),
-                "prefixes": {
-                    str(k): int(v)
-                    for k, v in (state.get("prefixes") or {}).items()
-                },
+                "prefixes": {str(k): int(v) for k, v in (state.get("prefixes") or {}).items()},
             }
     except (FileNotFoundError, json.JSONDecodeError, OSError, TypeError, ValueError):
         pass
@@ -2409,9 +2455,7 @@ def capture_cache_generation(endpoint: str) -> CacheGeneration:
     return CacheGeneration(endpoint=endpoint, value=_cache_generation_value(endpoint, state))
 
 
-def _cache_generation_is_current(
-    generation: CacheGeneration, state: dict[str, Any]
-) -> bool:
+def _cache_generation_is_current(generation: CacheGeneration, state: dict[str, Any]) -> bool:
     return generation.value == _cache_generation_value(generation.endpoint, state)
 
 
@@ -2460,9 +2504,7 @@ def delta_cache_get(key: str) -> dict | None:
         if rows and rows[0].get("payload_json"):
             endpoint = str(rows[0].get("endpoint") or "")
             row_generation = rows[0].get("generation")
-            expected_generation = _cache_generation_value(
-                endpoint, generation_state_before
-            )
+            expected_generation = _cache_generation_value(endpoint, generation_state_before)
             try:
                 row_generation_value = int(row_generation)
             except (TypeError, ValueError):
@@ -2576,9 +2618,7 @@ def delta_cache_put(
         cat, sch = get_catalog_schema()
         if not cat or not sch:
             return False
-        compressed = base64.b64encode(
-            gzip.compress(json.dumps(_payload).encode())
-        ).decode("ascii")
+        compressed = base64.b64encode(gzip.compress(json.dumps(_payload).encode())).decode("ascii")
         merge_sql = f"""MERGE INTO `{cat}`.`{sch}`.`app_response_cache` AS tgt
             USING (SELECT
                 :key        AS cache_key,
@@ -2687,8 +2727,7 @@ def delta_cache_invalidate(
         # does not evict unrelated tabs from this worker's response cache.
         if pattern:
             matching_keys = [
-                key for key, endpoint in _delta_l1_endpoints.items()
-                if endpoint.startswith(pattern)
+                key for key, endpoint in _delta_l1_endpoints.items() if endpoint.startswith(pattern)
             ]
             for key in matching_keys:
                 _delta_l1.pop(key, None)
@@ -2725,6 +2764,7 @@ def delta_cache_invalidate(
             _user_token.reset(tok)
     except Exception as e:
         logger.debug("Delta cache invalidation failed (non-fatal): %s", e)
+
 
 # Singleton WorkspaceClient instance
 _workspace_client: WorkspaceClient | None = None
@@ -2857,6 +2897,7 @@ def get_account_client():
         client_secret = os.getenv("DATABRICKS_CLIENT_SECRET", "")
         try:
             from databricks.sdk import AccountClient
+
             if client_id and client_secret:
                 # Force oauth-m2m so the SDK ignores any ambient DATABRICKS_TOKEN and does
                 # not raise "more than one authorization method configured".
@@ -2873,7 +2914,9 @@ def get_account_client():
             _account_client = client  # only cache on successful construction
             logger.info("Created AccountClient singleton (account %s, host %s)", account_id, host)
         except Exception as e:
-            logger.warning("AccountClient init failed (account %s, host %s): %s", account_id, host, e)
+            logger.warning(
+                "AccountClient init failed (account %s, host %s): %s", account_id, host, e
+            )
             return None
 
     return _account_client
@@ -2898,7 +2941,9 @@ def ensure_dedicated_warehouse() -> tuple[str, str]:
         if warehouse.name == DEDICATED_WAREHOUSE_NAME:
             warehouse_id = warehouse.id
             http_path = f"/sql/1.0/warehouses/{warehouse_id}"
-            logger.info(f"Found existing dedicated warehouse: {warehouse_id} ({warehouse.cluster_size})")
+            logger.info(
+                f"Found existing dedicated warehouse: {warehouse_id} ({warehouse.cluster_size})"
+            )
 
             # Check if warehouse needs to be started
             if warehouse.state in [State.STOPPED, State.STOPPING]:
@@ -2906,9 +2951,27 @@ def ensure_dedicated_warehouse() -> tuple[str, str]:
                 w.warehouses.start(warehouse_id)
 
             # Check if it's undersized and warn
-            size_order = ["2X-Small", "X-Small", "Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large", "4X-Large"]
-            current_idx = size_order.index(warehouse.cluster_size) if warehouse.cluster_size in size_order else -1
-            target_idx = size_order.index(DEDICATED_WAREHOUSE_SIZE) if DEDICATED_WAREHOUSE_SIZE in size_order else 4
+            size_order = [
+                "2X-Small",
+                "X-Small",
+                "Small",
+                "Medium",
+                "Large",
+                "X-Large",
+                "2X-Large",
+                "3X-Large",
+                "4X-Large",
+            ]
+            current_idx = (
+                size_order.index(warehouse.cluster_size)
+                if warehouse.cluster_size in size_order
+                else -1
+            )
+            target_idx = (
+                size_order.index(DEDICATED_WAREHOUSE_SIZE)
+                if DEDICATED_WAREHOUSE_SIZE in size_order
+                else 4
+            )
 
             if current_idx < target_idx:
                 logger.warning(
@@ -2919,7 +2982,9 @@ def ensure_dedicated_warehouse() -> tuple[str, str]:
             return warehouse_id, http_path
 
     # Create new dedicated warehouse
-    logger.info(f"Creating dedicated serverless warehouse: {DEDICATED_WAREHOUSE_NAME} ({DEDICATED_WAREHOUSE_SIZE})")
+    logger.info(
+        f"Creating dedicated serverless warehouse: {DEDICATED_WAREHOUSE_NAME} ({DEDICATED_WAREHOUSE_SIZE})"
+    )
 
     try:
         warehouse = w.warehouses.create(
@@ -3034,10 +3099,16 @@ def _is_scope_error(exc: Exception) -> bool:
 def _is_permission_error(exc: Exception) -> bool:
     """Return True if exception indicates the user token lacks table/schema privileges."""
     msg = str(exc).lower()
-    return any(s in msg for s in (
-        "permission_denied", "insufficient_privileges", "not authorized",
-        "user does not have", "does not have privilege",
-    ))
+    return any(
+        s in msg
+        for s in (
+            "permission_denied",
+            "insufficient_privileges",
+            "not authorized",
+            "user does not have",
+            "does not have privilege",
+        )
+    )
 
 
 @contextmanager
@@ -3162,9 +3233,7 @@ def execute_write(
                 _lock_auth_mode("sp")
                 return _run(force_sp=True)
             if _is_permission_error(exc) and _user_token.get():
-                logger.warning(
-                    "User token permission denied on write, retrying as SP: %s", exc
-                )
+                logger.warning("User token permission denied on write, retrying as SP: %s", exc)
                 return _run(force_sp=True)
             raise
 
@@ -3176,7 +3245,9 @@ def execute_write(
 
     elapsed = time.time() - start_time
     _sql_tag = " ".join(query.split())[:60]
-    logger.info(f"Write query executed in {elapsed:.2f}s ({affected_rows} rows affected) [{_sql_tag}]")
+    logger.info(
+        f"Write query executed in {elapsed:.2f}s ({affected_rows} rows affected) [{_sql_tag}]"
+    )
     return affected_rows
 
 
@@ -3213,9 +3284,9 @@ def _fetch_cursor_rows(
                     control.cancel()
                 raise SQLResultLimitError("row", max_rows)
             row = dict(zip(columns, raw_row))
-            serialized_bytes += len(
-                json.dumps(row, default=str, separators=(",", ":")).encode("utf-8")
-            ) + 1
+            serialized_bytes += (
+                len(json.dumps(row, default=str, separators=(",", ":")).encode("utf-8")) + 1
+            )
             if serialized_bytes > max_bytes:
                 with _sql_metrics_lock:
                     _sql_metrics["result_limited"] += 1
@@ -3236,6 +3307,7 @@ def execute_query(
     timeout: float | None = None,
     max_rows: int | None = None,
     max_bytes: int | None = None,
+    operation_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Execute a SQL query and return results as a list of dicts.
 
@@ -3247,12 +3319,8 @@ def execute_query(
     """
     start_time = time.time()
 
-    effective_max_rows = max(
-        1, min(SQL_MAX_RESULT_ROWS, max_rows or SQL_MAX_RESULT_ROWS)
-    )
-    effective_max_bytes = max(
-        1024, min(SQL_MAX_RESULT_BYTES, max_bytes or SQL_MAX_RESULT_BYTES)
-    )
+    effective_max_rows = max(1, min(SQL_MAX_RESULT_ROWS, max_rows or SQL_MAX_RESULT_ROWS))
+    effective_max_bytes = max(1024, min(SQL_MAX_RESULT_BYTES, max_bytes or SQL_MAX_RESULT_BYTES))
     cache_key: str | None = None
     cache_generation: int | None = None
     shared_future: Future | None = None
@@ -3261,14 +3329,12 @@ def execute_query(
     # generation snapshot. The remote SQL query runs without this lock.
     if not no_cache:
         effective_cache_tag = cache_tag or _request_cache_tag.get()
-        cache_query = (
-            f"{query}\n/* result-limits:{effective_max_rows}:{effective_max_bytes} */"
-        )
+        cache_query = f"{query}\n/* result-limits:{effective_max_rows}:{effective_max_bytes} */"
         cache_key = _get_cache_key(cache_query, params, tag=effective_cache_tag)
         with _query_cache_lock:
             cache_generation = _query_cache_generation_for_key(cache_key)
             if cache_key in _query_cache:
-                logger.info(f"Cache hit - returned in {(time.time() - start_time)*1000:.0f}ms")
+                logger.info(f"Cache hit - returned in {(time.time() - start_time) * 1000:.0f}ms")
                 return _query_cache[cache_key]
         # Coalesce identical cache misses before SQL admission. Cloud-tab refreshes
         # can overlap a slow request that the client has cancelled; followers wait
@@ -3284,9 +3350,7 @@ def execute_query(
                     _sql_metrics["coalesced"] += 1
         if not owns_shared_future:
             try:
-                return shared_future.result(
-                    timeout=(timeout or SQL_DEFAULT_TIMEOUT_SECONDS) + 1
-                )
+                return shared_future.result(timeout=(timeout or SQL_DEFAULT_TIMEOUT_SECONDS) + 1)
             except FutureTimeoutError as exc:
                 raise SQLTimeoutError(
                     "Timed out waiting for an identical in-flight SQL query."
@@ -3339,6 +3403,7 @@ def execute_query(
             _execute,
             timeout=timeout or SQL_DEFAULT_TIMEOUT_SECONDS,
             label="query",
+            operation_id=operation_id,
         )
 
         if cache_key is not None and cache_generation is not None:
@@ -3386,13 +3451,19 @@ def get_auth_status() -> dict:
     if token:
         try:
             import base64
+
             payload_b64 = token.split(".")[1]
             padded = payload_b64 + "=" * (-len(payload_b64) % 4)
             payload = json.loads(base64.urlsafe_b64decode(padded))
             scp = payload.get("scp", payload.get("scope", ""))
             token_scopes = scp.split() if isinstance(scp, str) else list(scp)
             has_sql_scope = "sql" in token_scopes
-            user_email = payload.get("upn") or payload.get("email") or payload.get("preferred_username") or None
+            user_email = (
+                payload.get("upn")
+                or payload.get("email")
+                or payload.get("preferred_username")
+                or None
+            )
         except Exception:
             pass
 
@@ -3412,11 +3483,11 @@ def get_auth_status() -> dict:
         "locked_to_sp": locked_to_sp,
         "has_sql_scope": has_sql_scope,
         # Richer fields for the Permissions settings panel
-        "auth_mode": _auth_mode,          # "unknown" | "user" | "sp"
-        "token_present": token_present,   # OAuth header received from Databricks Apps
-        "token_scopes": token_scopes,     # scopes decoded from the JWT
-        "user_email": user_email,         # email from JWT claims
-        "override_mode": override_mode,   # "sp" | "auto" | None (manual override on disk)
+        "auth_mode": _auth_mode,  # "unknown" | "user" | "sp"
+        "token_present": token_present,  # OAuth header received from Databricks Apps
+        "token_scopes": token_scopes,  # scopes decoded from the JWT
+        "user_email": user_email,  # email from JWT claims
+        "override_mode": override_mode,  # "sp" | "auto" | None (manual override on disk)
     }
 
 
@@ -3442,13 +3513,16 @@ def execute_queries_parallel(
     results: dict[str, list[dict[str, Any]] | None] = {}
     infrastructure_failures: list[tuple[str, SQLExecutionError]] = []
 
-    def _timed(name: str, fn: Callable[[], list[dict[str, Any]]]) -> Callable[[], list[dict[str, Any]]]:
+    def _timed(
+        name: str, fn: Callable[[], list[dict[str, Any]]]
+    ) -> Callable[[], list[dict[str, Any]]]:
         def wrapped() -> list[dict[str, Any]]:
             t0 = time.time()
             result = fn()
             rows = len(result) if isinstance(result, list) else -1
             logger.info("✓ %s: %.2fs rows=%d", name, time.time() - t0, rows)
             return result
+
         return wrapped
 
     _EXPECTED_CODES = (
@@ -3578,7 +3652,12 @@ def execute_queries_parallel(
         _fill_window()
 
     total_elapsed = time.time() - start_time
-    logger.info("Parallel execution: %.2fs total (%d/%d queries completed)", total_elapsed, len(results), len(query_funcs))
+    logger.info(
+        "Parallel execution: %.2fs total (%d/%d queries completed)",
+        total_elapsed,
+        len(results),
+        len(query_funcs),
+    )
 
     if infrastructure_failures:
         name, exc = infrastructure_failures[0]

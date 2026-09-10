@@ -7,6 +7,7 @@ import os
 import re as _re
 import threading
 import time
+import uuid
 from concurrent.futures import Future as _Future
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -43,24 +44,62 @@ SETTINGS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", ".settings")
 # a fresh deployment, even if tables already exist from a previous run.
 SETUP_DONE_FILE = os.path.join(SETTINGS_DIR, "setup_done.json")
 
-# Simple in-process state for the background create-tables task
-_create_task_state: dict = {"status": "idle", "error": None, "started_at": None, "elapsed_seconds": None, "table_progress": {}}  # idle | running | interrupted | done | error
+# In-process state mirrored to disk for cross-worker status and cancellation.
+_create_task_state: dict = {
+    "status": "idle",
+    "error": None,
+    "started_at": None,
+    "started_at_epoch": None,
+    "elapsed_seconds": None,
+    "table_progress": {},
+    "table_errors": {},
+    "phase": "idle",
+    "run_id": None,
+    "revision": 0,
+    "cancel_requested_at": None,
+}  # idle | running | cancelling | cancelled | interrupted | done | error
 
 _TASK_STATE_FILE = os.path.join(SETTINGS_DIR, "build_progress.json")
+_TASK_CANCEL_DIR = os.path.join(SETTINGS_DIR, "build_cancellations")
+
+
+def _cancel_marker(run_id: str) -> str:
+    return os.path.join(_TASK_CANCEL_DIR, run_id)
+
+
+def _is_cancel_requested(run_id: str) -> bool:
+    return bool(run_id) and os.path.exists(_cancel_marker(run_id))
+
+
+def _request_task_cancel(run_id: str) -> None:
+    os.makedirs(_TASK_CANCEL_DIR, exist_ok=True)
+    with open(_cancel_marker(run_id), "a"):
+        pass
+
+
+def _clear_task_cancel(run_id: str) -> None:
+    try:
+        os.remove(_cancel_marker(run_id))
+    except FileNotFoundError:
+        pass
 
 
 def _persist_task_state() -> None:
     """Best-effort write of current task state to disk and DBFS for pod-restart recovery."""
+    _create_task_state["revision"] = time.time_ns()
     payload = {k: v for k, v in _create_task_state.items() if k != "started_at"}
     payload["saved_at"] = __import__("datetime").datetime.utcnow().isoformat()
     try:
         os.makedirs(SETTINGS_DIR, exist_ok=True)
-        with open(_TASK_STATE_FILE, "w") as fh:
+        temporary = f"{_TASK_STATE_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
+        with open(temporary, "w") as fh:
             json.dump(payload, fh)
+        os.replace(temporary, _TASK_STATE_FILE)
     except Exception as exc:
         logger.debug("Could not persist task state to file: %s", exc)
     try:
         from server.db import write_dbfs_build_state
+
         write_dbfs_build_state(payload)
     except Exception as exc:
         logger.warning("Could not persist task state to DBFS: %s", exc)
@@ -83,6 +122,7 @@ def _restore_task_state() -> None:
             return
         try:
             from server.db import read_dbfs_build_state
+
             saved = read_dbfs_build_state()
             if saved:
                 logger.info("Restored build task state from DBFS (pod restart recovery)")
@@ -96,22 +136,38 @@ def _restore_task_state() -> None:
 
     status = saved.get("status", "idle")
     if status == "running":
-        _create_task_state.update({
-            "status": "interrupted",
-            "error": None,
-            "started_at": None,
-            "elapsed_seconds": None,
-            "table_progress": saved.get("table_progress", {}),
-        })
+        _create_task_state.update(
+            {
+                "status": "interrupted",
+                "error": None,
+                "started_at": None,
+                "started_at_epoch": None,
+                "elapsed_seconds": None,
+                "table_progress": saved.get("table_progress", {}),
+                "table_errors": saved.get("table_errors", {}),
+                "phase": "interrupted",
+                "run_id": saved.get("run_id"),
+                "revision": saved.get("revision", 0),
+                "cancel_requested_at": saved.get("cancel_requested_at"),
+            }
+        )
         logger.info("Restored interrupted task state from previous pod session")
     elif status == "error":
-        _create_task_state.update({
-            "status": "error",
-            "error": saved.get("error"),
-            "started_at": None,
-            "elapsed_seconds": None,
-            "table_progress": saved.get("table_progress", {}),
-        })
+        _create_task_state.update(
+            {
+                "status": "error",
+                "error": saved.get("error"),
+                "started_at": None,
+                "started_at_epoch": None,
+                "elapsed_seconds": None,
+                "table_progress": saved.get("table_progress", {}),
+                "table_errors": saved.get("table_errors", {}),
+                "phase": saved.get("phase", "error"),
+                "run_id": saved.get("run_id"),
+                "revision": saved.get("revision", 0),
+                "cancel_requested_at": saved.get("cancel_requested_at"),
+            }
+        )
 
 
 _restore_task_state()
@@ -134,7 +190,15 @@ def _load_shared_task_state() -> dict | None:
 # Ordering of task lifecycle states, most-advanced last. Terminal states
 # (error, done) outrank the in-flight ones so a finished build is never masked
 # by a worker that still thinks it is idle/running.
-_TASK_STATE_RANK = {"idle": 0, "interrupted": 1, "running": 2, "error": 3, "done": 4}
+_TASK_STATE_RANK = {
+    "idle": 0,
+    "interrupted": 1,
+    "running": 2,
+    "cancelling": 3,
+    "error": 4,
+    "done": 5,
+    "cancelled": 5,
+}
 
 
 def _reconcile_task_state_from_disk() -> None:
@@ -161,27 +225,44 @@ def _reconcile_task_state_from_disk() -> None:
 
     mem_rank = _TASK_STATE_RANK.get(_create_task_state.get("status", "idle"), 0)
     disk_rank = _TASK_STATE_RANK.get(disk.get("status", "idle"), 0)
+    disk_is_newer = int(disk.get("revision") or 0) > int(_create_task_state.get("revision") or 0)
     # A fresh build started after a previous one finished: disk shows 'running'
     # while this (non-builder) worker still holds a stale terminal state. The latest
     # persisted state is only ever 'running' when a build is actually in flight
     # (the builder persists 'done'/'error' when it ends), so adopt it — otherwise
     # this worker would report the old build's 'done' for the new run.
-    fresh_rerun = disk.get("status") == "running" and _create_task_state.get("status") in ("done", "error")
-    if fresh_rerun or disk_rank > mem_rank or (
-        disk_rank == mem_rank and _done_count(disk) > _done_count(_create_task_state)
+    fresh_rerun = disk.get("status") == "running" and _create_task_state.get("status") in (
+        "done",
+        "error",
+        "cancelled",
+    )
+    if (
+        fresh_rerun
+        or disk_is_newer
+        or disk_rank > mem_rank
+        or (disk_rank == mem_rank and _done_count(disk) > _done_count(_create_task_state))
     ):
         _create_task_state["status"] = disk.get("status", _create_task_state["status"])
         _create_task_state["error"] = disk.get("error")
         _create_task_state["table_progress"] = disk.get("table_progress") or {}
+        _create_task_state["table_errors"] = disk.get("table_errors") or {}
+        _create_task_state["phase"] = disk.get("phase") or _create_task_state.get("phase")
+        _create_task_state["run_id"] = disk.get("run_id")
+        _create_task_state["revision"] = disk.get("revision", 0)
+        _create_task_state["started_at_epoch"] = disk.get("started_at_epoch")
+        _create_task_state["cancel_requested_at"] = disk.get("cancel_requested_at")
 
 
 # Core billing tables — must exist for the dashboard to be functional.
 # Used by get_setup_status to gate the "ready" state.
-_CORE_REQUIRED_TABLES = frozenset({
-    "daily_usage_summary",
-    "daily_product_breakdown",
-    "daily_workspace_breakdown",
-})
+_CORE_REQUIRED_TABLES = frozenset(
+    {
+        "daily_usage_summary",
+        "daily_product_breakdown",
+        "daily_workspace_breakdown",
+    }
+)
+
 
 def autodiscover_storage_location() -> tuple[str, str] | None:
     """Use the central safe storage resolver and restore the local setup flag.
@@ -201,6 +282,7 @@ def autodiscover_storage_location() -> tuple[str, str] | None:
     # The tables exist, so setup was completed — restore the flag too (DBFS-free).
     try:
         import time as _time
+
         os.makedirs(SETTINGS_DIR, exist_ok=True)
         with open(SETUP_DONE_FILE, "w") as f:
             json.dump({"completed_at": _time.time(), "autodiscovered": True}, f)
@@ -223,25 +305,25 @@ _setup_confirmed_ready: bool = False
 
 SYSTEM_TABLE_GRANTS = [
     ("USE CATALOG", "CATALOG", "system"),
-    ("USE SCHEMA",  "SCHEMA",  "system.billing"),
-    ("SELECT",      "TABLE",   "system.billing.usage"),
-    ("SELECT",      "TABLE",   "system.billing.list_prices"),
-    ("SELECT",      "TABLE",   "system.billing.account_prices"),
-    ("USE SCHEMA",  "SCHEMA",  "system.query"),
-    ("SELECT",      "TABLE",   "system.query.history"),
-    ("USE SCHEMA",  "SCHEMA",  "system.compute"),
-    ("SELECT",      "TABLE",   "system.compute.clusters"),
-    ("SELECT",      "TABLE",   "system.compute.warehouses"),
-    ("SELECT",      "TABLE",   "system.compute.warehouse_events"),
-    ("USE SCHEMA",  "SCHEMA",  "system.lakeflow"),
-    ("SELECT",      "TABLE",   "system.lakeflow.jobs"),
-    ("SELECT",      "TABLE",   "system.lakeflow.pipelines"),
-    ("SELECT",      "TABLE",   "system.lakeflow.job_run_timeline"),
-    ("USE SCHEMA",  "SCHEMA",  "system.serving"),
-    ("SELECT",      "TABLE",   "system.serving.served_entities"),
-    ("USE SCHEMA",  "SCHEMA",  "system.access"),
-    ("SELECT",      "TABLE",   "system.access.audit"),
-    ("SELECT",      "TABLE",   "system.access.workspaces_latest"),
+    ("USE SCHEMA", "SCHEMA", "system.billing"),
+    ("SELECT", "TABLE", "system.billing.usage"),
+    ("SELECT", "TABLE", "system.billing.list_prices"),
+    ("SELECT", "TABLE", "system.billing.account_prices"),
+    ("USE SCHEMA", "SCHEMA", "system.query"),
+    ("SELECT", "TABLE", "system.query.history"),
+    ("USE SCHEMA", "SCHEMA", "system.compute"),
+    ("SELECT", "TABLE", "system.compute.clusters"),
+    ("SELECT", "TABLE", "system.compute.warehouses"),
+    ("SELECT", "TABLE", "system.compute.warehouse_events"),
+    ("USE SCHEMA", "SCHEMA", "system.lakeflow"),
+    ("SELECT", "TABLE", "system.lakeflow.jobs"),
+    ("SELECT", "TABLE", "system.lakeflow.pipelines"),
+    ("SELECT", "TABLE", "system.lakeflow.job_run_timeline"),
+    ("USE SCHEMA", "SCHEMA", "system.serving"),
+    ("SELECT", "TABLE", "system.serving.served_entities"),
+    ("USE SCHEMA", "SCHEMA", "system.access"),
+    ("SELECT", "TABLE", "system.access.audit"),
+    ("SELECT", "TABLE", "system.access.workspaces_latest"),
 ]
 
 
@@ -260,8 +342,13 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
     sp_client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
     if not sp_client_id:
         logger.warning("DATABRICKS_CLIENT_ID not set — skipping SP grants")
-        return {"ok": False, "sp_client_id": "", "applied": 0, "failed": 0,
-                "errors": ["DATABRICKS_CLIENT_ID not set — app has no service principal to grant"]}
+        return {
+            "ok": False,
+            "sp_client_id": "",
+            "applied": 0,
+            "failed": 0,
+            "errors": ["DATABRICKS_CLIENT_ID not set — app has no service principal to grant"],
+        }
 
     p = sp_client_id  # principal name in GRANT statements
 
@@ -269,12 +356,18 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
     # Running system GRANT as the SP always fails (SP is not a metastore admin), so
     # including them here just inflates the "applied" count with fake successes.
     grant_stmts: list[tuple[str, str]] = [
-        (f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{p}`",                           f"CATALOG/{catalog}"),
-        (f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{p}`",                         f"CREATE_SCHEMA/{catalog}"),
-        (f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                  f"SCHEMA/{catalog}.{schema}"),
-        (f"GRANT CREATE TABLE ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                f"CREATE_TABLE/{catalog}.{schema}"),
-        (f"GRANT MODIFY ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                      f"MODIFY/{catalog}.{schema}"),
-        (f"GRANT SELECT ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",                      f"SELECT/{catalog}.{schema}"),
+        (f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{p}`", f"CATALOG/{catalog}"),
+        (f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{p}`", f"CREATE_SCHEMA/{catalog}"),
+        (
+            f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",
+            f"SCHEMA/{catalog}.{schema}",
+        ),
+        (
+            f"GRANT CREATE TABLE ON SCHEMA `{catalog}`.`{schema}` TO `{p}`",
+            f"CREATE_TABLE/{catalog}.{schema}",
+        ),
+        (f"GRANT MODIFY ON SCHEMA `{catalog}`.`{schema}` TO `{p}`", f"MODIFY/{catalog}.{schema}"),
+        (f"GRANT SELECT ON SCHEMA `{catalog}`.`{schema}` TO `{p}`", f"SELECT/{catalog}.{schema}"),
     ]
 
     ok = failed = 0
@@ -282,6 +375,7 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
 
     from server.db import _user_token as _exec_tok
     from server.db import execute_query as _exec
+
     for sql_stmt, label in grant_stmts:
         ctx = _exec_tok.set("")  # force SP auth for sql scope
         try:
@@ -312,6 +406,7 @@ def _grant_sp_schema_access(catalog: str, schema: str) -> dict:
         host = os.getenv("DATABRICKS_HOST", "")
         if user_tok and host:
             from databricks.sdk import WorkspaceClient
+
             w = WorkspaceClient(host=host, token=user_tok, auth_type="pat")
         else:
             w = get_workspace_client()
@@ -352,10 +447,12 @@ def _grant_warehouse_can_use(w, sp_client_id: str) -> None:
             "PATCH",
             f"/api/2.0/permissions/warehouses/{warehouse_id}",
             body={
-                "access_control_list": [{
-                    "service_principal_name": sp_client_id,
-                    "permission_level": "CAN_USE",
-                }]
+                "access_control_list": [
+                    {
+                        "service_principal_name": sp_client_id,
+                        "permission_level": "CAN_USE",
+                    }
+                ]
             },
         )
         logger.info(f"Granted CAN_USE on warehouse {warehouse_id} to SP {sp_client_id}")
@@ -408,29 +505,57 @@ async def get_setup_status() -> dict[str, Any]:
     # In-memory fast-path: once we've confirmed ready in this process, skip all I/O.
     # Cuts response time from ~500ms (DBFS + UC round-trips) to <1ms for every user
     # after the first successful check. Prevents Safari/cold-start wizard flashes.
-    if _setup_confirmed_ready and _create_task_state["status"] != "running":
+    if _setup_confirmed_ready and _create_task_state["status"] not in (
+        "running",
+        "cancelling",
+    ):
         catalog, schema = get_catalog_schema()
         return {
-            "catalog": catalog, "schema": schema,
-            "tables": {}, "all_tables_exist": True, "missing_tables": [],
-            "status": "ready", "task": _create_task_state.copy(), "next_poll_ms": 30000,
+            "catalog": catalog,
+            "schema": schema,
+            "tables": {},
+            "all_tables_exist": True,
+            "missing_tables": [],
+            "status": "ready",
+            "task": _create_task_state.copy(),
+            "next_poll_ms": 30000,
         }
 
-    # While table creation is running (wizard polling mid-flow), keep returning
+    # While table creation is active (wizard polling mid-flow), keep returning
     # initializing regardless of setup_done state so the wizard doesn't reset.
-    if _create_task_state["status"] == "running":
+    if _create_task_state["status"] in ("running", "cancelling"):
         import time as _time
+
         catalog, schema = get_catalog_schema()
-        started = _create_task_state.get("started_at") or _time.monotonic()
-        elapsed = int(_time.monotonic() - started)
+        started_epoch = _create_task_state.get("started_at_epoch")
+        if started_epoch:
+            elapsed = max(0, int(_time.time() - started_epoch))
+        else:
+            started = _create_task_state.get("started_at") or _time.monotonic()
+            elapsed = int(_time.monotonic() - started)
         _create_task_state["elapsed_seconds"] = elapsed
-        if elapsed > _BOOTSTRAP_TIMEOUT_SECONDS:
+        cancel_requested_at = _create_task_state.get("cancel_requested_at")
+        if (
+            _create_task_state["status"] == "cancelling"
+            and cancel_requested_at
+            and _time.time() - cancel_requested_at > 90
+        ):
+            _create_task_state["status"] = "error"
+            _create_task_state["phase"] = "failed"
+            _create_task_state["error"] = (
+                "Cancellation did not finish within 90 seconds. "
+                "Restart the app before starting another table build."
+            )
+            _persist_task_state()
+        if _create_task_state["status"] == "running" and elapsed > _BOOTSTRAP_TIMEOUT_SECONDS:
             _create_task_state["status"] = "error"
             _create_task_state["error"] = (
                 f"Table creation timed out after {elapsed // 60} minutes. "
                 "The warehouse may be cold or the billing dataset is very large. "
                 "Use the Setup wizard to retry, or check app logs for details."
             )
+            _create_task_state["phase"] = "failed"
+            _persist_task_state()
             logger.error(f"Bootstrap timed out after {elapsed}s — marking as error")
         else:
             return {
@@ -465,36 +590,54 @@ async def get_setup_status() -> dict[str, Any]:
     # REST API (no SQL warehouse needed) so this is fast even on a cold start.
     if not os.path.exists(SETUP_DONE_FILE):
         from server.db import read_dbfs_setup_complete
+
         loop = _asyncio.get_running_loop()
         dbfs_complete = await loop.run_in_executor(None, read_dbfs_setup_complete)
         if dbfs_complete:
             # Verify tables still exist — they may have been dropped between deploys.
-            tables = await loop.run_in_executor(None, check_materialized_views_exist, catalog, schema)
+            tables = await loop.run_in_executor(
+                None, check_materialized_views_exist, catalog, schema
+            )
             core_exist = all(tables.get(t, False) for t in _CORE_REQUIRED_TABLES)
             if not core_exist:
                 # DBFS flag is stale — tables are gone. Wizard must run again.
                 missing = [name for name, exists in tables.items() if not exists]
-                logger.info("DBFS flag set but core tables missing (%s) — returning setup_required", missing)
+                logger.info(
+                    "DBFS flag set but core tables missing (%s) — returning setup_required", missing
+                )
                 return {
-                    "catalog": catalog, "schema": schema,
-                    "tables": tables, "all_tables_exist": False, "missing_tables": missing,
+                    "catalog": catalog,
+                    "schema": schema,
+                    "tables": tables,
+                    "all_tables_exist": False,
+                    "missing_tables": missing,
                     "status": "setup_required",
-                    "task": _create_task_state.copy(), "next_poll_ms": 30000,
+                    "task": _create_task_state.copy(),
+                    "next_poll_ms": 30000,
                 }
             # Tables exist — restore setup_done.json for future fast-paths.
             try:
                 import datetime as _dt
+
                 os.makedirs(SETTINGS_DIR, exist_ok=True)
                 with open(SETUP_DONE_FILE, "w") as _f:
-                    json.dump({"completed_at": _dt.datetime.utcnow().isoformat(),
-                               "restored_from_dbfs": True}, _f)
+                    json.dump(
+                        {
+                            "completed_at": _dt.datetime.utcnow().isoformat(),
+                            "restored_from_dbfs": True,
+                        },
+                        _f,
+                    )
                 logger.info("setup_done.json restored from DBFS flag (container restart)")
             except Exception as _e:
                 logger.warning(f"Could not restore setup_done.json: {_e}")
             _setup_confirmed_ready = True
             return {
-                "catalog": catalog, "schema": schema,
-                "tables": tables, "all_tables_exist": True, "missing_tables": [],
+                "catalog": catalog,
+                "schema": schema,
+                "tables": tables,
+                "all_tables_exist": True,
+                "missing_tables": [],
                 "status": "ready",
                 "task": _create_task_state.copy(),
                 "next_poll_ms": 30000,
@@ -590,6 +733,7 @@ async def mark_setup_complete(
         os.makedirs(SETTINGS_DIR, exist_ok=True)
         with open(SETUP_DONE_FILE, "w") as f:
             import time as _time
+
             json.dump({"completed_at": _time.time()}, f)
         logger.info("Setup wizard marked complete — setup_done.json written")
     except Exception as e:
@@ -601,10 +745,12 @@ async def mark_setup_complete(
     # Persist to DBFS so the flag survives container restarts (Databricks Apps
     # recreates the container from scratch on every stop/start, wiping .settings/).
     from server.db import write_dbfs_setup_complete
+
     write_dbfs_setup_complete()
 
     # Invalidate the settings/tables cache so the post-setup check shows fresh data.
     from server.routers import settings as _settings_router
+
     _settings_router._tables_cache = None
 
     # Reset the billing MV availability cache so the first post-setup request
@@ -612,6 +758,7 @@ async def mark_setup_complete(
     # result for up to 30 minutes.
     try:
         from server.routers.billing import _mv_cache
+
         _mv_cache["available"] = None
         _mv_cache["checked_at"] = 0
     except Exception:
@@ -644,6 +791,7 @@ async def mark_setup_complete_manual(request: Request) -> dict[str, Any]:
     global _setup_confirmed_ready
     try:
         import time as _time
+
         os.makedirs(SETTINGS_DIR, exist_ok=True)
         with open(SETUP_DONE_FILE, "w") as f:
             json.dump({"completed_at": _time.time(), "manual": True}, f)
@@ -655,12 +803,14 @@ async def mark_setup_complete_manual(request: Request) -> dict[str, Any]:
     # Best-effort durable copy (no-op where DBFS is disabled).
     try:
         from server.db import write_dbfs_setup_complete
+
         write_dbfs_setup_complete()
     except Exception as e:
         logger.debug("mark-complete: DBFS persist skipped (non-fatal): %s", e)
     # Invalidate the settings tables cache so status reflects complete immediately.
     try:
         from server.routers import settings as _settings_router
+
         _settings_router._tables_cache = None
     except Exception:
         pass
@@ -675,6 +825,12 @@ async def rerun_setup(request: Request) -> dict[str, Any]:
     at any time — existing tables are left in place and are not dropped.
     """
     await _require_setup_admin(request)
+    _reconcile_task_state_from_disk()
+    if _create_task_state.get("status") in ("running", "cancelling"):
+        raise HTTPException(
+            status_code=409,
+            detail="Stop the active table build before re-running setup.",
+        )
     try:
         if os.path.exists(SETUP_DONE_FILE):
             os.remove(SETUP_DONE_FILE)
@@ -685,8 +841,14 @@ async def rerun_setup(request: Request) -> dict[str, Any]:
     _create_task_state["status"] = "idle"
     _create_task_state["error"] = None
     _create_task_state["started_at"] = None
+    _create_task_state["started_at_epoch"] = None
     _create_task_state["elapsed_seconds"] = None
     _create_task_state["table_progress"] = {}
+    _create_task_state["table_errors"] = {}
+    _create_task_state["phase"] = "idle"
+    _create_task_state["run_id"] = None
+    _create_task_state["cancel_requested_at"] = None
+    _persist_task_state()
 
     return {"ok": True}
 
@@ -701,9 +863,28 @@ async def reset_bootstrap_state(request: Request) -> dict[str, Any]:
     user token is available).
     """
     await _require_setup_admin(request)
+    _reconcile_task_state_from_disk()
+    if _create_task_state.get("status") in ("running", "cancelling"):
+        raise HTTPException(
+            status_code=409,
+            detail="Stop the active table build before resetting setup state.",
+        )
     prev = _create_task_state.copy()
-    _create_task_state["status"] = "idle"
-    _create_task_state["error"] = None
+    _create_task_state.update(
+        {
+            "status": "idle",
+            "error": None,
+            "started_at": None,
+            "started_at_epoch": None,
+            "elapsed_seconds": None,
+            "table_progress": {},
+            "table_errors": {},
+            "phase": "idle",
+            "run_id": None,
+            "cancel_requested_at": None,
+        }
+    )
+    _persist_task_state()
     logger.info(f"Bootstrap state manually reset (was: {prev})")
     return {"ok": True, "previous": prev, "current": _create_task_state.copy()}
 
@@ -743,9 +924,14 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
     obo_scope_missing → token absent or sql scope not configured on the app.
     """
     if not user_token:
-        return {"ok": False, "applied": 0, "failed": 0,
-                "errors": ["No forwarded user token available"],
-                "needs_admin": False, "obo_scope_missing": True}
+        return {
+            "ok": False,
+            "applied": 0,
+            "failed": 0,
+            "errors": ["No forwarded user token available"],
+            "needs_admin": False,
+            "obo_scope_missing": True,
+        }
 
     host = os.getenv("DATABRICKS_HOST", "")
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
@@ -754,18 +940,27 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
         if wh_id:
             http_path = f"/sql/1.0/warehouses/{wh_id}"
     if not host or not http_path:
-        return {"ok": False, "applied": 0, "failed": 0,
-                "errors": ["Warehouse not configured — complete warehouse setup first"],
-                "needs_admin": False, "obo_scope_missing": False}
+        return {
+            "ok": False,
+            "applied": 0,
+            "failed": 0,
+            "errors": ["Warehouse not configured — complete warehouse setup first"],
+            "needs_admin": False,
+            "obo_scope_missing": False,
+        }
 
     grant_stmts: list[tuple[str, str]] = []
     for privilege, obj_type, obj_name in SYSTEM_TABLE_GRANTS:
         parts = obj_name.split(".")
         q = ".".join(f"`{p}`" for p in parts)
         if obj_type == "CATALOG":
-            grant_stmts.append((f"GRANT USE CATALOG ON CATALOG {q} TO `{sp_id}`", f"CATALOG/{obj_name}"))
+            grant_stmts.append(
+                (f"GRANT USE CATALOG ON CATALOG {q} TO `{sp_id}`", f"CATALOG/{obj_name}")
+            )
         elif obj_type == "SCHEMA":
-            grant_stmts.append((f"GRANT USE SCHEMA ON SCHEMA {q} TO `{sp_id}`", f"SCHEMA/{obj_name}"))
+            grant_stmts.append(
+                (f"GRANT USE SCHEMA ON SCHEMA {q} TO `{sp_id}`", f"SCHEMA/{obj_name}")
+            )
         elif obj_type == "TABLE":
             grant_stmts.append((f"GRANT SELECT ON TABLE {q} TO `{sp_id}`", f"TABLE/{obj_name}"))
 
@@ -777,6 +972,7 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
     sql_host = host.removeprefix("https://").removeprefix("http://")
     try:
         from databricks import sql as dbsql
+
         conn = dbsql.connect(
             server_hostname=sql_host,
             http_path=http_path,
@@ -787,9 +983,14 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
         if any(kw in err_lower for kw in ("scope", "oauth", "token", "auth")):
             obo_scope_missing = True
         logger.warning(f"User SQL GRANT connect failed: {_clean_sdk_error(str(e))}")
-        return {"ok": False, "applied": 0, "failed": len(grant_stmts),
-                "errors": [_clean_sdk_error(str(e))],
-                "needs_admin": False, "obo_scope_missing": obo_scope_missing}
+        return {
+            "ok": False,
+            "applied": 0,
+            "failed": len(grant_stmts),
+            "errors": [_clean_sdk_error(str(e))],
+            "needs_admin": False,
+            "obo_scope_missing": obo_scope_missing,
+        }
 
     try:
         with conn.cursor() as cursor:
@@ -803,10 +1004,16 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
                     if "already" in err_lower:
                         ok += 1
                         logger.debug(f"User SQL GRANT already exists: {label}")
-                    elif any(kw in err_lower for kw in (
-                        "insufficient", "permission", "denied",
-                        "unauthorized", "forbidden",
-                    )):
+                    elif any(
+                        kw in err_lower
+                        for kw in (
+                            "insufficient",
+                            "permission",
+                            "denied",
+                            "unauthorized",
+                            "forbidden",
+                        )
+                    ):
                         needs_admin = True
                         failed += 1
                         errors.append(f"{label}: {_clean_sdk_error(str(e))}")
@@ -815,7 +1022,13 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
                         failed += 1
                         errors.append(f"{label}: {_clean_sdk_error(str(e))}")
                     elif "system.access.audit" in label and any(
-                        kw in err_lower for kw in ("not found", "does not exist", "table_or_view_not_found", "no such")
+                        kw in err_lower
+                        for kw in (
+                            "not found",
+                            "does not exist",
+                            "table_or_view_not_found",
+                            "no such",
+                        )
                     ):
                         # Audit schema not yet enabled in Account Console — GRANT can't
                         # succeed until an account admin enables System Tables > access.
@@ -825,17 +1038,27 @@ def _grant_system_via_user_sql(user_token: str, sp_id: str) -> dict:
                             "an account admin must enable System Tables > access schema "
                             "in the Databricks Account Console before this grant can be applied."
                         )
-                        logger.warning("system.access.audit GRANT skipped — access schema not enabled at account level")
+                        logger.warning(
+                            "system.access.audit GRANT skipped — access schema not enabled at account level"
+                        )
                     else:
                         failed += 1
                         errors.append(f"{label}: {_clean_sdk_error(str(e))}")
     finally:
         conn.close()
 
-    logger.info(f"User SQL system grants: {ok} ok, {failed} failed "
-                f"(needs_admin={needs_admin}, obo_scope_missing={obo_scope_missing})")
-    return {"ok": failed == 0, "applied": ok, "failed": failed, "errors": errors,
-            "needs_admin": needs_admin, "obo_scope_missing": obo_scope_missing}
+    logger.info(
+        f"User SQL system grants: {ok} ok, {failed} failed "
+        f"(needs_admin={needs_admin}, obo_scope_missing={obo_scope_missing})"
+    )
+    return {
+        "ok": failed == 0,
+        "applied": ok,
+        "failed": failed,
+        "errors": errors,
+        "needs_admin": needs_admin,
+        "obo_scope_missing": obo_scope_missing,
+    }
 
 
 @router.post("/grant-sp-system-access")
@@ -874,7 +1097,11 @@ async def grant_sp_system_access(request: Request) -> dict[str, Any]:
 
     # Always show copyable SQL when grants couldn't be applied (failed OR no token).
     # system.access.audit requires account-admin; other tables need metastore admin.
-    grants_sql = _build_system_grants_sql(sp_id) if (sys_result["failed"] > 0 or sys_result.get("obo_scope_missing")) else None
+    grants_sql = (
+        _build_system_grants_sql(sp_id)
+        if (sys_result["failed"] > 0 or sys_result.get("obo_scope_missing"))
+        else None
+    )
 
     return {
         "ok": total_failed == 0,
@@ -907,6 +1134,7 @@ def _clean_sdk_error(msg: str) -> str:
 def _execute_as_sp(sql: str) -> list[dict]:
     """Execute a query as the SP — explicitly clears the user token from context."""
     from server.db import _user_token, execute_query
+
     tok = _user_token.set("")
     try:
         return execute_query(sql, no_cache=True) or []
@@ -932,7 +1160,9 @@ def _preflight_catalog_check(catalog: str) -> dict:
         return {"ok": True, "status": "ready", "message": f"Catalog `{catalog}` is accessible."}
     except Exception as e:
         msg = _clean_sdk_error(str(e))
-        if any(kw in msg.lower() for kw in ("not found", "does not exist", "404", "catalog_not_found")):
+        if any(
+            kw in msg.lower() for kw in ("not found", "does not exist", "404", "catalog_not_found")
+        ):
             return {
                 "ok": False,
                 "status": "catalog_missing",
@@ -983,22 +1213,34 @@ async def create_tables(
     Set run_in_background=true (default) to run asynchronously.
     """
     await _require_setup_admin(request)
+    _reconcile_task_state_from_disk()
     cat, sch = get_catalog_schema()
     target_catalog = catalog or cat
     target_schema = schema or sch
 
-    if _create_task_state.get("status") == "running":
+    if _create_task_state.get("status") in ("running", "cancelling"):
         raise HTTPException(status_code=409, detail="Table creation already in progress")
 
     if run_in_background:
         import time as _time
+
+        run_id = uuid.uuid4().hex
+        _clear_task_cancel(run_id)
         _create_task_state["status"] = "running"
         _create_task_state["error"] = None
         _create_task_state["started_at"] = _time.monotonic()
+        _create_task_state["started_at_epoch"] = _time.time()
         _create_task_state["elapsed_seconds"] = 0
+        _create_task_state["phase"] = "granting_access"
+        _create_task_state["run_id"] = run_id
+        _create_task_state["table_errors"] = {}
+        _create_task_state["cancel_requested_at"] = None
         _ALL_SETUP_TABLES = _MV_TABLES + [
-            "app_response_cache", "app_user_permissions",
-            "app_mv_refresh_state", "app_refresh_log", "app_settings",
+            "app_response_cache",
+            "app_user_permissions",
+            "app_mv_refresh_state",
+            "app_refresh_log",
+            "app_settings",
         ]
         _create_task_state["table_progress"] = {t: "pending" for t in _ALL_SETUP_TABLES}
         _persist_task_state()
@@ -1006,15 +1248,13 @@ async def create_tables(
         # (e.g. after a scope error on a previous request), which forces _db_user_token
         # to "" even when x-forwarded-access-token IS present in the request.
         # Setup operations must always run as the user, not the SP.
-        _token_snap = (
-            request.headers.get("x-forwarded-access-token", "")
-            or _db_user_token.get()
-        )
+        _token_snap = request.headers.get("x-forwarded-access-token", "") or _db_user_token.get()
         background_tasks.add_task(
-            _create_tables_task, target_catalog, target_schema, _token_snap
+            _create_tables_task, target_catalog, target_schema, _token_snap, run_id
         )
         return {
             "status": "started",
+            "run_id": run_id,
             "message": "Table creation started in background. Check /api/setup/status for progress.",
             "catalog": target_catalog,
             "schema": target_schema,
@@ -1030,7 +1270,33 @@ async def create_tables(
         }
 
 
-def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
+@router.post("/cancel-table-creation")
+async def cancel_table_creation(request: Request) -> dict[str, Any]:
+    """Cancel active setup SQL and leave the wizard ready for a clean retry."""
+    await _require_setup_admin(request)
+    _reconcile_task_state_from_disk()
+    run_id = str(_create_task_state.get("run_id") or "")
+    if _create_task_state.get("status") not in ("running", "cancelling") or not run_id:
+        return {"status": "not_running", "cancelled_queries": 0}
+
+    _request_task_cancel(run_id)
+    _create_task_state["status"] = "cancelling"
+    _create_task_state["phase"] = "cancelling"
+    _create_task_state["error"] = None
+    _create_task_state["cancel_requested_at"] = time.time()
+    _persist_task_state()
+
+    from server.db import cancel_sql_operation
+
+    cancelled_queries = cancel_sql_operation(run_id)
+    return {
+        "status": "cancelling",
+        "run_id": run_id,
+        "cancelled_queries": cancelled_queries,
+    }
+
+
+def _create_tables_task(catalog: str, schema: str, user_token: str = "", run_id: str = ""):
     """Background task: grants → build → verify.
 
     The catalog-existence check is done by the frontend endpoint (user token)
@@ -1051,12 +1317,58 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
 
     logger.info(f"Starting background table creation for {catalog}.{schema}")
 
+    def _cancelled() -> bool:
+        return _is_cancel_requested(run_id)
+
+    monitor_stop = threading.Event()
+
+    def _monitor_cancel() -> None:
+        from server.db import cancel_sql_operation
+
+        while not monitor_stop.wait(0.25):
+            if _cancelled():
+                cancel_sql_operation(run_id)
+                return
+
+    cancel_monitor = threading.Thread(
+        target=_monitor_cancel,
+        daemon=True,
+        name=f"setup-cancel-{run_id[:8]}",
+    )
+    cancel_monitor.start()
+
+    def _finish_cancelled() -> None:
+        _create_task_state.update(
+            {
+                "status": "cancelled",
+                "error": None,
+                "started_at": None,
+                "started_at_epoch": None,
+                "elapsed_seconds": None,
+                "table_progress": {},
+                "table_errors": {},
+                "phase": "idle",
+                "run_id": run_id,
+                "cancel_requested_at": None,
+            }
+        )
+        _persist_task_state()
+        _clear_task_cancel(run_id)
+
     if not catalog or not schema:
         _create_task_state["status"] = "error"
-        _create_task_state["error"] = "Catalog and schema must be configured before creating tables."
+        _create_task_state["error"] = (
+            "Catalog and schema must be configured before creating tables."
+        )
+        _create_task_state["phase"] = "failed"
+        _persist_task_state()
+        monitor_stop.set()
         return
 
     try:
+        if _cancelled():
+            _finish_cancelled()
+            return
         # Pre-creation grants — must run before create_materialized_views.
         # The SP needs USE CATALOG + CREATE SCHEMA before it can create the schema.
         if user_token:
@@ -1072,10 +1384,12 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
                 # failures are non-fatal for table creation in the app catalog.
                 if pre_grant.get("applied", 0) == 0 and pre_grant.get("failed", 0) > 0:
                     _create_task_state["status"] = "error"
+                    _create_task_state["phase"] = "failed"
                     _create_task_state["error"] = (
                         f"Could not grant SP catalog access to `{catalog}`: "
                         + "; ".join(pre_grant.get("errors", []))
                     )
+                    _persist_task_state()
                     return
             finally:
                 _db_user_token.reset(pre_tok)
@@ -1090,7 +1404,8 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
                     logger.warning(
                         "Some system table grants failed — SP may lack access to "
                         "system.query.history / system.compute.clusters etc. "
-                        "Errors: %s", sys_grant.get("errors", [])
+                        "Errors: %s",
+                        sys_grant.get("errors", []),
                     )
 
             # Brief propagation pause before the SP hits the warehouse.
@@ -1102,13 +1417,35 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
                 "re-run the wizard with an authenticated browser session."
             )
 
+        if _cancelled():
+            _finish_cancelled()
+            return
+
         # Phase 2: Build — no user token in context; all queries run as SP.
-        def _on_table_event(table_name: str, event: str) -> None:
+        _create_task_state["phase"] = "creating_tables"
+        _persist_task_state()
+
+        def _on_table_event(table_name: str, event: str, detail: str | None = None) -> None:
+            if _cancelled():
+                return
             _create_task_state["table_progress"][table_name] = event
-            if event in ("done", "error"):
-                _persist_task_state()
-        results = create_materialized_views(catalog, schema, on_table_event=_on_table_event)
+            if detail:
+                _create_task_state["table_errors"][table_name] = _clean_sdk_error(detail)
+            elif event != "error":
+                _create_task_state["table_errors"].pop(table_name, None)
+            _persist_task_state()
+
+        results = create_materialized_views(
+            catalog,
+            schema,
+            on_table_event=_on_table_event,
+            should_cancel=_cancelled,
+            operation_id=run_id,
+        )
         logger.info(f"Table creation completed: {results}")
+        if _cancelled() or results.get("__cancelled__"):
+            _finish_cancelled()
+            return
 
         # Bootstrap all config tables now that the SP has schema-level permissions.
         # Each has its own _ensure_* function that runs CREATE TABLE IF NOT EXISTS.
@@ -1119,34 +1456,52 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
             _ensure_permissions_table,
             _ensure_refresh_log_table,
         )
+
         _config_table_fns = [
             (
                 "app_mv_refresh_state",
                 lambda: _ensure_refresh_state_table(catalog, schema),
             ),
-            ("app_response_cache",    _ensure_response_cache_table),
-            ("app_user_permissions",  _ensure_permissions_table),
-            ("app_refresh_log",       _ensure_refresh_log_table),
-            ("app_settings",          _ensure_app_settings_table),
+            ("app_response_cache", _ensure_response_cache_table),
+            ("app_user_permissions", _ensure_permissions_table),
+            ("app_refresh_log", _ensure_refresh_log_table),
+            ("app_settings", _ensure_app_settings_table),
         ]
+        _create_task_state["phase"] = "creating_config_tables"
+        _persist_task_state()
         for _tname, _fn in _config_table_fns:
+            if _cancelled():
+                _finish_cancelled()
+                return
             try:
                 _create_task_state["table_progress"][_tname] = "running"
+                _persist_task_state()
                 _fn()
                 _create_task_state["table_progress"][_tname] = "done"
+                _create_task_state["table_errors"].pop(_tname, None)
                 logger.info("%s table ensured during setup", _tname)
             except Exception as _te:
                 _create_task_state["table_progress"][_tname] = "error"
+                _create_task_state["table_errors"][_tname] = _clean_sdk_error(str(_te))
                 logger.warning("Could not bootstrap %s during setup: %s", _tname, _te)
+            _persist_task_state()
 
         all_errors = {
-            k: v for k, v in results.items()
+            k: v
+            for k, v in results.items()
             if k != "__mv_timings__" and isinstance(v, str) and v.startswith("error:")
         }
+        all_errors.update(
+            {
+                table: f"error: {detail}"
+                for table, detail in _create_task_state["table_errors"].items()
+            }
+        )
         if all_errors:
             first_error = next(iter(all_errors.values()))
             _create_task_state["status"] = "error"
             _create_task_state["error"] = first_error.replace("error: ", "", 1)
+            _create_task_state["phase"] = "failed"
             _persist_task_state()
             return
 
@@ -1160,11 +1515,20 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
                 _db_user_token.reset(post_tok)
 
         # Phase 3: Verify with retry backoff for grant propagation.
+        _create_task_state["phase"] = "verifying"
+        _persist_task_state()
         retry_delays = [0, 10, 20, 30]
         last_verify: dict = {}
         for delay in retry_delays:
+            if _cancelled():
+                _finish_cancelled()
+                return
             if delay > 0:
-                _time.sleep(delay)
+                if monitor_stop.wait(delay):
+                    return
+                if _cancelled():
+                    _finish_cancelled()
+                    return
             last_verify = _verify_built_objects_as_sp(catalog, schema)
             logger.info(
                 f"SP verification (delay +{delay}s): ok={last_verify['ok']} "
@@ -1176,12 +1540,14 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
         if last_verify.get("ok"):
             _create_task_state["status"] = "done"
             _create_task_state["error"] = None
+            _create_task_state["phase"] = "complete"
         else:
             failed = last_verify.get("failed", [])
             errors_map = last_verify.get("errors", {})
             first_fail = failed[0] if failed else "unknown"
             first_err = _clean_sdk_error(errors_map.get(first_fail, "SP cannot read table"))
             _create_task_state["status"] = "error"
+            _create_task_state["phase"] = "failed"
             _create_task_state["error"] = (
                 f"SP verification failed on `{first_fail}`: {first_err}. "
                 "Retry table creation in 1-2 minutes if grants were just applied."
@@ -1190,10 +1556,16 @@ def _create_tables_task(catalog: str, schema: str, user_token: str = ""):
         _persist_task_state()
 
     except Exception as e:
+        if _cancelled():
+            _finish_cancelled()
+            return
         _create_task_state["status"] = "error"
         _create_task_state["error"] = _clean_sdk_error(str(e))
+        _create_task_state["phase"] = "failed"
         _persist_task_state()
         logger.error(f"Table creation failed: {e}")
+    finally:
+        monitor_stop.set()
 
 
 @router.post("/refresh-tables")
@@ -1215,9 +1587,7 @@ async def refresh_tables(
     target_schema = schema or sch
 
     if run_in_background:
-        background_tasks.add_task(
-            _refresh_tables_task, target_catalog, target_schema
-        )
+        background_tasks.add_task(_refresh_tables_task, target_catalog, target_schema)
         return {
             "status": "started",
             "message": "Table refresh started in background. Check /api/setup/status for progress.",
@@ -1238,8 +1608,10 @@ def _refresh_tables_task(catalog: str, schema: str):
     """Background task to refresh tables."""
     logger.info(f"Starting background table refresh for {catalog}.{schema}")
     _create_task_state["table_progress"] = {t: "pending" for t in _MV_TABLES}
-    def _on_table_event(table_name: str, event: str) -> None:
+
+    def _on_table_event(table_name: str, event: str, _detail: str | None = None) -> None:
         _create_task_state["table_progress"][table_name] = event
+
     try:
         results = refresh_materialized_views(catalog, schema, on_table_event=_on_table_event)
         logger.info(f"Table refresh completed: {results}")
@@ -1248,6 +1620,7 @@ def _refresh_tables_task(catalog: str, schema: str):
         # up to 5 minutes (the cache TTL).
         try:
             from server.routers.billing import _mv_cache
+
             _mv_cache["available"] = None
             _mv_cache["checked_at"] = 0
         except Exception:
@@ -1259,6 +1632,7 @@ def _refresh_tables_task(catalog: str, schema: str):
         # stale payloads should not continue serving when the underlying data has changed.
         try:
             from server.db import delta_cache_invalidate
+
             delta_cache_invalidate()
             logger.info("Delta response cache cleared after MV refresh")
         except Exception:
@@ -1268,6 +1642,7 @@ def _refresh_tables_task(catalog: str, schema: str):
 # ============================================================================
 # AWS CUR Setup Endpoints
 # ============================================================================
+
 
 @router.get("/aws-cur/status")
 async def get_aws_cur_status() -> dict[str, Any]:
@@ -1298,7 +1673,9 @@ async def get_aws_cur_status() -> dict[str, Any]:
 async def create_aws_cur_tables(
     request: Request,
     background_tasks: BackgroundTasks,
-    s3_path: str = Query(default=None, description="S3 path to CUR data (e.g., s3://bucket/cur-reports/)"),
+    s3_path: str = Query(
+        default=None, description="S3 path to CUR data (e.g., s3://bucket/cur-reports/)"
+    ),
     catalog: str = Query(default=None, description="Target catalog"),
     schema: str = Query(default=None, description="Target schema"),
     load_data: bool = Query(default=False, description="Load data from S3 after creating tables"),
@@ -1388,9 +1765,7 @@ async def refresh_aws_cur_tables(
     target_schema = schema or sch
 
     if run_in_background:
-        background_tasks.add_task(
-            _refresh_cur_tables_task, target_catalog, target_schema, s3_path
-        )
+        background_tasks.add_task(_refresh_cur_tables_task, target_catalog, target_schema, s3_path)
         return {
             "status": "started",
             "message": "AWS CUR table refresh started in background.",
@@ -1444,9 +1819,7 @@ async def bootstrap_admin(request: Request) -> dict[str, Any]:
 # ============================================================================
 
 
-def _grant_user_catalog_visibility(
-    catalog: str, schema: str | None, user_token: str
-) -> None:
+def _grant_user_catalog_visibility(catalog: str, schema: str | None, user_token: str) -> None:
     """Best-effort: grant the installing user full visibility + MANAGE on the app catalog/schema.
 
     Grants:
@@ -1465,6 +1838,7 @@ def _grant_user_catalog_visibility(
         return
     try:
         from databricks.sdk import WorkspaceClient as _WC
+
         user_w = _WC(host=host, token=user_token, auth_type="pat")
         me = user_w.current_user.me()
         user_email = me.user_name or ""
@@ -1472,6 +1846,7 @@ def _grant_user_catalog_visibility(
             return
         from server.db import _user_token as _exec_tok
         from server.db import execute_query as _exec
+
         ctx = _exec_tok.set("")  # clear user token → SP M2M auth (has sql scope + owns objects)
         try:
             _exec(f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{user_email}`", no_cache=True)
@@ -1494,11 +1869,14 @@ def _grant_user_catalog_visibility(
         logger.info(
             "Granted USE CATALOG + MANAGE ON CATALOG"
             + (" + USE SCHEMA + SELECT ON SCHEMA + MANAGE ON SCHEMA" if schema else "")
-            + f" on `{catalog}`" + (f".`{schema}`" if schema else "")
+            + f" on `{catalog}`"
+            + (f".`{schema}`" if schema else "")
             + f" to {user_email}"
         )
     except Exception as e:
-        logger.warning(f"Could not grant catalog visibility to installer: {_clean_sdk_error(str(e))}")
+        logger.warning(
+            f"Could not grant catalog visibility to installer: {_clean_sdk_error(str(e))}"
+        )
 
 
 @router.post("/ensure-catalog")
@@ -1536,6 +1914,7 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
         try:
             from server.db import _user_token as _exec_tok
             from server.db import execute_query as _exec
+
             # Run the GRANT as the calling user (catalog owner). The user token is
             # set directly in the ContextVar so get_connection() uses it for auth.
             ctx = _exec_tok.set(user_token)
@@ -1547,7 +1926,9 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
             logger.info(f"Granted SP USE CATALOG + CREATE SCHEMA on `{catalog}` via user SQL GRANT")
             return True
         except Exception as e:
-            logger.warning(f"User token SQL grant on `{catalog}` failed: {_clean_sdk_error(str(e))}")
+            logger.warning(
+                f"User token SQL grant on `{catalog}` failed: {_clean_sdk_error(str(e))}"
+            )
             return False
 
     def _try_grant_create_catalog_via_user_token() -> bool:
@@ -1562,6 +1943,7 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
         try:
             from server.db import _user_token as _exec_tok
             from server.db import execute_query as _exec
+
             ctx = _exec_tok.set(user_token)
             try:
                 _exec(f"GRANT CREATE CATALOG ON METASTORE TO `{sp_id}`", no_cache=True)
@@ -1570,7 +1952,9 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
             logger.info(f"Granted CREATE CATALOG ON METASTORE to SP `{sp_id}` via user token")
             return True
         except Exception as e:
-            logger.debug(f"CREATE CATALOG grant via user token failed (not metastore admin?): {_clean_sdk_error(str(e))}")
+            logger.debug(
+                f"CREATE CATALOG grant via user token failed (not metastore admin?): {_clean_sdk_error(str(e))}"
+            )
             return False
 
     def _create():
@@ -1591,7 +1975,9 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
             else:
                 # SP can't see the catalog (likely exists but SP lacks USE CATALOG).
                 # Try granting USE CATALOG via user token, then re-probe.
-                logger.debug(f"catalogs.get(`{catalog}`) failed — catalog may exist but SP lacks access: {msg_lower}")
+                logger.debug(
+                    f"catalogs.get(`{catalog}`) failed — catalog may exist but SP lacks access: {msg_lower}"
+                )
                 _grant_sp_via_user_token()
                 try:
                     w.catalogs.get(catalog)
@@ -1613,10 +1999,20 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
                 if any(kw in lower for kw in ("already exists", "already_exists", "already exist")):
                     logger.info(f"Catalog `{catalog}` created concurrently — treating as existing")
                     already_existed = True
-                elif any(kw in lower for kw in ("permission", "privilege", "forbidden",
-                                                 "unauthorized", "insufficient", "does not have")):
+                elif any(
+                    kw in lower
+                    for kw in (
+                        "permission",
+                        "privilege",
+                        "forbidden",
+                        "unauthorized",
+                        "insufficient",
+                        "does not have",
+                    )
+                ):
                     return {
-                        "ok": False, "catalog": catalog,
+                        "ok": False,
+                        "catalog": catalog,
                         "message": (
                             f"Service principal lacks CREATE CATALOG. "
                             f"Run in Databricks SQL then retry: "
@@ -1625,7 +2021,11 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
                     }
                 else:
                     logger.warning(f"ensure-catalog create failed for `{catalog}`: {msg}")
-                    return {"ok": False, "catalog": catalog, "message": f"Could not create catalog: {msg}"}
+                    return {
+                        "ok": False,
+                        "catalog": catalog,
+                        "message": f"Could not create catalog: {msg}",
+                    }
 
         # Step 3: If catalog pre-existed (or was just created by someone else), grant
         # SP access via the user's token so SP can verify and create schemas.
@@ -1641,12 +2041,23 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
         except Exception as e:
             msg = _clean_sdk_error(str(e))
             lower = msg.lower()
-            if any(kw in lower for kw in ("permission", "privilege", "does not have",
-                                          "use catalog", "access", "forbidden", "unauthorized")):
+            if any(
+                kw in lower
+                for kw in (
+                    "permission",
+                    "privilege",
+                    "does not have",
+                    "use catalog",
+                    "access",
+                    "forbidden",
+                    "unauthorized",
+                )
+            ):
                 # Still blocked — user token grant likely failed (scope restriction).
                 # Show the manual SQL so the user can unblock themselves.
                 return {
-                    "ok": False, "catalog": catalog,
+                    "ok": False,
+                    "catalog": catalog,
                     "message": (
                         f"Catalog `{catalog}` exists but the service principal still needs access. "
                         f"Run in Databricks SQL then retry: "
@@ -1655,7 +2066,11 @@ async def ensure_catalog(request: Request) -> dict[str, Any]:
                     ),
                 }
             logger.warning(f"ensure-catalog verify failed for `{catalog}`: {msg}")
-            return {"ok": False, "catalog": catalog, "message": f"Catalog `{catalog}` not found: {msg}"}
+            return {
+                "ok": False,
+                "catalog": catalog,
+                "message": f"Catalog `{catalog}` not found: {msg}",
+            }
 
     loop = _asyncio.get_running_loop()
     return await loop.run_in_executor(None, _create)
@@ -1689,7 +2104,11 @@ async def ensure_schema(request: Request) -> dict[str, Any]:
                 logger.info(f"Schema `{catalog}`.`{schema}` already exists — ok")
             else:
                 logger.warning(f"ensure-schema SDK create failed: {msg}")
-                return {"ok": False, "schema": f"{catalog}.{schema}", "message": f"Could not create schema: {msg}"}
+                return {
+                    "ok": False,
+                    "schema": f"{catalog}.{schema}",
+                    "message": f"Could not create schema: {msg}",
+                }
 
         # Verify via SDK get(). Permission errors mean schema exists, SP just lacks
         # USE SCHEMA yet — same as catalog, grants run later.
@@ -1697,19 +2116,41 @@ async def ensure_schema(request: Request) -> dict[str, Any]:
             w.schemas.get(f"{catalog}.{schema}")
             logger.info(f"Schema `{catalog}`.`{schema}` verified")
             _grant_user_catalog_visibility(catalog, schema, user_token)
-            return {"ok": True, "schema": f"{catalog}.{schema}",
-                    "message": f"Schema `{catalog}.{schema}` is ready."}
+            return {
+                "ok": True,
+                "schema": f"{catalog}.{schema}",
+                "message": f"Schema `{catalog}.{schema}` is ready.",
+            }
         except Exception as e:
             msg = _clean_sdk_error(str(e))
             lower = msg.lower()
-            if any(kw in lower for kw in ("permission", "privilege", "forbidden", "unauthorized",
-                                          "does not have", "access", "insufficient")):
-                logger.info(f"Schema `{catalog}`.`{schema}` exists (SP lacks USE SCHEMA, grants pending)")
+            if any(
+                kw in lower
+                for kw in (
+                    "permission",
+                    "privilege",
+                    "forbidden",
+                    "unauthorized",
+                    "does not have",
+                    "access",
+                    "insufficient",
+                )
+            ):
+                logger.info(
+                    f"Schema `{catalog}`.`{schema}` exists (SP lacks USE SCHEMA, grants pending)"
+                )
                 _grant_user_catalog_visibility(catalog, schema, user_token)
-                return {"ok": True, "schema": f"{catalog}.{schema}",
-                        "message": f"Schema `{catalog}.{schema}` is ready."}
+                return {
+                    "ok": True,
+                    "schema": f"{catalog}.{schema}",
+                    "message": f"Schema `{catalog}.{schema}` is ready.",
+                }
             logger.warning(f"ensure-schema verify failed: {msg}")
-            return {"ok": False, "schema": f"{catalog}.{schema}", "message": f"Schema not found: {msg}"}
+            return {
+                "ok": False,
+                "schema": f"{catalog}.{schema}",
+                "message": f"Schema not found: {msg}",
+            }
 
     loop = _asyncio.get_running_loop()
     return await loop.run_in_executor(None, _create)
@@ -1752,7 +2193,7 @@ async def grant_catalog_access(request: Request) -> dict[str, Any]:
 
             errors = []
             for privilege, securable_type, full_name in [
-                ("USE CATALOG",   SecurableType.CATALOG, catalog),
+                ("USE CATALOG", SecurableType.CATALOG, catalog),
                 ("CREATE SCHEMA", SecurableType.CATALOG, catalog),
             ]:
                 try:
@@ -1777,7 +2218,7 @@ async def grant_catalog_access(request: Request) -> dict[str, Any]:
             return {
                 "ok": False,
                 "message": f"Could not apply all grants — you may not have metastore admin rights. "
-                           f"Errors: {'; '.join(errors)}",
+                f"Errors: {'; '.join(errors)}",
                 "sql": (
                     f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{principal}`;\n"
                     f"GRANT CREATE SCHEMA ON CATALOG `{catalog}` TO `{principal}`;"
@@ -1787,7 +2228,7 @@ async def grant_catalog_access(request: Request) -> dict[str, Any]:
         return {
             "ok": True,
             "message": f"Granted USE CATALOG and CREATE SCHEMA on `{catalog}` to `{principal}`. "
-                       f"Click Create Tables to continue.",
+            f"Click Create Tables to continue.",
         }
 
     except Exception as e:
@@ -1806,6 +2247,7 @@ async def grant_catalog_access(request: Request) -> dict[str, Any]:
 # ============================================================================
 # Readiness Checks
 # ============================================================================
+
 
 class CheckStatus(str, Enum):
     HEALTHY = "healthy"
@@ -1881,6 +2323,7 @@ def _run_blocking_warehouse_check() -> WarehouseCheckResult:
     with an unhelpful connection error.
     """
     from server.db import _user_token, execute_query
+
     source, warehouse_id = _resolve_warehouse_config()
     if source == "none":
         return WarehouseCheckResult(
@@ -1903,13 +2346,19 @@ def _run_blocking_warehouse_check() -> WarehouseCheckResult:
         msg = str(exc)
         logger.error("Warehouse readiness check failed: %s", msg, exc_info=True)
         lower = msg.lower()
-        if any(kw in lower for kw in ("permission", "denied", "unauthorized", "forbidden", "privilege")):
+        if any(
+            kw in lower for kw in ("permission", "denied", "unauthorized", "forbidden", "privilege")
+        ):
             status = CheckStatus.PERMISSION_DENIED
-        elif any(kw in lower for kw in ("timeout", "timed out", "starting", "unavailable", "connection")):
+        elif any(
+            kw in lower for kw in ("timeout", "timed out", "starting", "unavailable", "connection")
+        ):
             status = CheckStatus.TIMEOUT_STARTING
         else:
             status = CheckStatus.INTERNAL_ERROR
-        return WarehouseCheckResult(status=status, ok=False, message=msg, warehouse_id=warehouse_id, source=source)
+        return WarehouseCheckResult(
+            status=status, ok=False, message=msg, warehouse_id=warehouse_id, source=source
+        )
     finally:
         _user_token.reset(tok)
 
@@ -1961,6 +2410,7 @@ def check_warehouse_readiness() -> WarehouseCheckResult:
     the 3600s TTL is respected instead of re-reading env vars on every request.
     """
     from concurrent.futures import TimeoutError as _FutureTimeout
+
     cached = _get_cached_warehouse_check()
     if cached is not None:
         return cached
@@ -1968,7 +2418,9 @@ def check_warehouse_readiness() -> WarehouseCheckResult:
     try:
         result = future.result(timeout=_WH_CHECK_TIMEOUT)
     except _FutureTimeout:
-        logger.warning("Warehouse readiness timed out after %ds (may be starting up)", _WH_CHECK_TIMEOUT)
+        logger.warning(
+            "Warehouse readiness timed out after %ds (may be starting up)", _WH_CHECK_TIMEOUT
+        )
         result = WarehouseCheckResult(
             status=CheckStatus.TIMEOUT_STARTING,
             ok=False,
@@ -2033,6 +2485,7 @@ def _check_table_as_sp(table: str) -> tuple[bool, str]:
     """Run check_table_access with the user token cleared (forces SP auth)."""
     from server.db import _user_token
     from server.routers.permissions import check_table_access
+
     tok = _user_token.set("")
     try:
         return check_table_access(table)
@@ -2050,14 +2503,17 @@ def _safe_table_check_result(table_name: str, future: _Future) -> tuple[bool, st
         if ok:
             return True, "", CheckStatus.HEALTHY
         lower = msg.lower()
-        if any(kw in lower for kw in ("permission", "denied", "privilege", "unauthorized", "forbidden")):
+        if any(
+            kw in lower for kw in ("permission", "denied", "privilege", "unauthorized", "forbidden")
+        ):
             return False, msg, CheckStatus.PERMISSION_DENIED
         # Unity Catalog returns "table/view not found" or "does not exist" instead of a
         # permission error when the SP lacks SELECT on a system table — it hides the table
         # from the SP's metadata view entirely. Treat this as a missing grant, not an
         # internal error, so the Fix button is shown and the cache TTL is appropriate.
         if table_name.startswith("system.") and any(
-            kw in lower for kw in ("does not exist", "not found", "table or view not found", "no such")
+            kw in lower
+            for kw in ("does not exist", "not found", "table or view not found", "no such")
         ):
             if table_name == "system.access.audit":
                 clear_msg = (
@@ -2237,7 +2693,12 @@ def shutdown_readiness_executor() -> None:
 
 def reset_readiness_caches() -> None:
     """Clear all readiness caches. Used in tests and forced re-check."""
-    global _table_readiness_cache, _table_readiness_cache_ts, _table_readiness_verified_at, _wh_check_cache, _wh_check_inflight
+    global \
+        _table_readiness_cache, \
+        _table_readiness_cache_ts, \
+        _table_readiness_verified_at, \
+        _wh_check_cache, \
+        _wh_check_inflight
     with _wh_check_lock:
         _table_readiness_cache = None
         _table_readiness_cache_ts = 0.0
@@ -2255,6 +2716,7 @@ async def get_readiness(refresh: bool = False) -> dict[str, Any]:
     a live re-check.
     """
     import asyncio as _asyncio
+
     loop = _asyncio.get_running_loop()
     return await loop.run_in_executor(
         None,
@@ -2271,9 +2733,12 @@ async def list_workspaces() -> dict:
     which requires a separate schema grant the SP does not hold.
     """
     from server.db import execute_query, get_catalog_schema
+
     try:
         catalog, schema = get_catalog_schema()
-        rows = await asyncio.to_thread(execute_query, f"""
+        rows = await asyncio.to_thread(
+            execute_query,
+            f"""
             SELECT
                 CAST(workspace_id AS STRING) AS workspace_id,
                 MAX(workspace_name) AS workspace_name
@@ -2281,9 +2746,10 @@ async def list_workspaces() -> dict:
             WHERE workspace_id IS NOT NULL
             GROUP BY workspace_id
             ORDER BY MAX(workspace_name)
-        """)
+        """,
+        )
         workspaces = []
-        for r in (rows or []):
+        for r in rows or []:
             wid = r.get("workspace_id")
             if not wid:
                 continue
@@ -2293,11 +2759,13 @@ async def list_workspaces() -> dict:
             # populated or was dropped. Flag it "historical" so the wizard can label
             # it instead of showing a bare workspace id that looks like a live one.
             historical = (not raw_name) or (raw_name == wid)
-            workspaces.append({
-                "id": wid,
-                "name": raw_name or wid,
-                "historical": historical,
-            })
+            workspaces.append(
+                {
+                    "id": wid,
+                    "name": raw_name or wid,
+                    "historical": historical,
+                }
+            )
         return {"workspaces": workspaces}
     except Exception as e:
         logger.warning("list-workspaces failed: %s", e)
@@ -2347,7 +2815,10 @@ async def list_schemas(
 
     try:
         names = await asyncio.to_thread(_list)
-        return {"catalog": cat, "schemas": sorted(n for n in names if n and n.lower() != "information_schema")}
+        return {
+            "catalog": cat,
+            "schemas": sorted(n for n in names if n and n.lower() != "information_schema"),
+        }
     except Exception as e:
         logger.warning("list-schemas failed for %s: %s", cat, e)
         return {"catalog": cat, "schemas": [], "error": _clean_sdk_error(str(e))}
@@ -2367,8 +2838,11 @@ async def preflight_catalog_endpoint(request: Request) -> dict:
 
     def _check():
         if not catalog:
-            return {"ok": False, "status": "invalid_config",
-                    "message": "No catalog configured — return to the Storage step."}
+            return {
+                "ok": False,
+                "status": "invalid_config",
+                "message": "No catalog configured — return to the Storage step.",
+            }
         try:
             w = get_workspace_client()
             w.catalogs.get(catalog)
@@ -2377,7 +2851,10 @@ async def preflight_catalog_endpoint(request: Request) -> dict:
             msg = _clean_sdk_error(str(e))
             msg_lower = msg.lower()
             # "not found" / "does not exist" / CATALOG_NOT_FOUND → catalog genuinely absent
-            if any(kw in msg_lower for kw in ("not found", "does not exist", "404", "catalog_not_found")):
+            if any(
+                kw in msg_lower
+                for kw in ("not found", "does not exist", "404", "catalog_not_found")
+            ):
                 return {
                     "ok": False,
                     "status": "catalog_missing",
@@ -2386,9 +2863,22 @@ async def preflight_catalog_endpoint(request: Request) -> dict:
             # SP has no USE CATALOG yet — grants haven't landed or weren't applied.
             # Treat this as OK for preflight; the pre-creation grant in _create_tables_task
             # will apply USE CATALOG before create_materialized_views runs.
-            if any(kw in msg_lower for kw in ("permission", "privilege", "unauthorized", "forbidden", "403", "insufficient")):
-                return {"ok": True, "status": "ready",
-                        "message": f"Catalog `{catalog}` exists (SP permissions will be applied at build time)."}
+            if any(
+                kw in msg_lower
+                for kw in (
+                    "permission",
+                    "privilege",
+                    "unauthorized",
+                    "forbidden",
+                    "403",
+                    "insufficient",
+                )
+            ):
+                return {
+                    "ok": True,
+                    "status": "ready",
+                    "message": f"Catalog `{catalog}` exists (SP permissions will be applied at build time).",
+                }
             return {
                 "ok": False,
                 "status": "catalog_check_failed",
@@ -2404,11 +2894,16 @@ async def get_workspace_filter() -> dict:
     """Return the current workspace filter and whether it is locked (already configured during setup)."""
     settings_path = os.path.join(SETTINGS_DIR, "workspace_filter.json")
     import re as _re
+
     workspace_ids: list[str] = []
     try:
         with open(settings_path) as f:
             data = json.load(f)
-        workspace_ids = [str(i) for i in data.get("workspace_ids", []) if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
+        workspace_ids = [
+            str(i)
+            for i in data.get("workspace_ids", [])
+            if _re.match(r"^[a-zA-Z0-9_\-\.]+$", str(i))
+        ]
     except (FileNotFoundError, json.JSONDecodeError):
         pass
 
@@ -2425,8 +2920,9 @@ async def get_workspace_filter() -> dict:
             locked = True
             if not workspace_ids and isinstance(durable.get("workspace_ids"), list):
                 workspace_ids = [
-                    str(i) for i in durable["workspace_ids"]
-                    if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))
+                    str(i)
+                    for i in durable["workspace_ids"]
+                    if _re.match(r"^[a-zA-Z0-9_\-\.]+$", str(i))
                 ]
     except Exception:
         pass
@@ -2458,6 +2954,7 @@ async def save_workspace_filter(request: Request) -> dict:
     """Persist selected workspace IDs to .settings/workspace_filter.json and Delta. Admin only."""
     import re as _re
     import time as _time
+
     t0 = _time.monotonic()
 
     user_email = await _require_setup_admin(request)
@@ -2465,8 +2962,13 @@ async def save_workspace_filter(request: Request) -> dict:
 
     body = await request.json()
     raw_ids: list = body.get("workspace_ids", [])
-    valid_ids = [str(i) for i in raw_ids if _re.match(r'^[a-zA-Z0-9_\-\.]+$', str(i))]
-    logger.info("save-workspace-filter: validated %d/%d ids (%.1fms)", len(valid_ids), len(raw_ids), (_time.monotonic() - t0) * 1000)
+    valid_ids = [str(i) for i in raw_ids if _re.match(r"^[a-zA-Z0-9_\-\.]+$", str(i))]
+    logger.info(
+        "save-workspace-filter: validated %d/%d ids (%.1fms)",
+        len(valid_ids),
+        len(raw_ids),
+        (_time.monotonic() - t0) * 1000,
+    )
 
     # Lock check — workspace filter is one-time, set during initial setup only
     try:
@@ -2493,10 +2995,20 @@ async def save_workspace_filter(request: Request) -> dict:
         with open(settings_path, "w") as f:
             json.dump({"workspace_ids": valid_ids}, f)
         elapsed_ms = (_time.monotonic() - t0) * 1000
-        logger.info("save-workspace-filter: wrote %s in %.1fms — ids=%s", settings_path, elapsed_ms, valid_ids)
+        logger.info(
+            "save-workspace-filter: wrote %s in %.1fms — ids=%s",
+            settings_path,
+            elapsed_ms,
+            valid_ids,
+        )
     except Exception as e:
         elapsed_ms = (_time.monotonic() - t0) * 1000
-        logger.error("save-workspace-filter: write failed after %.1fms — path=%s error=%s", elapsed_ms, settings_path, e)
+        logger.error(
+            "save-workspace-filter: write failed after %.1fms — path=%s error=%s",
+            elapsed_ms,
+            settings_path,
+            e,
+        )
         raise HTTPException(status_code=500, detail=f"Failed to persist workspace filter: {e}")
 
     # Write to Delta (survives redeploys — restored to file on next startup)
@@ -2504,7 +3016,9 @@ async def save_workspace_filter(request: Request) -> dict:
         from server.routers.settings import save_workspace_filter_to_table
 
         await asyncio.to_thread(save_workspace_filter_to_table, valid_ids)
-        logger.info("save-workspace-filter: persisted to Delta in %.1fms", (_time.monotonic() - t0) * 1000)
+        logger.info(
+            "save-workspace-filter: persisted to Delta in %.1fms", (_time.monotonic() - t0) * 1000
+        )
     except Exception as e:
         try:
             os.remove(settings_path)
@@ -2531,7 +3045,10 @@ def _record_drop_in_refresh_log() -> None:
     """Append a 'dropped' entry to mv_refresh_log.json and the Delta refresh log table."""
     import json as _json
     from datetime import datetime as _dt
-    _log_path = os.path.join(os.path.dirname(__file__), "..", "..", ".settings", "mv_refresh_log.json")
+
+    _log_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", ".settings", "mv_refresh_log.json"
+    )
     drop_entry = {
         "timestamp": _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "status": "dropped",
@@ -2552,12 +3069,14 @@ def _record_drop_in_refresh_log() -> None:
         _json.dump(log, f)
     try:
         from server.routers.settings import save_refresh_log_to_delta
+
         save_refresh_log_to_delta(log)
     except Exception:
         pass
     # Invalidate the tables status cache so the next poll reflects empty tables
     try:
         import server.routers.settings as _settings_mod
+
         _settings_mod._tables_cache = None
         _settings_mod._tables_cache_ts = 0.0
     except Exception:
@@ -2565,6 +3084,7 @@ def _record_drop_in_refresh_log() -> None:
     # Invalidate debug cache so next diagnostics run re-checks
     try:
         import server.routers.debug as _debug_mod
+
         _debug_mod._debug_cache = None
         _debug_mod._debug_cache_ts = 0.0
     except Exception:
@@ -2577,6 +3097,7 @@ async def drop_mvs(request: Request) -> dict:
     await _require_setup_admin(request)
     try:
         from server.db import get_catalog_schema
+
         catalog, schema = get_catalog_schema()
         results = drop_materialized_views(catalog, schema)
         all_dropped = all(v == "dropped" for v in results.values())
@@ -2591,17 +3112,20 @@ async def drop_mvs(request: Request) -> dict:
 async def get_mv_overrides() -> dict:
     """Return current MV table name overrides and the default table names."""
     from server.db import get_catalog_schema, get_mv_table_overrides
+
     catalog, schema = get_catalog_schema()
     overrides = get_mv_table_overrides()
     tables = []
     for name in _MV_TABLES:
         default_path = f"{catalog}.{schema}.{name}"
-        tables.append({
-            "logical_name": name,
-            "default_path": default_path,
-            "override_path": overrides.get(name, ""),
-            "is_overridden": name in overrides,
-        })
+        tables.append(
+            {
+                "logical_name": name,
+                "default_path": default_path,
+                "override_path": overrides.get(name, ""),
+                "is_overridden": name in overrides,
+            }
+        )
     return {"tables": tables, "overrides": overrides}
 
 

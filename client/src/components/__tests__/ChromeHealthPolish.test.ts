@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf8");
+const setupWizardSource = readFileSync(resolve(process.cwd(), "src/components/SetupWizard.tsx"), "utf8");
 const styles = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 const settingsSections = readFileSync(resolve(process.cwd(), "src/components/settings/sections.tsx"), "utf8");
@@ -18,6 +19,15 @@ describe("account rail health polish", () => {
     expect(setupRequired).toContain('localStorage.removeItem("coc-setup-complete")');
     expect(setupRequired).toContain('fetch("/api/setup/bootstrap-admin"');
     expect(setupRequired).not.toContain("if (!prevCompleted())");
+  });
+
+  it("keeps table creation recoverable and surfaces live failures", () => {
+    expect(setupWizardSource).toContain('"/api/setup/cancel-table-creation"');
+    expect(setupWizardSource).toContain("Stop and reset");
+    expect(setupWizardSource).toContain("table_errors?: Record<string, string>");
+    expect(setupWizardSource).toContain("Progress updates are temporarily unavailable");
+    expect(setupWizardSource).toContain('taskStatus === "interrupted" || taskStatus === "cancelled"');
+    expect(setupWizardSource).not.toContain("taskStatus === \"done\" || allDone");
   });
 
   it("does not claim ordinary git redeploys rotate service-principal grants", () => {

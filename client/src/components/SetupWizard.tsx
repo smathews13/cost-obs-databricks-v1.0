@@ -32,7 +32,15 @@ interface SetupStatus {
   all_tables_exist: boolean;
   missing_tables: string[];
   status: "ready" | "setup_required";
-  task?: { status: string; error: string | null; table_progress?: Record<string, string> };
+  task?: {
+    status: string;
+    error: string | null;
+    table_progress?: Record<string, string>;
+    table_errors?: Record<string, string>;
+    phase?: string;
+    elapsed_seconds?: number | null;
+    run_id?: string | null;
+  };
   next_poll_ms?: number;
 }
 
@@ -150,13 +158,18 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [tablesJustCreated, setTablesJustCreated] = useState(false);
+  const [buildWarning, setBuildWarning] = useState<string | null>(null);
   // Poll-loop handles, held in refs so Skip (and unmount) can cancel the loop
   // that handleCreateTables started: the loop is otherwise a closure with no
   // external cancellation handle, which is why a frozen build had no way out.
   const pollCancelledRef = useRef(false);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const safetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollFailureCountRef = useRef(0);
+  const lastProgressSignatureRef = useRef("");
+  const lastProgressAtRef = useRef(Date.now());
   const [storagePhase, setStoragePhase] = useState<'idle' | 'saving' | 'creating-catalog' | 'creating-schema' | 'done' | 'error'>('idle');
   const [storageChecks, setStorageChecks] = useState<{ config: boolean | null; catalog: boolean | null; schema: boolean | null }>({ config: null, catalog: null, schema: null });
   const [error, setError] = useState<string | null>(null);
@@ -262,24 +275,68 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
     if (safetyTimeoutRef.current) { clearTimeout(safetyTimeoutRef.current); safetyTimeoutRef.current = null; }
   }, []);
 
-  // Stop the build poll and move on. The background build keeps running on the
-  // server (tables still get built; the dashboard falls back to direct system
-  // queries meanwhile): Skip only releases the wizard so a stuck/slow build
-  // can never trap the user on this step. Plain function (not memoized) so it
-  // always calls the current-render goNext with the live `step`.
-  const handleSkipTables = () => {
-    pollCancelledRef.current = true;
-    clearPollTimers();
-    setCreating(false);
-    goNext();
-  };
+  const monitorBuildStatus = useCallback(async function pollBuild() {
+    if (pollCancelledRef.current) return;
+    const status = await pollSetupStatus();
+    if (pollCancelledRef.current) return;
+    if (!status) {
+      pollFailureCountRef.current += 1;
+      if (pollFailureCountRef.current >= 3) {
+        setBuildWarning("Progress updates are temporarily unavailable. The app is still retrying; you can stop and reset this build safely.");
+      }
+      pollTimeoutRef.current = setTimeout(pollBuild, 5000);
+      return;
+    }
+    pollFailureCountRef.current = 0;
+    const taskStatus = status.task?.status;
+    const progress = status.task?.table_progress ?? {};
+    const signature = JSON.stringify([taskStatus, status.task?.phase, progress, status.task?.table_errors]);
+    if (signature !== lastProgressSignatureRef.current) {
+      lastProgressSignatureRef.current = signature;
+      lastProgressAtRef.current = Date.now();
+      setBuildWarning(null);
+    } else if (taskStatus === "running" && Date.now() - lastProgressAtRef.current > 180000) {
+      setBuildWarning("No table has changed state for more than 3 minutes. A warehouse query may be stalled; stop and reset before retrying.");
+    }
+    if (taskStatus === "done") {
+      clearPollTimers();
+      setCreating(false);
+      setStopping(false);
+      setTablesJustCreated(true);
+    } else if (taskStatus === "error") {
+      clearPollTimers();
+      setCreating(false);
+      setStopping(false);
+      const detail = status.task?.error || "Check the table errors below or inspect server logs.";
+      setError(`Table creation failed: ${detail}`);
+    } else if (taskStatus === "interrupted" || taskStatus === "cancelled") {
+      clearPollTimers();
+      setCreating(false);
+      setStopping(false);
+      setTablesJustCreated(false);
+      if (taskStatus === "cancelled") {
+        setBuildWarning("Table creation stopped. Review access, then click Create Tables to start a clean run.");
+      }
+    } else {
+      setCreating(true);
+      setStopping(taskStatus === "cancelling");
+      const delay = status.next_poll_ms ?? 5000;
+      pollTimeoutRef.current = setTimeout(pollBuild, delay);
+    }
+  }, [clearPollTimers, pollSetupStatus]);
 
   // Cancel any in-flight poll loop when the wizard unmounts.
   useEffect(() => () => { pollCancelledRef.current = true; clearPollTimers(); }, [clearPollTimers]);
 
   const handleCreateTables = async () => {
     setCreating(true);
+    setStopping(false);
     setError(null);
+    setBuildWarning(null);
+    setTablesJustCreated(false);
+    pollFailureCountRef.current = 0;
+    lastProgressSignatureRef.current = "";
+    lastProgressAtRef.current = Date.now();
     pollCancelledRef.current = false;
     clearPollTimers();
     try {
@@ -289,53 +346,75 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
         throw new Error(`HTTP ${res.status}: ${body}`);
       }
 
-      // Poll for completion. task.status is the authority, but we ALSO treat
-      // "every table reported done" as completion: if the terminal status write
-      // is ever missed, an all-done progress map still releases the step instead
-      // of hanging until the safety timeout.
-      // The status endpoint returns all_tables_exist=false until setup_done.json
-      // is written (post-wizard), so it is NOT a reliable success signal here.
-      // Use next_poll_ms hint from server (5s during active build, 30s idle).
-      const schedulePoll = async () => {
-        if (pollCancelledRef.current) return;
-        const status = await pollSetupStatus();
-        if (pollCancelledRef.current) return;
-        const taskStatus = status?.task?.status;
-        const progress = status?.task?.table_progress ?? {};
-        const progressVals = Object.values(progress);
-        const allDone = progressVals.length > 0 && progressVals.every((s) => s === "done");
-        if (taskStatus === "done" || allDone) {
-          clearPollTimers();
-          setCreating(false);
-          setTablesJustCreated(true);
-        } else if (taskStatus === "error") {
-          clearPollTimers();
-          setCreating(false);
-          const detail = status?.task?.error || "Table creation failed: check server logs for details.";
-          setError(`Table creation failed: ${detail}`);
-        } else if (taskStatus === "interrupted") {
-          clearPollTimers();
-          setCreating(false);
-        } else {
-          const delay = status?.next_poll_ms ?? 5000;
-          pollTimeoutRef.current = setTimeout(schedulePoll, delay);
-        }
-      };
-      pollTimeoutRef.current = setTimeout(schedulePoll, 2000);
+      // The same monitor also resumes an in-progress build after a page reload.
+      pollTimeoutRef.current = setTimeout(monitorBuildStatus, 2000);
 
-      // Safety timeout after 10 minutes: cancelled on normal completion so it
-      // doesn't fire on the Complete step after a successful build.
+      // Warn after 10 minutes but keep polling and keep Stop available. The
+      // backend owns the hard timeout and terminal state.
       safetyTimeoutRef.current = setTimeout(() => {
-        pollCancelledRef.current = true;
-        clearPollTimers();
-        setCreating(false);
-        setError("Table creation is taking longer than expected: you can Skip to continue; tables keep building in the background. Check /api/setup/status for progress.");
+        setBuildWarning("Table creation is taking longer than expected. You can keep waiting or stop and reset the build.");
       }, 600000);
     } catch (e) {
       setCreating(false);
       setError(`Failed to create tables: ${e}`);
     }
   };
+
+  const handleStopTables = async () => {
+    setStopping(true);
+    setError(null);
+    setBuildWarning("Stopping active SQL statements and resetting this step…");
+    try {
+      const response = await fetch("/api/setup/cancel-table-creation", {
+        method: "POST",
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || `HTTP ${response.status}`);
+      }
+      const body = await response.json();
+      if (body.status === "not_running") {
+        pollCancelledRef.current = true;
+        clearPollTimers();
+        setCreating(false);
+        setStopping(false);
+        setTablesJustCreated(false);
+        setSetupStatus((current) => current ? {
+          ...current,
+          task: { status: "cancelled", error: null, table_progress: {}, table_errors: {}, phase: "idle" },
+        } : current);
+        setBuildWarning("No active build remained. The step has been reset.");
+      }
+    } catch (e) {
+      setStopping(false);
+      setError(`Could not stop table creation: ${e}`);
+      setBuildWarning("The app is still monitoring the active build.");
+    }
+  };
+
+  useEffect(() => {
+    if (step !== "create-tables") return;
+    let disposed = false;
+    pollCancelledRef.current = false;
+    void loadPreflight();
+    void pollSetupStatus().then((status) => {
+      if (disposed || !status) return;
+      const taskStatus = status.task?.status;
+      if (taskStatus === "running" || taskStatus === "cancelling") {
+        setCreating(true);
+        setStopping(taskStatus === "cancelling");
+        lastProgressSignatureRef.current = "";
+        lastProgressAtRef.current = Date.now();
+        pollTimeoutRef.current = setTimeout(monitorBuildStatus, 1000);
+      }
+    });
+    return () => {
+      disposed = true;
+      pollCancelledRef.current = true;
+      clearPollTimers();
+    };
+  }, [step, clearPollTimers, loadPreflight, monitorBuildStatus, pollSetupStatus]);
 
   const loadWorkspaces = useCallback(async () => {
     setWsLoading(true);
@@ -387,7 +466,6 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
       const next = STEPS[idx + 1];
       setStep(next);
       if (next === "permissions") loadReadiness();
-      if (next === "create-tables") { pollSetupStatus(); loadPreflight(); }
       if (next === "workspace-filter") loadWorkspaces();
     }
   };
@@ -489,6 +567,8 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
               preflightResult={preflightResult}
               preflightLoading={preflightLoading}
               onRecheck={loadPreflight}
+              buildWarning={buildWarning}
+              stopping={stopping}
             />
           )}
 
@@ -558,11 +638,12 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
             ) : step === "create-tables" ? (
               creating ? (
                 <button
-                  onClick={handleSkipTables}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-                  title="Continue setup: tables keep building in the background"
+                  onClick={handleStopTables}
+                  disabled={stopping}
+                  className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
+                  title="Cancel active SQL statements and reset this step"
                 >
-                  Skip
+                  {stopping ? "Stopping…" : "Stop and reset"}
                 </button>
               )
               : (tablesJustCreated || setupStatus?.all_tables_exist) ? (
@@ -1067,13 +1148,15 @@ function WizardPermissionsStep({
   );
 }
 
-function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightResult, preflightLoading, onRecheck }: {
+function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightResult, preflightLoading, onRecheck, buildWarning, stopping }: {
   setupStatus: SetupStatus | null;
   creating: boolean;
   tablesJustCreated: boolean;
   preflightResult: { ok: boolean; status: string; message: string } | null;
   preflightLoading: boolean;
   onRecheck: () => void;
+  buildWarning: string | null;
+  stopping: boolean;
 }) {
   if (preflightLoading) {
     return <LoadingSpinner text="Checking catalog access…" />;
@@ -1099,24 +1182,50 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
 
   if (creating) {
     const tableProgress = setupStatus?.task?.table_progress ?? {};
+    const tableErrors = setupStatus?.task?.table_errors ?? {};
     const progressEntries = Object.entries(tableProgress);
+    const doneCount = Object.values(tableProgress).filter((state) => state === "done").length;
+    const phaseLabels: Record<string, string> = {
+      granting_access: "Applying catalog and system-table access",
+      creating_tables: "Creating cost tables",
+      creating_config_tables: "Creating app configuration tables",
+      verifying: "Verifying the app can read every table",
+      cancelling: "Stopping active SQL statements",
+    };
+    const phase = setupStatus?.task?.phase || "creating_tables";
     return (
       <div className="space-y-4">
-        <LoadingSpinner text="Creating materialized views... This may take a few minutes." />
+        <LoadingSpinner text={stopping ? "Stopping table creation…" : phaseLabels[phase] || "Creating materialized views…"} />
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>{progressEntries.length > 0 ? `${doneCount} of ${progressEntries.length} tables complete` : "Preparing table list…"}</span>
+          {setupStatus?.task?.elapsed_seconds != null && (
+            <span>{Math.floor(setupStatus.task.elapsed_seconds / 60)}m {setupStatus.task.elapsed_seconds % 60}s elapsed</span>
+          )}
+        </div>
+        {buildWarning && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {buildWarning}
+          </div>
+        )}
         {progressEntries.length > 0 && (
           <div className="space-y-1">
             {progressEntries.map(([table, state]) => (
-              <div key={table} className="flex items-center gap-2 px-3 py-1 text-sm">
-                {state === "done" ? (
-                  <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                ) : state === "running" ? (
-                  <Spinner size="sm" />
-                ) : state === "error" ? (
-                  <svg className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                ) : (
-                  <div className="h-4 w-4 rounded-full border-2 border-gray-200" />
+              <div key={table} className={`rounded px-3 py-1.5 text-sm ${state === "error" ? "bg-red-50" : ""}`}>
+                <div className="flex items-center gap-2">
+                  {state === "done" ? (
+                    <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  ) : state === "running" ? (
+                    <Spinner size="sm" />
+                  ) : state === "error" ? (
+                    <svg className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  ) : (
+                    <div className="h-4 w-4 rounded-full border-2 border-gray-200" />
+                  )}
+                  <span className="font-mono text-xs text-gray-700">{table}</span>
+                </div>
+                {tableErrors[table] && (
+                  <p className="mt-1 pl-6 text-xs text-red-700">{tableErrors[table]}</p>
                 )}
-                <span className="font-mono text-xs text-gray-700">{table}</span>
               </div>
             ))}
           </div>
@@ -1158,6 +1267,7 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
   }
 
   const interrupted = setupStatus?.task?.status === "interrupted";
+  const cancelled = setupStatus?.task?.status === "cancelled";
   const tableProgress = setupStatus?.task?.table_progress ?? {};
   const builtCount = Object.values(tableProgress).filter((s) => s === "done").length;
   const totalCount = Object.keys(tableProgress).length;
@@ -1174,8 +1284,13 @@ function CreateTablesStep({ setupStatus, creating, tablesJustCreated, preflightR
           </p>
         </div>
       )}
+      {cancelled && buildWarning && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {buildWarning}
+        </div>
+      )}
 
-      {!interrupted && (
+      {!interrupted && !cancelled && (
         <p className="text-sm text-gray-600">
           The app uses pre-aggregated materialized views for fast dashboard loading.
           This step creates them with 6 months of historical data.

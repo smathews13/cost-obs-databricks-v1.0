@@ -2,6 +2,7 @@
 
 Run with: pytest server/tests/test_setup_readiness.py -v
 """
+
 import asyncio
 import time
 from concurrent.futures import Future
@@ -27,13 +28,21 @@ def clean_caches():
     """Reset all readiness caches before and after each test to prevent state leakage."""
     reset_readiness_caches()
     setup_mod._setup_confirmed_ready = False
-    setup_mod._create_task_state.update({
-        "status": "idle",
-        "error": None,
-        "started_at": None,
-        "elapsed_seconds": None,
-        "table_progress": {},
-    })
+    setup_mod._create_task_state.update(
+        {
+            "status": "idle",
+            "error": None,
+            "started_at": None,
+            "started_at_epoch": None,
+            "elapsed_seconds": None,
+            "table_progress": {},
+            "table_errors": {},
+            "phase": "idle",
+            "run_id": None,
+            "revision": 0,
+            "cancel_requested_at": None,
+        }
+    )
     yield
     reset_readiness_caches()
     setup_mod._setup_confirmed_ready = False
@@ -97,6 +106,85 @@ async def test_existing_core_tables_recover_setup_after_git_redeploy():
     restore.assert_called_once_with()
 
 
+@pytest.mark.asyncio
+async def test_cancel_table_creation_requests_sql_cancel_and_persists_state(tmp_path):
+    setup_mod._create_task_state.update(
+        {
+            "status": "running",
+            "run_id": "run-123",
+            "phase": "creating_tables",
+            "revision": 1,
+        }
+    )
+    with (
+        patch.object(setup_mod, "_TASK_CANCEL_DIR", str(tmp_path / "cancellations")),
+        patch.object(setup_mod, "_reconcile_task_state_from_disk"),
+        patch.object(
+            setup_mod,
+            "_require_setup_admin",
+            new=AsyncMock(return_value="admin@example.com"),
+        ),
+        patch.object(setup_mod, "_persist_task_state") as persist,
+        patch("server.db.cancel_sql_operation", return_value=3) as cancel_sql,
+    ):
+        result = await setup_mod.cancel_table_creation(MagicMock())
+
+    assert result["status"] == "cancelling"
+    assert result["cancelled_queries"] == 3
+    assert setup_mod._create_task_state["phase"] == "cancelling"
+    cancel_sql.assert_called_once_with("run-123")
+    persist.assert_called_once()
+    assert (tmp_path / "cancellations" / "run-123").exists()
+
+
+def test_cancelled_build_resets_progress_for_clean_retry(tmp_path):
+    setup_mod._create_task_state.update(
+        {
+            "status": "running",
+            "run_id": "run-456",
+            "table_progress": {"daily_usage_summary": "running"},
+            "table_errors": {"daily_usage_summary": "old error"},
+        }
+    )
+    with (
+        patch.object(setup_mod, "_TASK_CANCEL_DIR", str(tmp_path / "cancellations")),
+        patch.object(setup_mod, "_persist_task_state"),
+    ):
+        setup_mod._request_task_cancel("run-456")
+        setup_mod._create_tables_task("catalog", "schema", run_id="run-456")
+
+    assert setup_mod._create_task_state["status"] == "cancelled"
+    assert setup_mod._create_task_state["phase"] == "idle"
+    assert setup_mod._create_task_state["table_progress"] == {}
+    assert setup_mod._create_task_state["table_errors"] == {}
+
+
+def test_reconcile_adopts_newer_error_detail_without_progress_change(tmp_path):
+    task_file = tmp_path / "build_progress.json"
+    task_file.write_text(
+        '{"status":"running","revision":2,"phase":"creating_tables",'
+        '"table_progress":{"daily_usage_summary":"error"},'
+        '"table_errors":{"daily_usage_summary":"permission denied"},'
+        '"run_id":"run-789"}'
+    )
+    setup_mod._create_task_state.update(
+        {
+            "status": "running",
+            "revision": 1,
+            "table_progress": {"daily_usage_summary": "running"},
+            "table_errors": {},
+            "run_id": "run-789",
+        }
+    )
+    with patch.object(setup_mod, "_TASK_STATE_FILE", str(task_file)):
+        setup_mod._reconcile_task_state_from_disk()
+
+    assert setup_mod._create_task_state["table_progress"]["daily_usage_summary"] == "error"
+    assert (
+        setup_mod._create_task_state["table_errors"]["daily_usage_summary"] == "permission denied"
+    )
+
+
 def test_workspace_filter_save_fails_closed_when_delta_is_unavailable(tmp_path):
     class Request:
         headers: dict[str, str] = {}
@@ -133,6 +221,7 @@ def test_workspace_filter_save_fails_closed_when_delta_is_unavailable(tmp_path):
 # Bug 2: cold-warehouse hang + single-flight
 # ---------------------------------------------------------------------------
 
+
 def test_warehouse_timeout_returns_quickly():
     """check_warehouse_readiness() must return TIMEOUT_STARTING immediately on timeout,
     not block for _WH_CHECK_TIMEOUT seconds.
@@ -143,7 +232,9 @@ def test_warehouse_timeout_returns_quickly():
     with (
         patch.object(setup_mod, "_get_or_start_warehouse_check_future", return_value=slow_future),
         patch.object(setup_mod, "_get_cached_warehouse_check", return_value=None),
-        patch.object(setup_mod, "_resolve_warehouse_config", return_value=("app_resource", "wh-123")),
+        patch.object(
+            setup_mod, "_resolve_warehouse_config", return_value=("app_resource", "wh-123")
+        ),
     ):
         start = time.monotonic()
         result = check_warehouse_readiness()
@@ -163,6 +254,7 @@ def test_single_flight_reuses_inflight_future():
     class _NoopThread:
         def __init__(self, *args, **kwargs):
             pass
+
         def start(self):
             thread_starts.append(1)
 
@@ -177,6 +269,7 @@ def test_single_flight_reuses_inflight_future():
 # ---------------------------------------------------------------------------
 # Bug 4: typed failure classification + traceback logging
 # ---------------------------------------------------------------------------
+
 
 def test_blocking_warehouse_check_internal_error():
     """_run_blocking_warehouse_check() must classify an unexpected exception as
@@ -215,6 +308,7 @@ def test_safe_table_check_result_handles_exception():
 # Fix B: _run_blocking_warehouse_check guard
 # ---------------------------------------------------------------------------
 
+
 def test_blocking_warehouse_check_returns_not_configured_when_no_warehouse():
     """_run_blocking_warehouse_check must return NOT_CONFIGURED immediately when no
     warehouse is resolvable, not fall through to execute_query and produce a
@@ -232,6 +326,7 @@ def test_blocking_warehouse_check_returns_not_configured_when_no_warehouse():
 # Fix C: NOT_CONFIGURED flows through the cache path
 # ---------------------------------------------------------------------------
 
+
 def test_not_configured_result_is_cached_with_long_ttl():
     """check_warehouse_readiness() must cache a NOT_CONFIGURED result so that the
     env var isn't re-read on every request.  TTL should be close to 3600 s.
@@ -247,8 +342,10 @@ def test_not_configured_result_is_cached_with_long_ttl():
     assert remaining_ttl > 3500, f"Expected ~3600 s TTL, got {remaining_ttl:.0f} s"
 
     # Second call must hit cache — same object reference, no new thread started
-    with patch("server.routers.setup.threading.Thread",
-               side_effect=AssertionError("Thread must not be started on cache hit")):
+    with patch(
+        "server.routers.setup.threading.Thread",
+        side_effect=AssertionError("Thread must not be started on cache hit"),
+    ):
         result2 = check_warehouse_readiness()
 
     assert result2 is result1
@@ -258,23 +355,34 @@ def test_not_configured_result_is_cached_with_long_ttl():
 # TOCTOU: table cache snapshot survives concurrent reset
 # ---------------------------------------------------------------------------
 
+
 def test_toctou_table_cache_snapshot_survives_concurrent_reset():
     """The cache fast-path must hold a snapshot of _table_readiness_cache so that a
     concurrent reset_readiness_caches() between the is-None check and the data access
     does not raise TypeError: 'NoneType' object is not subscriptable.
     """
     core_data = [
-        {"table": "system.billing.usage", "name": "Usage", "granted": True,
-         "description": "", "required": True, "category": "core"},
+        {
+            "table": "system.billing.usage",
+            "name": "Usage",
+            "granted": True,
+            "description": "",
+            "required": True,
+            "category": "core",
+        },
     ]
     wh_result = WarehouseCheckResult(
-        status=CheckStatus.HEALTHY, ok=True, message="",
-        warehouse_id="wh-1", source="app_resource",
+        status=CheckStatus.HEALTHY,
+        ok=True,
+        message="",
+        warehouse_id="wh-1",
+        source="app_resource",
     )
     setup_mod._table_readiness_cache = {"core": core_data, "enhanced": [], "sp_client_id": "sp-1"}
     setup_mod._table_readiness_cache_ts = time.monotonic()
     setup_mod._wh_check_cache = TimedWarehouseCheckCache(
-        result=wh_result, expires_at=time.monotonic() + 300,
+        result=wh_result,
+        expires_at=time.monotonic() + 300,
     )
 
     def reset_during_wh_check():
@@ -296,6 +404,7 @@ def test_toctou_table_cache_snapshot_survives_concurrent_reset():
 # ---------------------------------------------------------------------------
 # Cache management
 # ---------------------------------------------------------------------------
+
 
 def test_reset_readiness_caches_clears_all_state():
     """reset_readiness_caches() must zero out every cache field so the next request

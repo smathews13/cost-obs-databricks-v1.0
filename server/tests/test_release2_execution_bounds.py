@@ -86,9 +86,7 @@ def small_sql_executor(monkeypatch):
     executor.shutdown(wait=True, cancel_futures=True)
 
 
-def test_sql_admission_bounds_active_work_and_rejects_quickly(
-    monkeypatch, small_sql_executor
-):
+def test_sql_admission_bounds_active_work_and_rejects_quickly(monkeypatch, small_sql_executor):
     release = threading.Event()
     two_active = threading.Event()
     state_lock = threading.Lock()
@@ -104,13 +102,10 @@ def test_sql_admission_bounds_active_work_and_rejects_quickly(
         with state_lock:
             state["active"] -= 1
 
-    monkeypatch.setattr(
-        db, "get_connection", lambda: _connection_factory(execute)
-    )
+    monkeypatch.setattr(db, "get_connection", lambda: _connection_factory(execute))
     with ThreadPoolExecutor(max_workers=4) as callers:
         pending = [
-            callers.submit(db.execute_query, f"SELECT {index}", no_cache=True)
-            for index in range(3)
+            callers.submit(db.execute_query, f"SELECT {index}", no_cache=True) for index in range(3)
         ]
         assert two_active.wait(timeout=1)
         started = time.monotonic()
@@ -157,9 +152,46 @@ def test_timeout_cancels_connector_and_capacity_recovers(monkeypatch):
     executor.shutdown(wait=True, cancel_futures=True)
 
 
-def test_identical_cache_misses_share_one_sql_producer(
-    monkeypatch, small_sql_executor
-):
+def test_named_sql_operation_can_be_cancelled(monkeypatch):
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="test-cancel")
+    monkeypatch.setattr(db, "_sql_executor", executor)
+    monkeypatch.setattr(db, "_sql_admission", threading.BoundedSemaphore(1))
+    started = threading.Event()
+    cancelled = threading.Event()
+
+    class CancelCursor(_Cursor):
+        def cancel(self):
+            cancelled.set()
+
+    @contextmanager
+    def slow_connection():
+        def execute(_cursor):
+            started.set()
+            cancelled.wait(timeout=2)
+            if cancelled.is_set():
+                raise RuntimeError("cancelled")
+
+        yield _Connection(CancelCursor(execute))
+
+    monkeypatch.setattr(db, "get_connection", slow_connection)
+    with ThreadPoolExecutor(max_workers=1) as caller:
+        future = caller.submit(
+            db.execute_query,
+            "SELECT slow",
+            no_cache=True,
+            operation_id="setup-run",
+        )
+        assert started.wait(timeout=1)
+        assert db.cancel_sql_operation("setup-run") == 1
+        assert cancelled.wait(timeout=1)
+        with pytest.raises(RuntimeError, match="cancelled"):
+            future.result(timeout=2)
+
+    assert db.cancel_sql_operation("setup-run") == 0
+    executor.shutdown(wait=True, cancel_futures=True)
+
+
+def test_identical_cache_misses_share_one_sql_producer(monkeypatch, small_sql_executor):
     started = threading.Event()
     release = threading.Event()
     executions = 0
@@ -187,10 +219,7 @@ def test_identical_cache_misses_share_one_sql_producer(
             cache_tag="coalesce-cloud",
         )
         deadline = time.monotonic() + 1
-        while (
-            db.get_sql_executor_metrics()["coalesced"] < 1
-            and time.monotonic() < deadline
-        ):
+        while db.get_sql_executor_metrics()["coalesced"] < 1 and time.monotonic() < deadline:
             time.sleep(0.01)
         release.set()
         assert first.result(timeout=2) == [{"value": 1}]
@@ -200,9 +229,7 @@ def test_identical_cache_misses_share_one_sql_producer(
     assert not db._query_inflight
 
 
-def test_two_worker_bundle_reserves_one_worker_for_fair_progress(
-    monkeypatch, small_sql_executor
-):
+def test_two_worker_bundle_reserves_one_worker_for_fair_progress(monkeypatch, small_sql_executor):
     first_started = threading.Event()
     release_first = threading.Event()
     active = 0
@@ -340,9 +367,7 @@ def test_default_capacity_accepts_large_aggregate_intermediate(monkeypatch):
         db.SQLResultLimitError("row", 1),
     ],
 )
-def test_parallel_executor_propagates_typed_infrastructure_failures(
-    monkeypatch, failure
-):
+def test_parallel_executor_propagates_typed_infrastructure_failures(monkeypatch, failure):
     monkeypatch.setattr(db._sql_executor_local, "in_worker", True, raising=False)
 
     def fail():
@@ -366,9 +391,7 @@ def test_optional_bundle_failure_keeps_partial_results_and_reason(monkeypatch):
             [("required", lambda: [{"ok": True}]), ("optional", fail)],
             timeout=0.1,
         )
-    results, reasons = db.recover_optional_bundle_queries(
-        exc.value, {"required"}
-    )
+    results, reasons = db.recover_optional_bundle_queries(exc.value, {"required"})
     assert results["required"] == [{"ok": True}]
     assert reasons == {"optional": "SQL_TIMEOUT"}
 
@@ -418,9 +441,7 @@ def test_dashboard_bundle_routes_share_today_rejection_contract():
     today = datetime.now(timezone.utc).date().isoformat()
     dbsql_router = dbsql_base.create_dbsql_router("dbsql_cost_per_query")
     dbsql_endpoint = next(
-        route.endpoint
-        for route in dbsql_router.routes
-        if route.path == "/dashboard-bundle"
+        route.endpoint for route in dbsql_router.routes if route.path == "/dashboard-bundle"
     )
     calls = [
         lambda: apps.get_apps_dashboard_bundle(today, today, False, None),
@@ -506,9 +527,7 @@ def test_deadline_releases_only_matching_local_bundle_owner(monkeypatch, tmp_pat
         assert "deadline-owner" not in db._bundle_inflight
 
 
-def test_wait_for_remote_reports_failure_and_removes_local_payload(
-    monkeypatch, tmp_path
-):
+def test_wait_for_remote_reports_failure_and_removes_local_payload(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "_BUNDLE_LEASE_DIR", str(tmp_path))
     lease = db.try_acquire_bundle_lease("remote-failure", lease_seconds=30)
     assert lease is not None
@@ -539,9 +558,7 @@ def test_wait_for_remote_reports_failure_and_removes_local_payload(
         lease.release(succeeded=False)
 
 
-def test_owner_expiring_during_remote_write_deletes_late_row(
-    monkeypatch, tmp_path
-):
+def test_owner_expiring_during_remote_write_deletes_late_row(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "_BUNDLE_LEASE_DIR", str(tmp_path))
     lease = db.try_acquire_bundle_lease("stolen-write", lease_seconds=30)
     assert lease is not None
@@ -572,29 +589,27 @@ def test_owner_expiring_during_remote_write_deletes_late_row(
 
         assert written is False
         assert "stolen-write" not in db._delta_l1
-        assert any(
-            sql.startswith("DELETE FROM") and "cache_key = :key" in sql
-            for sql in calls
-        )
+        assert any(sql.startswith("DELETE FROM") and "cache_key = :key" in sql for sql in calls)
     finally:
         db._bundle_lease_owner.reset(owner_token)
 
 
-def test_bundle_remote_write_failure_publishes_terminal_state(
-    monkeypatch, tmp_path
-):
+def test_bundle_remote_write_failure_publishes_terminal_state(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "_BUNDLE_LEASE_DIR", str(tmp_path))
     monkeypatch.setattr(db, "delta_cache_get", lambda _key: None)
     monkeypatch.setattr(db, "_ensure_response_cache_table", lambda: False)
     finished = threading.Event()
 
     def producer():
-        assert db.delta_cache_put(
-            "required-remote",
-            "users:dashboard-bundle:v4",
-            {"available": True},
-            wait_for_remote=True,
-        ) is False
+        assert (
+            db.delta_cache_put(
+                "required-remote",
+                "users:dashboard-bundle:v4",
+                {"available": True},
+                wait_for_remote=True,
+            )
+            is False
+        )
         finished.set()
 
     assert db.start_bundle_compute(
@@ -640,9 +655,7 @@ def test_active_bundle_renews_owner_fenced_lease(monkeypatch, tmp_path):
     deadline = time.monotonic() + 2
     replacement = None
     while replacement is None and time.monotonic() < deadline:
-        replacement = db.try_acquire_bundle_lease(
-            "renewed-bundle", lease_seconds=1
-        )
+        replacement = db.try_acquire_bundle_lease("renewed-bundle", lease_seconds=1)
         if replacement is None:
             time.sleep(0.02)
     assert replacement is not None
@@ -656,14 +669,13 @@ def test_bounded_bundle_worker_preserves_request_context(monkeypatch, tmp_path):
     source_token = db.set_source_labels(["shared-west"])
     user_token = db._user_token.set("request-token")
     try:
+
         def producer():
             seen["source_labels"] = db.selected_source_labels()
             seen["user_token"] = db._user_token.get()
             finished.set()
 
-        assert db.start_bundle_compute(
-            "context-bundle", producer, lease_seconds=10
-        )
+        assert db.start_bundle_compute("context-bundle", producer, lease_seconds=10)
         assert finished.wait(timeout=2)
     finally:
         db._user_token.reset(user_token)

@@ -328,6 +328,159 @@ def test_shared_source_payload_marks_provider_managed_refresh():
     assert payload["sources"][0]["required_grants"] == ["GRANT SELECT;"]
 
 
+def test_normal_source_request_repairs_legacy_workspace_mapping(tmp_path):
+    sources = [{
+        "label": "west4",
+        "catalog": "west4_share",
+        "schema": "cost_obs",
+        "tables": ["dbsql_cost_per_query"],
+    }]
+
+    @contextmanager
+    def unlocked():
+        yield
+
+    with (
+        patch.object(
+            settings,
+            "_MV_SCOPE_REPAIR_STATE_FILE",
+            str(tmp_path / "scope-repair.json"),
+        ),
+        patch("server.db.get_mv_sources", side_effect=[sources, sources]),
+        patch("server.db.get_local_source_label", return_value="east1"),
+        patch("server.db.get_catalog_schema", return_value=("local_catalog", "cost_obs")),
+        patch("server.db.save_mv_sources") as save_sources,
+        patch.object(settings, "_current_workspace_cloud", return_value="gcp"),
+        patch.object(
+            settings,
+            "_infer_shared_source_workspace_ids",
+            return_value=["workspace-west"],
+        ),
+        patch(
+            "server.materialized_views.unified_views_rebuild_lock",
+            return_value=unlocked(),
+        ),
+        patch(
+            "server.materialized_views._rebuild_unified_views_locked",
+            return_value={"ok": True},
+        ) as rebuild,
+        patch.object(settings, "_invalidate_mv_caches") as invalidate,
+    ):
+        payload = asyncio.run(settings.get_mv_sources_endpoint(detail=False))
+
+    assert payload["sources"][0]["workspace_ids"] == ["workspace-west"]
+    rebuild.assert_called_once()
+    save_sources.assert_called_once()
+    invalidate.assert_called_once()
+
+
+def test_failed_automatic_workspace_mapping_rebuild_rolls_back_and_retries_soon(tmp_path):
+    sources = [{
+        "label": "west4",
+        "catalog": "west4_share",
+        "schema": "cost_obs",
+        "tables": ["dbsql_cost_per_query"],
+    }]
+
+    @contextmanager
+    def unlocked():
+        yield
+
+    repair_state = tmp_path / "scope-repair.json"
+    with (
+        patch.object(settings, "_MV_SCOPE_REPAIR_STATE_FILE", str(repair_state)),
+        patch("server.db.get_mv_sources", return_value=sources),
+        patch("server.db.get_catalog_schema", return_value=("local_catalog", "cost_obs")),
+        patch("server.db.save_mv_sources") as save_sources,
+        patch.object(
+            settings,
+            "_infer_shared_source_workspace_ids",
+            return_value=["workspace-west"],
+        ),
+        patch(
+            "server.materialized_views.unified_views_rebuild_lock",
+            return_value=unlocked(),
+        ),
+        patch(
+            "server.materialized_views._rebuild_unified_views_locked",
+            side_effect=[{"ok": False, "error": "partial rebuild"}, {"ok": True}],
+        ) as rebuild,
+        patch.object(settings, "_invalidate_mv_caches") as invalidate,
+    ):
+        result = settings._repair_missing_shared_source_workspace_scopes(sources)
+
+    assert result == sources
+    assert rebuild.call_count == 2
+    assert rebuild.call_args_list[1].kwargs["sources_override"] == sources
+    assert json.loads(repair_state.read_text())["next_attempt_at"] <= (
+        time.time() + settings._MV_SCOPE_REPAIR_FAILURE_RETRY_SECONDS
+    )
+    save_sources.assert_not_called()
+    invalidate.assert_not_called()
+
+
+def test_partial_automatic_workspace_mapping_repair_retries_soon(tmp_path):
+    sources = [
+        {"label": "west4", "catalog": "west4_share", "schema": "cost_obs"},
+        {"label": "central1", "catalog": "central1_share", "schema": "cost_obs"},
+    ]
+
+    @contextmanager
+    def unlocked():
+        yield
+
+    repair_state = tmp_path / "scope-repair.json"
+    with (
+        patch.object(settings, "_MV_SCOPE_REPAIR_STATE_FILE", str(repair_state)),
+        patch("server.db.get_mv_sources", return_value=sources),
+        patch("server.db.get_catalog_schema", return_value=("local_catalog", "cost_obs")),
+        patch("server.db.save_mv_sources"),
+        patch.object(
+            settings,
+            "_infer_shared_source_workspace_ids",
+            side_effect=[["workspace-west"], []],
+        ),
+        patch(
+            "server.materialized_views.unified_views_rebuild_lock",
+            return_value=unlocked(),
+        ),
+        patch(
+            "server.materialized_views._rebuild_unified_views_locked",
+            return_value={"ok": True},
+        ),
+        patch.object(settings, "_invalidate_mv_caches"),
+    ):
+        result = settings._repair_missing_shared_source_workspace_scopes(sources)
+
+    assert result[0]["workspace_ids"] == ["workspace-west"]
+    assert "workspace_ids" not in result[1]
+    assert json.loads(repair_state.read_text())["next_attempt_at"] <= (
+        time.time() + settings._MV_SCOPE_REPAIR_FAILURE_RETRY_SECONDS
+    )
+
+
+def test_workspace_mapping_repair_honors_shared_completion_backoff(tmp_path):
+    sources = [{
+        "label": "west4",
+        "catalog": "west4_share",
+        "schema": "cost_obs",
+    }]
+    repair_state = tmp_path / "scope-repair.json"
+    repair_state.write_text(json.dumps({"next_attempt_at": time.time() + 60}))
+    repaired_sources = [{**sources[0], "workspace_ids": ["workspace-west"]}]
+
+    with (
+        patch.object(settings, "_MV_SCOPE_REPAIR_STATE_FILE", str(repair_state)),
+        patch("server.db.get_mv_sources", return_value=repaired_sources) as get_sources,
+        patch.object(settings, "_infer_shared_source_workspace_ids") as infer,
+    ):
+        result = settings._repair_missing_shared_source_workspace_scopes(sources)
+
+    assert result == repaired_sources
+    get_sources.assert_called_once()
+    infer.assert_not_called()
+
+
 @pytest.mark.parametrize("catalog", ["west4_share", "east1_share", "central1_share"])
 def test_shared_source_cloud_falls_back_to_gcp_region_name(catalog):
     with patch("server.db.get_workspace_client", side_effect=PermissionError("hidden")):

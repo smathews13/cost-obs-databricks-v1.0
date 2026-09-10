@@ -1913,6 +1913,108 @@ def _infer_shared_source_workspace_ids(source: dict[str, Any]) -> list[str]:
     ))
 
 
+_MV_SCOPE_REPAIR_FAILURE_RETRY_SECONDS = 15
+_MV_SCOPE_REPAIR_STATE_FILE = os.path.join(
+    SETTINGS_DIR,
+    "mv_scope_repair_state.json",
+)
+
+
+def _repair_missing_shared_source_workspace_scopes(
+    sources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Repair legacy unmapped shares during normal app loading.
+
+    Older source registrations may predate workspace-scope persistence. The
+    navigation source request runs before dashboard filters, so repairing here
+    makes a redeploy sufficient; customers do not need to discover the hidden
+    Settings detail/re-check path first.
+    """
+    if not any(not source.get("workspace_ids") for source in sources):
+        return sources
+
+    from server.db import get_catalog_schema, get_mv_sources, save_mv_sources
+    from server.materialized_views import (
+        _rebuild_unified_views_locked,
+        unified_views_rebuild_lock,
+    )
+
+    # This file lock and completion-based timestamp are shared by every uvicorn
+    # worker. Queued callers re-check the timestamp after taking the lock, so a
+    # slow failure cannot trigger back-to-back warehouse rebuilds.
+    with _settings_write_lock("mv_scope_repair"):
+        try:
+            with open(_MV_SCOPE_REPAIR_STATE_FILE) as state_file:
+                next_attempt_at = float(
+                    (json.load(state_file) or {}).get("next_attempt_at") or 0
+                )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            next_attempt_at = 0.0
+        if time.time() < next_attempt_at:
+            # Another worker may have completed the repair while this request
+            # waited for the shared lock. Return the durable registry, not the
+            # stale pre-lock snapshot used to decide that repair was needed.
+            return get_mv_sources()
+
+        retry_seconds = _MV_SCOPE_REPAIR_FAILURE_RETRY_SECONDS
+        try:
+            with unified_views_rebuild_lock():
+                current_sources = get_mv_sources()
+                repaired_sources = [dict(source) for source in current_sources]
+                changed = False
+                for source in repaired_sources:
+                    if source.get("workspace_ids"):
+                        continue
+                    workspace_ids = _infer_shared_source_workspace_ids(source)
+                    if workspace_ids:
+                        source["workspace_ids"] = workspace_ids
+                        changed = True
+                if not changed:
+                    return current_sources
+
+                catalog, schema = get_catalog_schema()
+                summary = _rebuild_unified_views_locked(
+                    catalog,
+                    schema,
+                    sources_override=repaired_sources,
+                    persist_registry=False,
+                )
+                if not summary.get("ok"):
+                    logger.warning(
+                        "Could not activate repaired shared-source workspace mappings: %s",
+                        summary.get("error") or summary,
+                    )
+                    _rebuild_unified_views_locked(
+                        catalog,
+                        schema,
+                        sources_override=current_sources,
+                        persist_registry=False,
+                    )
+                    return current_sources
+
+                try:
+                    save_mv_sources(repaired_sources)
+                except Exception:
+                    _rebuild_unified_views_locked(
+                        catalog,
+                        schema,
+                        sources_override=current_sources,
+                        persist_registry=False,
+                    )
+                    raise
+                _invalidate_mv_caches()
+                logger.info("Repaired workspace mappings for legacy shared sources")
+                return repaired_sources
+        finally:
+            try:
+                _atomic_json_write(
+                    _MV_SCOPE_REPAIR_STATE_FILE,
+                    {"next_attempt_at": time.time() + retry_seconds},
+                )
+            except OSError as error:
+                logger.warning("Could not persist shared-source repair backoff: %s", error)
+
+
 def _shared_source_grants(catalog: str, schema: str) -> list[str]:
     principal = os.getenv("DATABRICKS_CLIENT_ID", "").strip()
     if not principal:
@@ -1947,6 +2049,17 @@ async def get_mv_sources_endpoint(detail: bool = False) -> dict:
         save_mv_sources,
     )
     sources = get_mv_sources()
+    if not detail and any(not source.get("workspace_ids") for source in sources):
+        try:
+            sources = await asyncio.to_thread(
+                _repair_missing_shared_source_workspace_scopes,
+                sources,
+            )
+        except Exception as error:
+            logger.warning(
+                "Could not repair shared-source workspace mappings during app load: %s",
+                error,
+            )
     if detail:
         def _enrich():
             from server.materialized_views import (

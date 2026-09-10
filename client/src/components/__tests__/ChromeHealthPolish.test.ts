@@ -28,6 +28,10 @@ describe("account rail health polish", () => {
     expect(setupWizardSource).toContain("Progress updates are temporarily unavailable");
     expect(setupWizardSource).toContain('taskStatus === "interrupted" || taskStatus === "cancelled"');
     expect(setupWizardSource).not.toContain("taskStatus === \"done\" || allDone");
+    expect(setupWizardSource).toContain("await startRequestRef.current?.catch");
+    expect(setupWizardSource.indexOf("await startRequestRef.current?.catch"))
+      .toBeLessThan(setupWizardSource.indexOf('fetch("/api/setup/cancel-table-creation"'));
+    expect(setupWizardSource).toContain("if (stopRequestedRef.current) return");
   });
 
   it("does not claim ordinary git redeploys rotate service-principal grants", () => {

@@ -135,7 +135,7 @@ def _restore_task_state() -> None:
         return
 
     status = saved.get("status", "idle")
-    if status == "running":
+    if status in ("running", "cancelling"):
         _create_task_state.update(
             {
                 "status": "interrupted",
@@ -539,35 +539,41 @@ async def get_setup_status() -> dict[str, Any]:
             _create_task_state["status"] == "cancelling"
             and cancel_requested_at
             and _time.time() - cancel_requested_at > 90
+            and _create_task_state.get("phase") != "cancellation_stalled"
         ):
-            _create_task_state["status"] = "error"
-            _create_task_state["phase"] = "failed"
+            _create_task_state["phase"] = "cancellation_stalled"
             _create_task_state["error"] = (
                 "Cancellation did not finish within 90 seconds. "
-                "Restart the app before starting another table build."
+                "The original build remains blocked from retrying to prevent overlapping writes. "
+                "Restart the app if it does not finish."
             )
             _persist_task_state()
         if _create_task_state["status"] == "running" and elapsed > _BOOTSTRAP_TIMEOUT_SECONDS:
-            _create_task_state["status"] = "error"
+            run_id = str(_create_task_state.get("run_id") or "")
+            if run_id:
+                _request_task_cancel(run_id)
+                from server.db import cancel_sql_operation
+
+                cancel_sql_operation(run_id)
+            _create_task_state["status"] = "cancelling"
             _create_task_state["error"] = (
                 f"Table creation timed out after {elapsed // 60} minutes. "
-                "The warehouse may be cold or the billing dataset is very large. "
-                "Use the Setup wizard to retry, or check app logs for details."
+                "Cancellation was requested; retry remains blocked until the original build exits."
             )
-            _create_task_state["phase"] = "failed"
+            _create_task_state["phase"] = "cancellation_stalled"
+            _create_task_state["cancel_requested_at"] = _time.time()
             _persist_task_state()
-            logger.error(f"Bootstrap timed out after {elapsed}s — marking as error")
-        else:
-            return {
-                "catalog": catalog,
-                "schema": schema,
-                "tables": {},
-                "all_tables_exist": False,
-                "missing_tables": [],
-                "status": "initializing",
-                "task": _create_task_state.copy(),
-                "next_poll_ms": 5000,
-            }
+            logger.error("Bootstrap timed out after %ss — requesting cancellation", elapsed)
+        return {
+            "catalog": catalog,
+            "schema": schema,
+            "tables": {},
+            "all_tables_exist": False,
+            "missing_tables": [],
+            "status": "initializing",
+            "task": _create_task_state.copy(),
+            "next_poll_ms": 5000,
+        }
 
     catalog, schema = get_catalog_schema()
 

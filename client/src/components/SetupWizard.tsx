@@ -170,6 +170,8 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
   const pollFailureCountRef = useRef(0);
   const lastProgressSignatureRef = useRef("");
   const lastProgressAtRef = useRef(Date.now());
+  const startRequestRef = useRef<Promise<Response> | null>(null);
+  const stopRequestedRef = useRef(false);
   const [storagePhase, setStoragePhase] = useState<'idle' | 'saving' | 'creating-catalog' | 'creating-schema' | 'done' | 'error'>('idle');
   const [storageChecks, setStorageChecks] = useState<{ config: boolean | null; catalog: boolean | null; schema: boolean | null }>({ config: null, catalog: null, schema: null });
   const [error, setError] = useState<string | null>(null);
@@ -320,6 +322,9 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
     } else {
       setCreating(true);
       setStopping(taskStatus === "cancelling");
+      if (taskStatus === "cancelling" && status.task?.error) {
+        setBuildWarning(status.task.error);
+      }
       const delay = status.next_poll_ms ?? 5000;
       pollTimeoutRef.current = setTimeout(pollBuild, delay);
     }
@@ -338,13 +343,21 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
     lastProgressSignatureRef.current = "";
     lastProgressAtRef.current = Date.now();
     pollCancelledRef.current = false;
+    stopRequestedRef.current = false;
     clearPollTimers();
     try {
-      const res = await fetch("/api/setup/create-tables?run_in_background=true", { method: "POST", signal: AbortSignal.timeout(30000) });
+      const startRequest = fetch("/api/setup/create-tables?run_in_background=true", {
+        method: "POST",
+        signal: AbortSignal.timeout(30000),
+      });
+      startRequestRef.current = startRequest;
+      const res = await startRequest;
+      startRequestRef.current = null;
       if (!res.ok) {
         const body = await res.text();
         throw new Error(`HTTP ${res.status}: ${body}`);
       }
+      if (stopRequestedRef.current) return;
 
       // The same monitor also resumes an in-progress build after a page reload.
       pollTimeoutRef.current = setTimeout(monitorBuildStatus, 2000);
@@ -355,16 +368,21 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
         setBuildWarning("Table creation is taking longer than expected. You can keep waiting or stop and reset the build.");
       }, 600000);
     } catch (e) {
+      startRequestRef.current = null;
       setCreating(false);
-      setError(`Failed to create tables: ${e}`);
+      if (!stopRequestedRef.current) {
+        setError(`Failed to create tables: ${e}`);
+      }
     }
   };
 
   const handleStopTables = async () => {
+    stopRequestedRef.current = true;
     setStopping(true);
     setError(null);
     setBuildWarning("Stopping active SQL statements and resetting this step…");
     try {
+      await startRequestRef.current?.catch(() => undefined);
       const response = await fetch("/api/setup/cancel-table-creation", {
         method: "POST",
         signal: AbortSignal.timeout(30000),
@@ -385,6 +403,10 @@ export function SetupWizard({ onComplete, onClose, embedded }: SetupWizardProps)
           task: { status: "cancelled", error: null, table_progress: {}, table_errors: {}, phase: "idle" },
         } : current);
         setBuildWarning("No active build remained. The step has been reset.");
+      } else {
+        pollCancelledRef.current = false;
+        clearPollTimers();
+        pollTimeoutRef.current = setTimeout(monitorBuildStatus, 500);
       }
     } catch (e) {
       setStopping(false);

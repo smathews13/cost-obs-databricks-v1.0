@@ -137,6 +137,73 @@ async def test_cancel_table_creation_requests_sql_cancel_and_persists_state(tmp_
     assert (tmp_path / "cancellations" / "run-123").exists()
 
 
+@pytest.mark.asyncio
+async def test_stalled_cancellation_never_allows_overlapping_retry():
+    now = time.time()
+    setup_mod._create_task_state.update(
+        {
+            "status": "cancelling",
+            "run_id": "run-stalled",
+            "phase": "cancelling",
+            "started_at_epoch": now - 120,
+            "cancel_requested_at": now - 91,
+        }
+    )
+    with (
+        patch.object(setup_mod, "_reconcile_task_state_from_disk"),
+        patch.object(setup_mod, "get_catalog_schema", return_value=("catalog", "schema")),
+        patch.object(setup_mod, "_persist_task_state") as persist,
+    ):
+        result = await setup_mod.get_setup_status()
+
+    assert result["status"] == "initializing"
+    assert result["task"]["status"] == "cancelling"
+    assert result["task"]["phase"] == "cancellation_stalled"
+    assert "overlapping writes" in result["task"]["error"]
+    persist.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_build_timeout_requests_cancel_and_keeps_retry_blocked():
+    now = time.time()
+    setup_mod._create_task_state.update(
+        {
+            "status": "running",
+            "run_id": "run-timeout",
+            "phase": "creating_tables",
+            "started_at_epoch": now - setup_mod._BOOTSTRAP_TIMEOUT_SECONDS - 1,
+        }
+    )
+    with (
+        patch.object(setup_mod, "_reconcile_task_state_from_disk"),
+        patch.object(setup_mod, "get_catalog_schema", return_value=("catalog", "schema")),
+        patch.object(setup_mod, "_request_task_cancel") as request_cancel,
+        patch.object(setup_mod, "_persist_task_state"),
+        patch("server.db.cancel_sql_operation", return_value=1) as cancel_sql,
+    ):
+        result = await setup_mod.get_setup_status()
+
+    assert result["status"] == "initializing"
+    assert result["task"]["status"] == "cancelling"
+    assert result["task"]["phase"] == "cancellation_stalled"
+    request_cancel.assert_called_once_with("run-timeout")
+    cancel_sql.assert_called_once_with("run-timeout")
+
+
+def test_restore_converts_stale_cancelling_state_to_interrupted(tmp_path):
+    task_file = tmp_path / "build_progress.json"
+    task_file.write_text(
+        '{"status":"cancelling","revision":7,"run_id":"run-old",'
+        '"phase":"cancelling","table_progress":{},"table_errors":{}}'
+    )
+    with patch.object(setup_mod, "_TASK_STATE_FILE", str(task_file)):
+        setup_mod._restore_task_state()
+
+    assert setup_mod._create_task_state["status"] == "interrupted"
+    assert setup_mod._create_task_state["phase"] == "interrupted"
+    assert setup_mod._create_task_state["run_id"] == "run-old"
+
+
 def test_cancelled_build_resets_progress_for_clean_retry(tmp_path):
     setup_mod._create_task_state.update(
         {

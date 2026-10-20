@@ -32,10 +32,12 @@ describe("WarehouseGuidanceBanner", () => {
     expect(alert).toHaveClass(
       "warehouse-guidance-banner",
       "w-[calc(100%-16px)]",
+      "items-center",
       "rounded-[10px]",
       "border-[#F2A895]",
       "bg-[#FFF0EB]",
     );
+    expect(screen.getByText("Warehouse sizing recommendation").parentElement).toHaveClass("items-center");
     expect(screen.getByText("Warehouse sizing recommendation")).toBeInTheDocument();
     expect(screen.getByText(
       "The recommended warehouse size is Medium, otherwise query latency may be volatile.",

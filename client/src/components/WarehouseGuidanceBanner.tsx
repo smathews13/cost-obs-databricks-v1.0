@@ -88,25 +88,27 @@ export function WarehouseGuidanceBanner({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
         </span>
-        <span className="min-w-0">
-          <span className="block text-[10px] font-bold uppercase tracking-[.08em] text-[#A33A2A]">
-            Warehouse sizing recommendation
-          </span>
-          <span className="block text-xs font-medium text-[#6F2A20]">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[.08em] text-[#A33A2A]">
+              Warehouse sizing recommendation
+            </span>
+            <span
+              className="hidden min-w-0 max-w-[36rem] shrink items-center rounded-[5px] border border-[#EAA18E] bg-[#FFE1D8] px-2 py-0.5 font-mono text-[10px] font-medium text-[#8F3426] min-[1100px]:inline-flex"
+              title={`${warehouseLabel} · ${warehouse.warehouse_size}${typeLabel ? ` · ${typeLabel}` : ""}`}
+            >
+              <span className="truncate">{warehouseLabel}</span>
+              <span className="whitespace-nowrap">
+                {" · "}{warehouse.warehouse_size}{typeLabel ? ` · ${typeLabel}` : ""}
+              </span>
+            </span>
+          </div>
+          <span className="mt-0.5 block text-xs font-medium text-[#6F2A20]">
             The recommended warehouse size is Medium, otherwise query latency may be volatile.
           </span>
-        </span>
-        <span
-          className="hidden min-w-0 max-w-[36rem] shrink items-center rounded-[5px] border border-[#EAA18E] bg-[#FFE1D8] px-2 py-0.5 font-mono text-[10px] font-medium text-[#8F3426] min-[1100px]:inline-flex"
-          title={`${warehouseLabel} · ${warehouse.warehouse_size}${typeLabel ? ` · ${typeLabel}` : ""}`}
-        >
-          <span className="truncate">{warehouseLabel}</span>
-          <span className="whitespace-nowrap">
-            {" · "}{warehouse.warehouse_size}{typeLabel ? ` · ${typeLabel}` : ""}
-          </span>
-        </span>
+        </div>
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         {manageHref && (
           <a
             href={manageHref}

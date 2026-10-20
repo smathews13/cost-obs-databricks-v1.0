@@ -222,6 +222,21 @@ describe("per-tab manual refresh", () => {
     expect(screen.getByText("Rightsizing Recommendations")).toBeVisible();
   });
 
+  it("reserves space so date chips are not covered by the refresh button", () => {
+    const { container } = render(
+      <TabRefreshRegion
+        isLoading={false}
+        isRefreshing={false}
+        loadingSections={[]}
+        onRefresh={vi.fn()}
+        onDismissRefreshError={vi.fn()}
+      >
+        <div>Date range</div>
+      </TabRefreshRegion>,
+    );
+    expect(container.querySelector(".pr-14")).toBeTruthy();
+  });
+
   it("describes the refresh as per-tab", async () => {
     render(
       <TabRefreshRegion

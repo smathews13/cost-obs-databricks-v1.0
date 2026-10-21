@@ -137,7 +137,7 @@ export function InfoPanel({
   minimizeLabel?: string;
 }) {
   return (
-    <div className="w-[calc(100%-3.5rem)] p-4" style={{ background: C.oatMed, borderRadius: 10 }}>
+    <div className="p-4" style={{ background: C.oatMed, borderRadius: 10 }}>
       <div className="flex">
         <div className="shrink-0" style={{ color: C.lava }}>
           <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">

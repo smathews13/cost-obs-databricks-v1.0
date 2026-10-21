@@ -466,6 +466,20 @@ def test_detailed_shared_source_payload_exposes_provider_managed_capability():
             "_share_last_updated",
             return_value="2026-08-28T09:00:00Z",
         ),
+        patch.object(
+            settings,
+            "_visible_shared_tables",
+            return_value={"daily_usage_summary"},
+        ),
+        patch.object(
+            settings,
+            "_infer_shared_source_workspace_ids",
+            return_value=[],
+        ),
+        patch(
+            "server.materialized_views._table_columns",
+            return_value=["usage_date"],
+        ),
     ):
         payload = asyncio.run(settings.get_mv_sources_endpoint(detail=True))
 

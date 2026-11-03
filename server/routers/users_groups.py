@@ -9,12 +9,13 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from server import cache_ttls
 from server import workspace_filter as wf
+from server.auth import require_admin
 from server.db import (
     BundleOverloadedError,
     SQLExecutionError,
@@ -1164,7 +1165,7 @@ async def get_report_config() -> dict[str, Any]:
     return _load_report_config()
 
 
-@router.post("/report-config/weekly-report")
+@router.post("/report-config/weekly-report", dependencies=[Depends(require_admin)])
 async def add_weekly_report(request: Request, data: WeeklyReportConfig) -> dict[str, Any]:
     await _require_report_admin(request)
     config = _load_report_config()
@@ -1188,7 +1189,7 @@ async def add_weekly_report(request: Request, data: WeeklyReportConfig) -> dict[
     return {"success": True, "config": config}
 
 
-@router.delete("/report-config/weekly-report/{email_or_id}")
+@router.delete("/report-config/weekly-report/{email_or_id}", dependencies=[Depends(require_admin)])
 async def delete_weekly_report(request: Request, email_or_id: str) -> dict[str, Any]:
     await _require_report_admin(request)
     config = _load_report_config()
@@ -1200,7 +1201,7 @@ async def delete_weekly_report(request: Request, email_or_id: str) -> dict[str, 
     return {"success": True}
 
 
-@router.post("/report-config/user-alert")
+@router.post("/report-config/user-alert", dependencies=[Depends(require_admin)])
 async def add_user_alert(request: Request, data: UserAlertConfig) -> dict[str, Any]:
     await _require_report_admin(request)
     config = _load_report_config()
@@ -1228,7 +1229,7 @@ async def add_user_alert(request: Request, data: UserAlertConfig) -> dict[str, A
     return {"success": True, "config": config}
 
 
-@router.delete("/report-config/user-alert/{email_or_id}")
+@router.delete("/report-config/user-alert/{email_or_id}", dependencies=[Depends(require_admin)])
 async def delete_user_alert(request: Request, email_or_id: str) -> dict[str, Any]:
     await _require_report_admin(request)
     config = _load_report_config()
@@ -1240,7 +1241,7 @@ async def delete_user_alert(request: Request, email_or_id: str) -> dict[str, Any
     return {"success": True}
 
 
-@router.post("/send-test-report")
+@router.post("/send-test-report", dependencies=[Depends(require_admin)])
 async def send_test_report(
     request: Request,
     email: str = Query(...),

@@ -318,6 +318,12 @@ def _exec_mv(
     return execute_query(_get_mv_query(mv_template, ws_filter), params, timeout=timeout)
 
 
+def _pool_scoped(sql: str, id_list: list[str] | None = None) -> str:
+    """Scope live billing SQL (``u.`` alias) to the saved pool, narrowed by ``id_list``."""
+    from server import workspace_filter as wf
+    return _inject_ws_filter(sql, wf.build_ws_filter_clause(id_list=id_list))
+
+
 def _mv_ws_clause(id_list: list[str] | None) -> str:
     """Build a workspace filter clause for MV queries (plain workspace_id column, no table alias)."""
     from server import workspace_filter as wf
@@ -545,9 +551,11 @@ async def get_billing_by_product(
     if resolved_workspace_id:
         # Add workspace filter to the query
         params["workspace_id"] = resolved_workspace_id
-        results = await asyncio.to_thread(execute_query, BILLING_BY_PRODUCT_WORKSPACE, params)
+        results = await asyncio.to_thread(
+            execute_query, _pool_scoped(BILLING_BY_PRODUCT_WORKSPACE, scoped_ids), params
+        )
     else:
-        results = await asyncio.to_thread(execute_query, BILLING_BY_PRODUCT, params)
+        results = await asyncio.to_thread(execute_query, _pool_scoped(BILLING_BY_PRODUCT, scoped_ids), params)
 
     products = []
     total_spend = 0
@@ -590,7 +598,7 @@ async def get_billing_by_workspace(
     }
 
     # Always use the live query here — the MV lacks top_products and top_users columns.
-    results = await asyncio.to_thread(execute_query, BILLING_BY_WORKSPACE, params)
+    results = await asyncio.to_thread(execute_query, _pool_scoped(BILLING_BY_WORKSPACE), params)
     return _format_workspaces(results, params)
 
 
@@ -605,7 +613,7 @@ async def get_billing_timeseries(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = await asyncio.to_thread(execute_query, BILLING_TIMESERIES, params)
+    results = await asyncio.to_thread(execute_query, _pool_scoped(BILLING_TIMESERIES), params)
 
     # Transform to chart-friendly format: [{date, SQL, ETL, Interactive, ...}, ...]
     date_data: dict[str, dict[str, float]] = {}
@@ -717,7 +725,7 @@ async def get_etl_breakdown(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = await asyncio.to_thread(execute_query, ETL_BREAKDOWN, params)
+    results = await asyncio.to_thread(execute_query, _pool_scoped(ETL_BREAKDOWN), params)
 
     products = []
     total_spend = 0
@@ -936,7 +944,7 @@ async def get_infra_costs(
 
     try:
         # Single query — instance families are derived in Python from cluster results
-        cluster_results = await asyncio.to_thread(execute_query, INFRA_COST_ESTIMATE, params)
+        cluster_results = await asyncio.to_thread(execute_query, _pool_scoped(INFRA_COST_ESTIMATE), params)
 
         # Detect cloud from results, fall back to host URL detection
         host = get_host_url()
@@ -1084,7 +1092,7 @@ async def get_infra_costs_timeseries(
         }
 
     try:
-        results = await asyncio.to_thread(execute_query, INFRA_COST_TIMESERIES, params)
+        results = await asyncio.to_thread(execute_query, _pool_scoped(INFRA_COST_TIMESERIES), params)
 
         # Detect cloud from host URL, override with billing data if available
         host = get_host_url()
@@ -1867,7 +1875,7 @@ async def get_aws_costs(
 
     try:
         # Get detailed cluster costs
-        cluster_results = await asyncio.to_thread(execute_query, INFRA_COST_ESTIMATE, params)
+        cluster_results = await asyncio.to_thread(execute_query, _pool_scoped(INFRA_COST_ESTIMATE), params)
 
         clusters = []
         detail_databricks_spend = 0.0
@@ -1914,7 +1922,7 @@ async def get_aws_costs(
             )
 
         # Get instance family breakdown
-        family_results = await asyncio.to_thread(execute_query, AWS_COST_BY_INSTANCE_TYPE, params)
+        family_results = await asyncio.to_thread(execute_query, _pool_scoped(AWS_COST_BY_INSTANCE_TYPE), params)
         instance_families = []
         for row in family_results:
             instance_families.append(
@@ -1981,7 +1989,7 @@ async def get_aws_costs_timeseries(
         }
 
     try:
-        results = await asyncio.to_thread(execute_query, INFRA_COST_TIMESERIES, params)
+        results = await asyncio.to_thread(execute_query, _pool_scoped(INFRA_COST_TIMESERIES), params)
         by_date: dict[str, float] = {}
         for row in results:
             key = str(row.get("usage_date"))
@@ -2093,14 +2101,14 @@ async def get_dashboard_bundle(
 
     # Execute all queries in parallel
     queries = [
-        ("summary", lambda: execute_query(BILLING_SUMMARY, params)),
-        ("products", lambda: execute_query(BILLING_BY_PRODUCT, params)),
-        ("workspaces", lambda: execute_query(BILLING_BY_WORKSPACE, params)),
-        ("timeseries", lambda: execute_query(BILLING_TIMESERIES, params)),
-        ("sql_breakdown", lambda: execute_query(SQL_TOOL_ATTRIBUTION, params)),
-        ("etl_breakdown", lambda: execute_query(ETL_BREAKDOWN, params)),
-        ("pipeline_objects", lambda: _enrich_pipeline_results(execute_query(PIPELINE_OBJECTS, params))),
-        ("interactive", lambda: execute_query(INTERACTIVE_BREAKDOWN, params)),
+        ("summary", lambda: execute_query(_pool_scoped(BILLING_SUMMARY), params)),
+        ("products", lambda: execute_query(_pool_scoped(BILLING_BY_PRODUCT), params)),
+        ("workspaces", lambda: execute_query(_pool_scoped(BILLING_BY_WORKSPACE), params)),
+        ("timeseries", lambda: execute_query(_pool_scoped(BILLING_TIMESERIES), params)),
+        ("sql_breakdown", lambda: execute_query(_pool_scoped(SQL_TOOL_ATTRIBUTION), params)),
+        ("etl_breakdown", lambda: execute_query(_pool_scoped(ETL_BREAKDOWN), params)),
+        ("pipeline_objects", lambda: _enrich_pipeline_results(execute_query(_pool_scoped(PIPELINE_OBJECTS), params))),
+        ("interactive", lambda: execute_query(_pool_scoped(INTERACTIVE_BREAKDOWN), params)),
     ]
 
     try:
@@ -2157,13 +2165,9 @@ async def get_dashboard_bundle(
 
 
 def _inject_ws_filter(sql: str, clause: str) -> str:
-    """Append a workspace filter clause after the usage_quantity guard in a SQL string."""
-    if not clause:
-        return sql
-    for anchor in ("AND u.usage_quantity > 0", "AND usage_quantity > 0"):
-        if anchor in sql:
-            return sql.replace(anchor, f"{anchor}\n    {clause}", 1)
-    return sql
+    """Append a workspace filter clause after every usage_quantity guard in a SQL string."""
+    from server import workspace_filter as wf
+    return wf.inject_ws_filter(sql, clause)
 
 
 def _inject_qh_ws_filter(sql: str, clause: str) -> str:
@@ -3168,7 +3172,7 @@ async def get_spend_by_user_group(
             GROUP BY 1
             HAVING SUM(u.usage_quantity * COALESCE(p.pricing.default, 0)) > 0
             """
-            user_results = await asyncio.to_thread(execute_query, user_query, params)
+            user_results = await asyncio.to_thread(execute_query, _pool_scoped(user_query), params)
 
             # Aggregate spend by group
             group_spend: dict[str, dict] = {}
@@ -3215,7 +3219,7 @@ async def get_spend_by_user_group(
         LIMIT 15
         """
         try:
-            results = await asyncio.to_thread(execute_query, query, params)
+            results = await asyncio.to_thread(execute_query, _pool_scoped(query), params)
         except Exception as e:
             logger.warning(f"User spend query failed: {e}")
             return {"groups": [], "total_spend": 0, "error": str(e)}
@@ -3260,7 +3264,7 @@ async def get_spend_anomalies(
         "end_date": end_date or get_default_end_date(),
     }
 
-    results = await asyncio.to_thread(execute_query, SPEND_ANOMALIES, params)
+    results = await asyncio.to_thread(execute_query, _pool_scoped(SPEND_ANOMALIES), params)
 
     # Effective spike threshold folds in the admin's anomaly-sensitivity setting
     # (low/medium/high → base threshold × 1.5/1.0/0.5). Additive: each row is flagged
@@ -3339,7 +3343,7 @@ async def get_platform_kpis(
     if use_mv:
         # Try to get query stats from materialized view (fast!)
         try:
-            mv_results = await asyncio.to_thread(_exec_mv, MV_PLATFORM_KPIS, params)
+            mv_results = await asyncio.to_thread(_exec_mv, MV_PLATFORM_KPIS, params, _mv_ws_clause(None))
             if mv_results and len(mv_results) > 0:
                 mv_row = mv_results[0]
                 response["total_queries"] = int(mv_row.get("total_queries") or 0)
@@ -3352,9 +3356,12 @@ async def get_platform_kpis(
             logger.debug(f"MV query stats failed: {e}")
 
     # Get billing-based stats (always use fast query for these)
+    from server import workspace_filter as wf
+    kpi_ws_clause = wf.build_ws_filter_clause(col="workspace_id")
     query = (PLATFORM_KPIS_FAST if fast or use_mv else PLATFORM_KPIS).format(
-        ws_filter=""
+        ws_filter=kpi_ws_clause
     )
+    query = _inject_ws_filter(query, kpi_ws_clause)
     results = await asyncio.to_thread(execute_query, query, params)
 
     if results and len(results) > 0:
